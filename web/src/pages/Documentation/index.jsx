@@ -17,15 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, Typography } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import MarkdownRenderer from '../../components/common/markdown/MarkdownRenderer';
+import ApiNavigation from './components/ApiNavigation';
+import DocumentViewer from './components/DocumentViewer';
 
 const { Title, Text } = Typography;
 
 const Documentation = () => {
   const { t } = useTranslation();
+  const [activeDoc, setActiveDoc] = useState(null);
 
   const apiDocumentationContent = `# API 文档
 
@@ -83,6 +86,14 @@ Authorization: Bearer YOUR_TOKEN
 
 💡 **提示：** 查看 [OpenAI Chat API 详细文档](./openai-chat-api.md) 获取完整的接口规范、高级用法和最佳实践。`;
 
+  const handleDocChange = (docKey) => {
+    setActiveDoc(docKey);
+  };
+
+  const handleBack = () => {
+    setActiveDoc(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
       <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -95,11 +106,25 @@ Authorization: Bearer YOUR_TOKEN
           </Text>
         </div>
 
-        <Card className="mb-8">
-          <div className="prose prose-lg max-w-none">
-            <MarkdownRenderer content={apiDocumentationContent} />
-          </div>
-        </Card>
+        {!activeDoc ? (
+          <>
+            <ApiNavigation
+              activeDoc={activeDoc}
+              onDocChange={handleDocChange}
+            />
+
+            <Card>
+              <div className="prose prose-lg max-w-none">
+                <MarkdownRenderer content={apiDocumentationContent} />
+              </div>
+            </Card>
+          </>
+        ) : (
+          <DocumentViewer
+            docKey={activeDoc}
+            onBack={handleBack}
+          />
+        )}
       </div>
     </div>
   );
