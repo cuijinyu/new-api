@@ -31,19 +31,23 @@ const Documentation = () => {
 
 New API 提供了完整的 RESTful API 接口，支持与 OpenAI API 兼容的调用方式。
 
-## 认证方式
+## 📚 API 文档导航
 
-### Bearer Token 认证
+### [📖 OpenAI Chat API 详细文档](./openai-chat-api.md)
+- 完整的 Chat Completions API 规范
+- 详细的参数说明和示例
+- 错误处理和最佳实践
+- 工具调用和函数调用指南
+
+## 快速开始
+
+### 认证方式
 
 \`\`\`http
 Authorization: Bearer YOUR_API_TOKEN
 \`\`\`
 
-## 核心接口
-
-### 1. 聊天完成接口
-
-与 OpenAI API 完全兼容：
+### 基础调用示例
 
 \`\`\`http
 POST /v1/chat/completions
@@ -63,117 +67,10 @@ Authorization: Bearer YOUR_TOKEN
 }
 \`\`\`
 
-**响应示例：**
-\`\`\`json
-{
-  "id": "chatcmpl-xxxxxxxx",
-  "object": "chat.completion",
-  "created": 1699012345,
-  "model": "gpt-3.5-turbo",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": "Hello! I'm doing well, thank you for asking."
-      },
-      "finish_reason": "stop"
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 10,
-    "completion_tokens": 12,
-    "total_tokens": 22
-  }
-}
-\`\`\`
+### 其他核心接口
 
-### 2. 流式聊天接口
-
-支持服务器发送事件 (SSE) 的流式响应：
-
-\`\`\`http
-POST /v1/chat/completions
-Content-Type: application/json
-Authorization: Bearer YOUR_TOKEN
-
-{
-  "model": "gpt-3.5-turbo",
-  "messages": [
-    {
-      "role": "user",
-      "content": "写一首诗"
-    }
-  ],
-  "stream": true,
-  "temperature": 0.7
-}
-\`\`\`
-
-### 3. 模型列表接口
-
-获取可用的模型列表：
-
-\`\`\`http
-GET /v1/models
-Authorization: Bearer YOUR_TOKEN
-\`\`\`
-
-**响应示例：**
-\`\`\`json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "gpt-3.5-turbo",
-      "object": "model",
-      "created": 1677610602,
-      "owned_by": "openai"
-    },
-    {
-      "id": "gpt-4",
-      "object": "model",
-      "created": 1687882411,
-      "owned_by": "openai"
-    }
-  ]
-}
-\`\`\`
-
-### 4. 用量统计接口
-
-获取 API 使用统计：
-
-\`\`\`http
-GET /v1/usage
-Authorization: Bearer YOUR_TOKEN
-\`\`\`
-
-**响应示例：**
-\`\`\`json
-{
-  "object": "usage",
-  "prompt_tokens": 1250,
-  "completion_tokens": 750,
-  "total_tokens": 2000,
-  "cost": 0.024
-}
-\`\`\`
-
-## 错误处理
-
-### 标准错误响应格式
-
-\`\`\`json
-{
-  "error": {
-    "message": "Invalid API key provided",
-    "type": "invalid_request_error",
-    "param": "authorization",
-    "code": "invalid_api_key"
-  }
-}
-\`\`\`
+- **模型列表：** \`GET /v1/models\` - 获取可用的模型列表
+- **用量统计：** \`GET /v1/usage\` - 获取 API 使用统计
 
 ### 常见错误码
 
@@ -182,12 +79,9 @@ Authorization: Bearer YOUR_TOKEN
 - \`500\`: 服务器内部错误
 - \`503\`: 服务不可用
 
-## 限制说明
+---
 
-- 请求频率：根据账户等级限制
-- 单次请求最大 Token 数：根据模型限制
-- 并发连接数：根据账户等级限制
-- 响应超时时间：30秒`;
+💡 **提示：** 查看 [OpenAI Chat API 详细文档](./openai-chat-api.md) 获取完整的接口规范、高级用法和最佳实践。`;
 
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
