@@ -53,6 +53,11 @@ export default defineConfig({
   ],
   optimizeDeps: {
     force: true,
+    include: [
+      '@visactor/react-vchart',
+      '@visactor/vchart',
+      '@visactor/vchart-semi-theme'
+    ],
     esbuildOptions: {
       loader: {
         '.js': 'jsx',

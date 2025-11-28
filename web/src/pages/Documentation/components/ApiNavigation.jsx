@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useState } from 'react';
 import { Card, Nav, Typography, Button } from '@douyinfe/semi-ui';
-import { IconBookStroked, IconApiStroked, IconCodeStroked, IconListStroked } from '@douyinfe/semi-icons';
+import { IconBookStroked, IconCode, IconCodeStroked, IconList, IconSend } from '@douyinfe/semi-icons';
 
 const { Title, Text } = Typography;
 
@@ -29,7 +29,7 @@ const ApiNavigation = ({ activeDoc, onDocChange }) => {
       key: 'overview',
       title: 'API 概览',
       description: '快速了解 New API 的核心功能和接口',
-      icon: <IconApiStroked />,
+      icon: <IconCode />,
       path: '/documentation'
     },
     {
@@ -38,6 +38,13 @@ const ApiNavigation = ({ activeDoc, onDocChange }) => {
       description: '完全兼容 OpenAI 的聊天补全接口，支持工具调用、流式响应等',
       icon: <IconBookStroked />,
       path: '/documentation/openai-chat-api'
+    },
+    {
+      key: 'openai-responses',
+      title: 'OpenAI Responses API',
+      description: '创建模型响应的标准接口',
+      icon: <IconSend />,
+      path: '/documentation/openai-responses-api'
     },
     {
       key: 'examples',
@@ -50,7 +57,7 @@ const ApiNavigation = ({ activeDoc, onDocChange }) => {
       key: 'reference',
       title: '参考文档',
       description: '完整的 API 参数和响应格式参考',
-      icon: <IconListStroked />,
+      icon: <IconList />,
       path: '/documentation/reference'
     }
   ];
@@ -76,6 +83,7 @@ const ApiNavigation = ({ activeDoc, onDocChange }) => {
             className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
               activeDoc === doc.key ? 'border-blue-500 bg-blue-50' : ''
             }`}
+            aria-selected={activeDoc === doc.key}
             bodyStyle={{ padding: '16px' }}
             onClick={() => onDocChange && onDocChange(doc.key)}
           >
@@ -84,14 +92,9 @@ const ApiNavigation = ({ activeDoc, onDocChange }) => {
                 {doc.icon}
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <Title heading={6} className="mb-1">
-                    {doc.title}
-                  </Title>
-                  {activeDoc === doc.key && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  )}
-                </div>
+                <Title heading={6} className="mb-1">
+                  {doc.title}
+                </Title>
                 <Text type="secondary" size="small">
                   {doc.description}
                 </Text>

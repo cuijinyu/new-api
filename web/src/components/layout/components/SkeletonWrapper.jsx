@@ -49,10 +49,10 @@ const SkeletonWrapper = ({
         <div key={index} className={skeletonLinkClasses}>
           <Skeleton
             loading={true}
-            active
+            active={true}
             placeholder={
               <Skeleton.Title
-                active
+                active={true}
                 style={{ width: isMobile ? 40 : width, height }}
               />
             }
@@ -69,18 +69,18 @@ const SkeletonWrapper = ({
       >
         <Skeleton
           loading={true}
-          active
+          active={true}
           placeholder={
-            <Skeleton.Avatar active size='extra-small' className='shadow-sm' />
+            <Skeleton.Avatar active={true} size='extra-small' className='shadow-sm' />
           }
         />
         <div className='ml-1.5 mr-1'>
           <Skeleton
             loading={true}
-            active
+            active={true}
             placeholder={
               <Skeleton.Title
-                active
+                active={true}
                 style={{ width: isMobile ? 15 : width, height: 12 }}
               />
             }
@@ -95,10 +95,10 @@ const SkeletonWrapper = ({
     return (
       <Skeleton
         loading={true}
-        active
+        active={true}
         placeholder={
           <Skeleton.Image
-            active
+            active={true}
             className={`absolute inset-0 !rounded-full ${className}`}
             style={{ width: '100%', height: '100%' }}
           />
@@ -112,7 +112,7 @@ const SkeletonWrapper = ({
     return (
       <Skeleton
         loading={true}
-        active
+        active={true}
         placeholder={<Skeleton.Title active style={{ width, height: 24 }} />}
       />
     );
@@ -124,7 +124,7 @@ const SkeletonWrapper = ({
       <div className={className}>
         <Skeleton
           loading={true}
-          active
+          active={true}
           placeholder={<Skeleton.Title active style={{ width, height }} />}
         />
       </div>
@@ -137,10 +137,10 @@ const SkeletonWrapper = ({
       <div className={className}>
         <Skeleton
           loading={true}
-          active
+          active={true}
           placeholder={
             <Skeleton.Title
-              active
+              active={true}
               style={{ width, height, borderRadius: 9999 }}
             />
           }
@@ -162,7 +162,7 @@ const SkeletonWrapper = ({
           <div className='sidebar-icon-container flex-shrink-0'>
             <Skeleton
               loading={true}
-              active
+              active={true}
               placeholder={
                 <Skeleton.Avatar active size='extra-small' shape='square' />
               }
@@ -171,10 +171,10 @@ const SkeletonWrapper = ({
           {/* 文本骨架屏 */}
           <Skeleton
             loading={true}
-            active
+            active={true}
             placeholder={
               <Skeleton.Title
-                active
+                active={true}
                 style={{ width: width || 80, height: height || 14 }}
               />
             }
@@ -189,10 +189,10 @@ const SkeletonWrapper = ({
       <div className={`mb-2 ${className}`}>
         <Skeleton
           loading={true}
-          active
+          active={true}
           placeholder={
             <Skeleton.Title
-              active
+              active={true}
               style={{ width: width || 60, height: height || 12 }}
             />
           }
@@ -214,10 +214,10 @@ const SkeletonWrapper = ({
     const renderIcon = () => (
       <Skeleton
         loading={true}
-        active
+        active={true}
         placeholder={
           <Skeleton.Avatar
-            active
+            active={true}
             shape='square'
             style={{ width: ICON_SIZE, height: ICON_SIZE }}
           />
@@ -228,10 +228,10 @@ const SkeletonWrapper = ({
     const renderLabel = (labelWidth) => (
       <Skeleton
         loading={true}
-        active
+        active={true}
         placeholder={
           <Skeleton.Title
-            active
+            active={true}
             style={{ width: labelWidth, height: TEXT_HEIGHT }}
           />
         }
@@ -266,10 +266,10 @@ const SkeletonWrapper = ({
       >
         <Skeleton
           loading={true}
-          active
+          active={true}
           placeholder={
             <Skeleton.Avatar
-              active
+              active={true}
               shape='square'
               style={{ width: ICON_SIZE, height: ICON_SIZE }}
             />
@@ -326,10 +326,10 @@ const SkeletonWrapper = ({
                 >
                   <Skeleton
                     loading={true}
-                    active
+                    active={true}
                     placeholder={
                       <Skeleton.Title
-                        active
+                        active={true}
                         style={{ width: sec.titleWidth, height: TITLE_HEIGHT }}
                       />
                     }
@@ -347,10 +347,10 @@ const SkeletonWrapper = ({
                 >
                   <Skeleton
                     loading={true}
-                    active
+                    active={true}
                     placeholder={
                       <Skeleton.Title
-                        active
+                        active={true}
                         style={{ width: sec.titleWidth, height: TITLE_HEIGHT }}
                       />
                     }
