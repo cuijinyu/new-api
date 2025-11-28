@@ -1,32 +1,23 @@
-# Binaries
-bin/
+.idea
+.vscode
+.zed
+upload
 *.exe
-*.dll
-*.so
-*.dylib
-
-# Test binary
-*.test
-*.out
-
-# Go workspace file
-go.work
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Config
-configs/config.yaml
+*.db
+build
+*.db-journal
+logs
+web/dist
 .env
+one-api
+new-api
+/__debug_bin*
+.DS_Store
+tiktoken_cache
+.eslintcache
+.gocache
+.cache
+web/bun.lock
 
-# Logs
-*.log
-logs/
+electron/node_modules
+electron/dist
