@@ -86,18 +86,18 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/mj': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/pg': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
+      // '/api': {
+      //   target: 'http://ezmodel.cloud/api',
+      //   changeOrigin: true,
+      // },
+      // '/mj': {
+      //   target: 'http://ezmodel.cloud/mj',
+      //   changeOrigin: true,
+      // },
+      // '/pg': {
+      //   target: 'http://ezmodel.cloud/pg',
+      //   changeOrigin: true,
+      // },
     },
   },
 });

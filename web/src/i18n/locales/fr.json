@@ -1589,7 +1589,7 @@
     "获取初始化状态失败": "Échec de l'obtention de l'état d'initialisation",
     "获取启用模型失败": "Échec de l'obtention des modèles activés",
     "获取启用模型失败:": "Échec de l'obtention des modèles activés :",
-    "获取密钥": "Obtenir la clé",
+    "获取密钥": "Commencer",
     "获取密钥失败": "Échec de l'obtention de la clé",
     "获取密钥状态失败": "Échec de l'obtention de l'état de la clé",
     "获取未配置模型失败": "Échec de l'obtention des modèles non configurés",
@@ -2090,8 +2090,8 @@
     "默认折叠侧边栏": "Réduire la barre latérale par défaut",
     "默认测试模型": "Modèle de test par défaut",
     "默认补全倍率": "Taux de complétion par défaut",
-    "统一的": "La Passerelle",
-    "大模型接口网关": "API LLM Unifiée",
+    "统一的": "EZModel",
+    "大模型接口网关": "Fournisseur d'IA",
     "正在跳转 GitHub...": "Redirection vers GitHub...",
     "请求超时，请刷新页面后重新发起 GitHub 登录": "Délai dépassé, veuillez actualiser la page puis relancer la connexion GitHub"
   }
