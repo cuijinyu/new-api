@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconBookStroked, IconCode, IconCodeStroked, IconList, IconSend } from '@douyinfe/semi-icons';
+import { IconBookStroked, IconCode, IconCodeStroked, IconList, IconSend, IconComment } from '@douyinfe/semi-icons';
 
 import overviewContentZh from './content/overview.md?raw';
 import overviewContentEn from './content/overview.en.md?raw';
@@ -7,6 +7,8 @@ import openaiChatContentZh from './content/openai-chat.md?raw';
 import openaiChatContentEn from './content/openai-chat.en.md?raw';
 import openaiResponsesContentZh from './content/openai-responses.md?raw';
 import openaiResponsesContentEn from './content/openai-responses.en.md?raw';
+import claudeMessagesContentZh from './content/claude-messages.md?raw';
+import claudeMessagesContentEn from './content/claude-messages.en.md?raw';
 import examplesContentZh from './content/examples.md?raw';
 import examplesContentEn from './content/examples.en.md?raw';
 import referenceContentZh from './content/reference.md?raw';
@@ -44,6 +46,17 @@ export const documentationConfig = [
     content: {
       zh: openaiResponsesContentZh,
       en: openaiResponsesContentEn
+    }
+  },
+  {
+    key: 'claude-messages',
+    title: 'doc.claudeMessages.title',
+    description: 'doc.claudeMessages.desc',
+    icon: <IconComment />,
+    path: '/docs/claude-messages',
+    content: {
+      zh: claudeMessagesContentZh,
+      en: claudeMessagesContentEn
     }
   },
   {

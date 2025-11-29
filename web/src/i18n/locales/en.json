@@ -2007,6 +2007,8 @@
     "doc.examples.desc": "SDKs and example code in various programming languages",
     "doc.reference.title": "Reference Documentation",
     "doc.reference.desc": "Complete API parameter and response format reference",
+    "doc.claudeMessages.title": "Claude Chat",
+    "doc.claudeMessages.desc": "Anthropic Claude Messages API Request Format",
     "doc.nav.overview": "Navigation Overview",
     "doc.nav.title": "API Documentation Navigation",
     "doc.nav.desc": "Select the section of the API documentation you want to view",
