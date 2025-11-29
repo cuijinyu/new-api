@@ -27,7 +27,7 @@ Content-Type: application/json
 Authorization: Bearer YOUR_TOKEN
 
 {
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-5.1",
   "messages": [
     {
       "role": "user",

@@ -34,7 +34,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 约束 |
 |--------|------|------|--------|------|------|
-| model | string | 是 | - | 模型 ID | gpt-3.5-turbo, gpt-4 等 |
+| model | string | 是 | - | 模型 ID | gpt-5.1, gpt-4 等 |
 | messages | array[object] | 是 | - | 对话消息列表 | 最少 1 条消息 |
 | temperature | number | 否 | 1 | 采样温度 | 0 ≤ x ≤ 2 |
 | top_p | number | 否 | 1 | 核采样参数 | 0 ≤ x ≤ 1 |
@@ -140,11 +140,11 @@ data: [DONE]
 
 #### 请求
 ```bash
-curl -X POST https://your-api-domain.com/v1/chat/completions \
+curl -X POST https://ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-5.1",
     "messages": [
       {
         "role": "system",
@@ -166,7 +166,7 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
   "id": "chatcmpl-8abcd1234efgh5678",
   "object": "chat.completion",
   "created": 1699012345,
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-5.1",
   "choices": [
     {
       "index": 0,
@@ -189,11 +189,11 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
 
 #### 请求
 ```bash
-curl -X POST https://your-api-domain.com/v1/chat/completions \
+curl -X POST https://ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-5.1",
     "messages": [
       {
         "role": "user",
@@ -207,11 +207,11 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
 
 #### 响应
 ```
-data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-5.1","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"春"},"finish_reason":null}]}
+data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-5.1","choices":[{"index":0,"delta":{"content":"春"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"风"},"finish_reason":null}]}
+data: {"id":"chatcmpl-8abcd1234efgh5678","object":"chat.completion.chunk","created":1699012345,"model":"gpt-5.1","choices":[{"index":0,"delta":{"content":"风"},"finish_reason":null}]}
 
 ...
 
@@ -222,11 +222,11 @@ data: [DONE]
 
 #### 请求
 ```bash
-curl -X POST https://your-api-domain.com/v1/chat/completions \
+curl -X POST https://ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-5.1",
     "messages": [
       {
         "role": "user",
@@ -262,7 +262,7 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
   "id": "chatcmpl-8abcd1234efgh5678",
   "object": "chat.completion",
   "created": 1699012345,
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-5.1",
   "choices": [
     {
       "index": 0,
@@ -295,11 +295,11 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
 
 #### 请求
 ```bash
-curl -X POST https://your-api-domain.com/v1/chat/completions \
+curl -X POST https://ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-5.1",
     "messages": [
       {
         "role": "system",
@@ -322,7 +322,7 @@ curl -X POST https://your-api-domain.com/v1/chat/completions \
   "id": "chatcmpl-8abcd1234efgh5678",
   "object": "chat.completion",
   "created": 1699012345,
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-5.1",
   "choices": [
     {
       "index": 0,

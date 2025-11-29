@@ -54,7 +54,7 @@ Responses API 返回标准的 OpenAI 响应格式对象。
   "id": "chatcmpl-123",
   "object": "chat.completion",
   "created": 1677652288,
-  "model": "gpt-3.5-turbo-0613",
+  "model": "gpt-5.1",
   "system_fingerprint": "fp_44709d6fcb",
   "choices": [
     {
@@ -95,7 +95,7 @@ Responses API 返回标准的 OpenAI 响应格式对象。
   "id": "chatcmpl-123",
   "object": "chat.completion.chunk",
   "created": 1694268190,
-  "model": "gpt-3.5-turbo-0613",
+  "model": "gpt-5.1",
   "system_fingerprint": "fp_44709d6fcb",
   "choices": [
     {
@@ -118,11 +118,11 @@ Responses API 返回标准的 OpenAI 响应格式对象。
 ### 请求示例
 
 ```bash
-curl -X POST https://your-api-domain.com/v1/responses \
+curl -X POST https://ezmodel.cloud/v1/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
-    "model": "gpt-3.5-turbo",
+    "model": "gpt-5.1",
     "messages": [
       {
         "role": "user",
@@ -139,7 +139,7 @@ curl -X POST https://your-api-domain.com/v1/responses \
   "id": "chatcmpl-888",
   "object": "chat.completion",
   "created": 1699012345,
-  "model": "gpt-3.5-turbo",
+  "model": "gpt-5.1",
   "choices": [
     {
       "index": 0,
