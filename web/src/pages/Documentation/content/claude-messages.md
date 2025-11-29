@@ -3,7 +3,7 @@
 `POST /v1/messages`
 
 Anthropic Claude Messages API 格式的请求。
-需要在请求头中包含 `anthropic-version`。
+需要在请求头中包含 `anthropic-version`
 
 ## 请求参数
 
@@ -73,7 +73,7 @@ Anthropic Claude Messages API 格式的请求。
 
 ## 返回响应
 
-🟢 `200` 成功
+`200` 成功
 
 `application/json` 成功创建响应
 
