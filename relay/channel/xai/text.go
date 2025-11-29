@@ -58,6 +58,11 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			usage.PromptTokens = xAIResp.Usage.PromptTokens
 			usage.TotalTokens = xAIResp.Usage.TotalTokens
 			usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+
+			// Handle xAI prompt cache hits in streaming
+			if xAIResp.Usage.PromptCacheHitTokens > 0 {
+				usage.PromptTokensDetails.CachedTokens = xAIResp.Usage.PromptCacheHitTokens
+			}
 		}
 
 		openaiResponse := streamResponseXAI2OpenAI(xAIResp, usage)
@@ -94,6 +99,11 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 	if xaiResponse.Usage != nil {
 		xaiResponse.Usage.CompletionTokens = xaiResponse.Usage.TotalTokens - xaiResponse.Usage.PromptTokens
 		xaiResponse.Usage.CompletionTokenDetails.TextTokens = xaiResponse.Usage.CompletionTokens - xaiResponse.Usage.CompletionTokenDetails.ReasoningTokens
+
+		// Handle xAI prompt cache hits - map to OpenAI's cached_tokens format
+		if xaiResponse.Usage.PromptCacheHitTokens > 0 {
+			xaiResponse.Usage.PromptTokensDetails.CachedTokens = xaiResponse.Usage.PromptCacheHitTokens
+		}
 	}
 
 	// new body
