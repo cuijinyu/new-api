@@ -100,6 +100,9 @@ export function PreCode(props) {
   const [mermaidCode, setMermaidCode] = useState('');
   const [htmlCode, setHtmlCode] = useState('');
   const { t } = useTranslation();
+  const { defaultExpanded } = useContext(MarkdownContext);
+  const [collapsed, setCollapsed] = useState(!defaultExpanded);
+  const [showToggle, setShowToggle] = useState(false);
 
   const renderArtifacts = useDebouncedCallback(() => {
     if (!ref.current) return;
@@ -120,7 +123,7 @@ export function PreCode(props) {
     }
   }, 600);
 
-  // 处理代码块的换行
+  // 处理代码块的换行和折叠状态
   useEffect(() => {
     if (ref.current) {
       const codeElements = ref.current.querySelectorAll('code');
@@ -141,9 +144,44 @@ export function PreCode(props) {
           codeElement.style.whiteSpace = 'pre-wrap';
         }
       });
+      
+      const codeHeight = ref.current.scrollHeight;
+      setShowToggle(codeHeight > 400);
+      
       setTimeout(renderArtifacts, 1);
     }
   }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((collapsed) => !collapsed);
+  };
+
+  const renderShowMoreButton = () => {
+    if (showToggle && collapsed) {
+      return (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '0',
+            left: '0',
+            right: '0',
+            padding: '8px',
+            background: 'linear-gradient(to bottom, transparent, var(--semi-color-fill-0))',
+            display: 'flex',
+            justifyContent: 'center',
+            borderBottomLeftRadius: '6px',
+            borderBottomRightRadius: '6px',
+            zIndex: 1,
+          }}
+        >
+          <Button size='small' onClick={toggleCollapsed} theme='solid' type='primary'>
+            {t('显示更多')}
+          </Button>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <>
@@ -159,6 +197,8 @@ export function PreCode(props) {
           overflow: 'auto',
           fontSize: '14px',
           lineHeight: '1.4',
+          maxHeight: collapsed ? '400px' : 'none',
+          overflowY: collapsed ? 'hidden' : 'auto',
         }}
       >
         <div
@@ -206,6 +246,7 @@ export function PreCode(props) {
           </Tooltip>
         </div>
         {props.children}
+        {renderShowMoreButton()}
       </pre>
       {mermaidCode.length > 0 && (
         <Mermaid code={mermaidCode} key={mermaidCode} />
@@ -237,66 +278,43 @@ export function PreCode(props) {
 }
 
 function CustomCode(props) {
-  const ref = useRef(null);
-  const { defaultExpanded } = useContext(MarkdownContext);
-  const [collapsed, setCollapsed] = useState(!defaultExpanded);
-  const [showToggle, setShowToggle] = useState(false);
-  const { t } = useTranslation();
+  const { inline, className, children, node, ...rest } = props;
 
-  useEffect(() => {
-    if (ref.current) {
-      const codeHeight = ref.current.scrollHeight;
-      setShowToggle(codeHeight > 400);
-      ref.current.scrollTop = ref.current.scrollHeight;
-    }
-  }, [props.children]);
-
-  const toggleCollapsed = () => {
-    setCollapsed((collapsed) => !collapsed);
-  };
-
-  const renderShowMoreButton = () => {
-    if (showToggle && collapsed) {
-      return (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '8px',
-            right: '8px',
-            left: '8px',
-            display: 'flex',
-            justifyContent: 'center',
-          }}
-        >
-          <Button size='small' onClick={toggleCollapsed} theme='solid'>
-            {t('显示更多')}
-          </Button>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  return (
-    <div style={{ position: 'relative' }}>
+  if (inline) {
+    return (
       <code
-        className={clsx(props?.className)}
-        ref={ref}
+        className={className}
         style={{
-          maxHeight: collapsed ? '400px' : 'none',
-          overflowY: 'hidden',
-          display: 'block',
-          padding: '8px 12px',
+          padding: '2px 4px',
           backgroundColor: 'var(--semi-color-fill-0)',
           borderRadius: '4px',
-          fontSize: '13px',
-          lineHeight: '1.4',
+          fontSize: '0.9em',
+          color: 'var(--semi-color-text-0)',
+          fontFamily: 'inherit',
+          display: 'inline-block',
+          whiteSpace: 'pre-wrap',
         }}
+        {...rest}
       >
-        {props.children}
+        {children}
       </code>
-      {renderShowMoreButton()}
-    </div>
+    );
+  }
+
+  return (
+    <code
+      className={clsx(className)}
+      style={{
+        display: 'block',
+        padding: '0',
+        backgroundColor: 'transparent',
+        fontSize: 'inherit',
+        lineHeight: 'inherit',
+      }}
+      {...rest}
+    >
+      {children}
+    </code>
   );
 }
 

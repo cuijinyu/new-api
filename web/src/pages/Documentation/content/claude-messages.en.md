@@ -1,59 +1,59 @@
-# Claude 聊天
+# Claude Chat
 
 `POST /v1/messages`
 
-Anthropic Claude Messages API 格式的请求。
-需要在请求头中包含 `anthropic-version`。
+Requests in Anthropic Claude Messages API format.
+Requires `anthropic-version` in the request header.
 
-## 请求参数
+## Request Parameters
 
 ### Authorization
 
 `Bearer Token`
 
-在 Header 添加参数 Authorization，其值为在 Bearer 之后拼接 Token
+Add the `Authorization` parameter to the Header, with the value being the Token appended after `Bearer `.
 
-示例：
+Example:
 `Authorization: Bearer ********************`
 
-### Header 参数
+### Header Parameters
 
-| 参数名称 | 类型 | 必填 | 说明 | 示例值 |
+| Parameter Name | Type | Required | Description | Example Value |
 | :--- | :--- | :--- | :--- | :--- |
-| anthropic-version | string | 必需 | Anthropic API 版本 | `2023-06-01` |
-| x-api-key | string | 可选 | Anthropic API Key (可选，也可使用 Bearer Token) | |
+| anthropic-version | string | Required | Anthropic API Version | `2023-06-01` |
+| x-api-key | string | Optional | Anthropic API Key (Optional, can also use Bearer Token) | |
 
-### Body 参数
+### Body Parameters
 
 `application/json`
 
-| 参数名称 | 类型 | 必填 | 说明 | 示例值 |
+| Parameter Name | Type | Required | Description | Example Value |
 | :--- | :--- | :--- | :--- | :--- |
-| model | string | 必需 | 模型名称 | `claude-3-opus-20240229` |
-| messages | array[object] | 必需 | 对话消息列表 | |
-| messages.role | enum<string> | 必需 | 角色，可选值: `user`, `assistant` | |
-| messages.content | string/array | 必需 | 消息内容 | |
-| system | string/array | 可选 | 系统提示词 | |
-| max_tokens | integer | 必需 | 最大生成 token 数 (>= 1) | `1` |
-| temperature | number | 可选 | 温度 (0-1) | `0` |
-| top_p | number | 可选 | Nucleus sampling | `0` |
-| top_k | integer | 可选 | Top-k sampling | `0` |
-| stream | boolean | 可选 | 是否流式输出 | `true` |
-| stop_sequences | array[string] | 可选 | 停止序列 | |
-| tools | array [object] | 可选 | 工具定义 | |
-| tools.name | string | 可选 | 工具名称 | |
-| tools.description | string | 可选 | 工具描述 | |
-| tools.input_schema | object | 可选 | 工具输入参数 schema | |
-| tool_choice | object | 可选 | 工具选择策略 | |
-| tool_choice.type | enum<string> | 可选 | 类型: `auto`, `any`, `tool` | |
-| tool_choice.name | string | 可选 | 工具名称 (当 type 为 tool 时) | |
-| thinking | object | 可选 | 思考模式配置 | |
-| thinking.type | enum<string> | 可选 | 类型: `enabled`, `disabled` | |
-| thinking.budget_tokens | integer | 可选 | 思考预算 token 数 | |
-| metadata | object | 可选 | 元数据 | |
-| metadata.user_id | string | 可选 | 用户 ID | |
+| model | string | Required | Model Name | `claude-3-opus-20240229` |
+| messages | array[object] | Required | List of conversation messages | |
+| messages.role | enum<string> | Required | Role, options: `user`, `assistant` | |
+| messages.content | string/array | Required | Message content | |
+| system | string/array | Optional | System prompt | |
+| max_tokens | integer | Required | Max generation tokens (>= 1) | `1` |
+| temperature | number | Optional | Temperature (0-1) | `0` |
+| top_p | number | Optional | Nucleus sampling | `0` |
+| top_k | integer | Optional | Top-k sampling | `0` |
+| stream | boolean | Optional | Whether to stream output | `true` |
+| stop_sequences | array[string] | Optional | Stop sequences | |
+| tools | array [object] | Optional | Tool definitions | |
+| tools.name | string | Optional | Tool name | |
+| tools.description | string | Optional | Tool description | |
+| tools.input_schema | object | Optional | Tool input parameter schema | |
+| tool_choice | object | Optional | Tool choice strategy | |
+| tool_choice.type | enum<string> | Optional | Type: `auto`, `any`, `tool` | |
+| tool_choice.name | string | Optional | Tool name (when type is `tool`) | |
+| thinking | object | Optional | Thinking mode configuration | |
+| thinking.type | enum<string> | Optional | Type: `enabled`, `disabled` | |
+| thinking.budget_tokens | integer | Optional | Thinking budget tokens | |
+| metadata | object | Optional | Metadata | |
+| metadata.user_id | string | Optional | User ID | |
 
-### 请求示例
+### Request Example
 
 ```json
 {
@@ -71,31 +71,31 @@ Anthropic Claude Messages API 格式的请求。
 }
 ```
 
-## 返回响应
+## Response
 
-🟢 `200` 成功
+`200` Success
 
-`application/json` 成功创建响应
+`application/json` Response created successfully
 
 ### Body
 
-| 参数名称 | 类型 | 说明 | 示例值 |
+| Parameter Name | Type | Description | Example Value |
 | :--- | :--- | :--- | :--- |
-| id | string | 消息 ID | |
-| type | string | 类型 | `message` |
-| role | string | 角色 | `assistant` |
-| content | array [object] | 内容列表 | |
-| content.type | string | 内容类型 | `text` |
-| content.text | string | 文本内容 | |
-| model | string | 模型名称 | |
-| stop_reason | enum<string> | 停止原因: `end_turn`, `max_tokens`, `stop_sequence`, `tool_use` | `end_turn` |
-| usage | object | token 使用情况 | |
-| usage.input_tokens | integer | 输入 tokens | |
-| usage.output_tokens | integer | 输出 tokens | |
-| usage.cache_creation_input_tokens | integer | 缓存创建 tokens | |
-| usage.cache_read_input_tokens | integer | 缓存读取 tokens | |
+| id | string | Message ID | |
+| type | string | Type | `message` |
+| role | string | Role | `assistant` |
+| content | array [object] | Content list | |
+| content.type | string | Content type | `text` |
+| content.text | string | Text content | |
+| model | string | Model Name | |
+| stop_reason | enum<string> | Stop reason: `end_turn`, `max_tokens`, `stop_sequence`, `tool_use` | `end_turn` |
+| usage | object | Token usage | |
+| usage.input_tokens | integer | Input tokens | |
+| usage.output_tokens | integer | Output tokens | |
+| usage.cache_creation_input_tokens | integer | Cache creation input tokens | |
+| usage.cache_read_input_tokens | integer | Cache read input tokens | |
 
-### 响应示例
+### Response Example
 
 ```json
 {
