@@ -80,7 +80,7 @@ const DocumentViewer = ({ doc }) => {
       bodyStyle={{ padding: 0 }}
     >
       <div className="prose prose-lg max-w-none p-6">
-        <MarkdownRenderer content={getContent()} />
+        <MarkdownRenderer content={getContent()} defaultExpanded={true} />
       </div>
     </Card>
   );

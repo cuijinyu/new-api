@@ -26,9 +26,11 @@ import RemarkBreaks from 'remark-breaks';
 import RehypeKatex from 'rehype-katex';
 import RemarkGfm from 'remark-gfm';
 import RehypeHighlight from 'rehype-highlight';
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, createContext, useContext } from 'react';
 import mermaid from 'mermaid';
 import React from 'react';
+
+const MarkdownContext = createContext({ defaultExpanded: false });
 import { useDebouncedCallback } from 'use-debounce';
 import clsx from 'clsx';
 import { Button, Tooltip, Toast } from '@douyinfe/semi-ui';
@@ -236,7 +238,8 @@ export function PreCode(props) {
 
 function CustomCode(props) {
   const ref = useRef(null);
-  const [collapsed, setCollapsed] = useState(true);
+  const { defaultExpanded } = useContext(MarkdownContext);
+  const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const [showToggle, setShowToggle] = useState(false);
   const { t } = useTranslation();
 
@@ -601,6 +604,7 @@ export function MarkdownRenderer(props) {
     style,
     animated = false,
     previousContentLength = 0,
+    defaultExpanded,
     ...otherProps
   } = props;
 
@@ -640,12 +644,14 @@ export function MarkdownRenderer(props) {
           正在渲染...
         </div>
       ) : (
-        <MarkdownContent
-          content={content}
-          className={className}
-          animated={animated}
-          previousContentLength={previousContentLength}
-        />
+        <MarkdownContext.Provider value={{ defaultExpanded }}>
+          <MarkdownContent
+            content={content}
+            className={className}
+            animated={animated}
+            previousContentLength={previousContentLength}
+          />
+        </MarkdownContext.Provider>
       )}
     </div>
   );
