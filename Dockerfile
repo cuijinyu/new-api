@@ -19,7 +19,6 @@ ENV GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64}
 WORKDIR /build
 
 ADD go.mod go.sum ./
-RUN go env -w GOPROXY=goproxy.cn,direct
 RUN go mod download
 
 COPY . .
