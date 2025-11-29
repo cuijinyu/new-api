@@ -1,51 +1,71 @@
 import React from 'react';
 import { IconBookStroked, IconCode, IconCodeStroked, IconList, IconSend } from '@douyinfe/semi-icons';
 
-import overviewContent from './content/overview.md?raw';
-import openaiChatContent from './content/openai-chat.md?raw';
-import openaiResponsesContent from './content/openai-responses.md?raw';
-import examplesContent from './content/examples.md?raw';
-import referenceContent from './content/reference.md?raw';
+import overviewContentZh from './content/overview.md?raw';
+import overviewContentEn from './content/overview.en.md?raw';
+import openaiChatContentZh from './content/openai-chat.md?raw';
+import openaiChatContentEn from './content/openai-chat.en.md?raw';
+import openaiResponsesContentZh from './content/openai-responses.md?raw';
+import openaiResponsesContentEn from './content/openai-responses.en.md?raw';
+import examplesContentZh from './content/examples.md?raw';
+import examplesContentEn from './content/examples.en.md?raw';
+import referenceContentZh from './content/reference.md?raw';
+import referenceContentEn from './content/reference.en.md?raw';
 
 export const documentationConfig = [
   {
     key: 'overview',
-    title: 'API 概览',
-    description: '快速了解 New API 的核心功能和接口',
+    title: 'doc.overview.title',
+    description: 'doc.overview.desc',
     icon: <IconCode />,
     path: '/docs/overview',
-    content: overviewContent
+    content: {
+      zh: overviewContentZh,
+      en: overviewContentEn
+    }
   },
   {
     key: 'openai-chat',
-    title: 'OpenAI Chat API',
-    description: '完全兼容 OpenAI 的聊天补全接口，支持工具调用、流式响应等',
+    title: 'doc.openaiChat.title',
+    description: 'doc.openaiChat.desc',
     icon: <IconBookStroked />,
     path: '/docs/openai-chat',
-    content: openaiChatContent
+    content: {
+      zh: openaiChatContentZh,
+      en: openaiChatContentEn
+    }
   },
   {
     key: 'openai-responses',
-    title: 'OpenAI Responses API',
-    description: '创建模型响应的标准接口',
+    title: 'doc.openaiResponses.title',
+    description: 'doc.openaiResponses.desc',
     icon: <IconSend />,
     path: '/docs/openai-responses',
-    content: openaiResponsesContent
+    content: {
+      zh: openaiResponsesContentZh,
+      en: openaiResponsesContentEn
+    }
   },
   {
     key: 'examples',
-    title: '代码示例',
-    description: '各种编程语言的 SDK 和示例代码',
+    title: 'doc.examples.title',
+    description: 'doc.examples.desc',
     icon: <IconCodeStroked />,
     path: '/docs/examples',
-    content: examplesContent
+    content: {
+      zh: examplesContentZh,
+      en: examplesContentEn
+    }
   },
   {
     key: 'reference',
-    title: '参考文档',
-    description: '完整的 API 参数和响应格式参考',
+    title: 'doc.reference.title',
+    description: 'doc.reference.desc',
     icon: <IconList />,
     path: '/docs/reference',
-    content: referenceContent
+    content: {
+      zh: referenceContentZh,
+      en: referenceContentEn
+    }
   }
 ];

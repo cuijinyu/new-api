@@ -43,7 +43,7 @@ const Documentation = () => {
             {t('API 文档')}
           </Title>
           <Text type="secondary" className="text-lg">
-            {t('New API 接口文档和使用说明')}
+            {t('doc.page.desc')}
           </Text>
         </div>
 
@@ -57,12 +57,12 @@ const Documentation = () => {
                 items={[
                   {
                     itemKey: '/docs',
-                    text: '导航概览',
+                    text: t('doc.nav.overview'),
                     icon: <IconHome />,
                   },
                   ...documentationConfig.map(doc => ({
                     itemKey: doc.path,
-                    text: doc.title,
+                    text: t(doc.title),
                     icon: doc.icon
                   }))
                 ]}

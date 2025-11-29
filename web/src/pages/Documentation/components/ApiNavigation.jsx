@@ -20,11 +20,13 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Card, Typography, Button } from '@douyinfe/semi-ui';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { documentationConfig } from '../config';
 
 const { Title, Text } = Typography;
 
 const ApiNavigation = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
@@ -34,10 +36,10 @@ const ApiNavigation = () => {
     >
       <div className="mb-6">
         <Title heading={4} className="mb-2">
-          📚 API 文档导航
+          📚 {t('doc.nav.title')}
         </Title>
         <Text type="secondary" size="small">
-          选择您想要查看的 API 文档部分
+          {t('doc.nav.desc')}
         </Text>
       </div>
 
@@ -55,10 +57,10 @@ const ApiNavigation = () => {
               </div>
               <div className="flex-1">
                 <Title heading={6} className="mb-1">
-                  {doc.title}
+                  {t(doc.title)}
                 </Title>
                 <Text type="secondary" size="small">
-                  {doc.description}
+                  {t(doc.description)}
                 </Text>
               </div>
             </div>

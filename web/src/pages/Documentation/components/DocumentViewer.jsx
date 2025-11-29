@@ -20,14 +20,33 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Card, Typography, Button } from '@douyinfe/semi-ui';
 import { IconCopy } from '@douyinfe/semi-icons';
+import { useTranslation } from 'react-i18next';
 import MarkdownRenderer from '../../../components/common/markdown/MarkdownRenderer';
 
 const { Title } = Typography;
 
 const DocumentViewer = ({ doc }) => {
+  const { t, i18n } = useTranslation();
+
+  const getContent = () => {
+    if (!doc?.content) return '';
+    if (typeof doc.content === 'string') return doc.content;
+    
+    const lang = i18n.language;
+    if (doc.content[lang]) return doc.content[lang];
+    
+    // Fallback for specific language codes (e.g. zh-CN -> zh)
+    const shortLang = lang.split('-')[0];
+    if (doc.content[shortLang]) return doc.content[shortLang];
+    
+    // Default fallback
+    return doc.content.zh || doc.content.en || Object.values(doc.content)[0] || '';
+  };
+
   const handleCopy = () => {
-    if (doc?.content) {
-      navigator.clipboard.writeText(doc.content);
+    const content = getContent();
+    if (content) {
+      navigator.clipboard.writeText(content);
       // 这里可以添加复制成功提示
     }
   };
@@ -43,7 +62,7 @@ const DocumentViewer = ({ doc }) => {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Title heading={5} className="mb-0">
-              {doc.title || '文档'}
+              {t(doc.title) || t('doc.document')}
             </Title>
           </div>
           <div className="flex space-x-2">
@@ -53,7 +72,7 @@ const DocumentViewer = ({ doc }) => {
               onClick={handleCopy}
               size="small"
             >
-              复制
+              {t('复制')}
             </Button>
           </div>
         </div>
@@ -61,7 +80,7 @@ const DocumentViewer = ({ doc }) => {
       bodyStyle={{ padding: 0 }}
     >
       <div className="prose prose-lg max-w-none p-6">
-        <MarkdownRenderer content={doc.content || ''} />
+        <MarkdownRenderer content={getContent()} />
       </div>
     </Card>
   );
