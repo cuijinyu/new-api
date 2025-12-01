@@ -38,7 +38,7 @@ const HeaderLogo = ({
 
   return (
     <Link to='/' className='group flex items-center gap-2'>
-      <div className='relative h-10'>
+      <div className='relative h-14'>
         <img
           src={logo}
           alt='logo'
