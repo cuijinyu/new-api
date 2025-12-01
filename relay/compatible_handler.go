@@ -297,6 +297,11 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	var audioInputQuota decimal.Decimal
 	var audioInputPrice float64
+	logger.LogInfo(ctx, fmt.Sprintf("dCacheTokens: %s, dCacheRatio: %s, cachedTokensWithRatio: %s",
+		dCacheTokens.String(),
+		dCacheRatio.String(),
+		dCacheTokens.Mul(dCacheRatio).String(),
+	))
 	if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 		// 减去 cached tokens
