@@ -446,17 +446,3 @@ curl -X POST https://ezmodel.cloud/v1/chat/completions \
 - **LlamaIndex：** 专注于 RAG（检索增强生成）应用
 
 ---
-
-## 版本更新
-
-### v1.0 (当前版本)
-- 完全兼容 OpenAI Chat Completions API
-- 支持流式和非流式响应
-- 支持工具调用和函数调用
-- 支持多模态输入（文本、图像、音频）
-
-### 即将推出
-- 更多模型选择
-- 增强的错误处理
-- 更精细的成本控制
-- 批量处理功能
