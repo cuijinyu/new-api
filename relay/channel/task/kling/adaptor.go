@@ -110,6 +110,65 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	// apiKey format: "access_key|secret_key"
 }
 
+var proScaleMap = map[string]float64{
+	"kling-v2-6":       1.0 / 1.0,
+	"kling-v2-5-turbo": 2.5 / 1.5,
+	"kling-v2-1":       3.5 / 2.0,
+	"kling-v1-6":       3.5 / 2.0,
+	"kling-v1-5":       3.5 / 2.0,
+	"kling-v1":         3.5 / 1,
+}
+
+var soundScaleMap = map[string]float64{
+	"kling-v2-6": 2.0 / 1.0,
+}
+
+func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
+	v, exists := c.Get("task_request")
+	if !exists {
+		return 1.0, fmt.Errorf("request not found in context")
+	}
+	req := v.(relaycommon.TaskSubmitReq)
+
+	otherScale := 1.0
+
+	metaDuration, hasDuration := req.Metadata["duration"]
+	duration := 5.0
+	if hasDuration {
+		durFloat, ok := metaDuration.(float64)
+		if !ok {
+			return 1.0, fmt.Errorf("invalid duration in metadata")
+		}
+		if durFloat != 5.0 && durFloat != 10.0 {
+			return 1.0, fmt.Errorf("unsupported duration")
+		}
+		duration = durFloat
+	}
+	Mode := req.Mode
+	if Mode == "pro" {
+		modelScale, ok := proScaleMap[req.Model]
+		if !ok {
+			return 1.0, fmt.Errorf("unsupported model for pro mode: %s", req.Model)
+		}
+		otherScale *= modelScale
+	}
+
+	// 需要检查 sound 的模型打表
+	soundScale, ok := soundScaleMap[req.Model]
+	metaSound, hasSound := req.Metadata["sound"]
+	if ok && hasSound {
+		strSound, ok := metaSound.(string)
+		if !ok {
+			return 1.0, fmt.Errorf("invalid sound in metadata")
+		}
+		if strSound == "on" {
+			otherScale *= soundScale
+		}
+	}
+
+	return float32(duration * otherScale), nil
+}
+
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// Use the standard validation method for TaskSubmitReq

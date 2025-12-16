@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -55,13 +56,23 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	}
 	modelPrice, success := ratio_setting.GetModelPrice(modelName, true)
 	if !success {
-		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[modelName]
-		if !ok {
-			modelPrice = 0.1
-		} else {
-			modelPrice = defaultPrice
-		}
+		taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("model price not found for model: %s", modelName),
+			"model_price_not_found",
+			http.StatusBadRequest,
+		)
+		return
 	}
+
+	// 获取计费计数
+	priceScale, err := adaptor.GetPriceScale(c, info)
+	if err != nil {
+		taskErr = service.TaskErrorWrapper(err, "get_price_scale_failed", http.StatusInternalServerError)
+		return
+	}
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf(
+		"GetPriceScale modelName %s priceScale %d", modelName, priceScale,
+	))
+	modelPrice = modelPrice * float64(priceScale)
 
 	// 预扣
 	groupRatio := ratio_setting.GetGroupRatio(info.UsingGroup)
