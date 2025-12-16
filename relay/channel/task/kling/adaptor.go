@@ -69,6 +69,7 @@ type requestPayload struct {
 	CameraControl  *CameraControl `json:"camera_control,omitempty"`
 	CallbackUrl    string         `json:"callback_url,omitempty"`
 	ExternalTaskId string         `json:"external_task_id,omitempty"`
+	Sound          string         `json:"sound,omitempty"`
 }
 
 type responsePayload struct {
@@ -132,26 +133,27 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 
 	otherScale := 1.0
 
-	metaDuration, hasDuration := req.Metadata["duration"]
-	duration := 5.0
-	if hasDuration {
-		strDuration, ok := metaDuration.(string)
-		if !ok {
-			return 1.0, fmt.Errorf("invalid duration in metadata")
-		}
-		if strDuration != "5" && strDuration != "10" {
-			return 1.0, fmt.Errorf("invalid duration in metadata")
-		}
-		var floatDur float64 = 0.0
-		// convert floatDur to String
-		if _, err := fmt.Sscanf(strDuration, "%f", &floatDur); err != nil {
-			return 1.0, fmt.Errorf("invalid duration format in metadata")
-		}
-		duration = floatDur
+	klingReq, err := a.convertToRequestPayload(&req)
+	if err != nil {
+		return 1.0, errors.Wrap(err, "convert request payload failed")
 	}
-	Mode := req.Mode
+
+	// 计算基础时长价格
+	var duration float64
+	if klingReq.Duration == "" {
+		duration = 5.0
+	} else {
+		if klingReq.Duration != "5" && klingReq.Duration != "10" {
+			return 1.0, fmt.Errorf("unsupported duration: %s", klingReq.Duration)
+		}
+		if _, err := fmt.Sscanf(klingReq.Duration, "%f", &duration); err != nil {
+			return 1.0, fmt.Errorf("invalid duration format")
+		}
+	}
+
+	Mode := klingReq.Mode
 	if Mode == "pro" {
-		modelScale, ok := proScaleMap[req.Model]
+		modelScale, ok := proScaleMap[klingReq.Model]
 		if !ok {
 			return 1.0, fmt.Errorf("unsupported model for pro mode: %s", req.Model)
 		}
@@ -159,16 +161,10 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	}
 
 	// 需要检查 sound 的模型打表
-	soundScale, ok := soundScaleMap[req.Model]
-	metaSound, hasSound := req.Metadata["sound"]
-	if ok && hasSound {
-		strSound, ok := metaSound.(string)
-		if !ok {
-			return 1.0, fmt.Errorf("invalid sound in metadata")
-		}
-		if strSound == "on" {
-			otherScale *= soundScale
-		}
+	soundScale, ok := soundScaleMap[klingReq.Model]
+	soundSetupOn := klingReq.Sound == "on"
+	if ok && soundSetupOn {
+		otherScale *= soundScale
 	}
 
 	return float32(duration * otherScale), nil
@@ -322,6 +318,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		CameraControl:  nil,
 		CallbackUrl:    "",
 		ExternalTaskId: "",
+		Sound:          "off",
 	}
 	if r.ModelName == "" {
 		r.ModelName = "kling-v1"
