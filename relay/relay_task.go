@@ -56,11 +56,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	}
 	modelPrice, success := ratio_setting.GetModelPrice(modelName, true)
 	if !success {
-		taskErr = service.TaskErrorWrapperLocal(fmt.Errorf("model price not found for model: %s", modelName),
-			"model_price_not_found",
-			http.StatusBadRequest,
-		)
-		return
+		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[modelName]
+		if !ok {
+			modelPrice = 0.1
+		} else {
+			modelPrice = defaultPrice
+		}
 	}
 
 	// 获取计费计数
@@ -70,7 +71,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		return
 	}
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf(
-		"GetPriceScale modelName %s priceScale %d", modelName, priceScale,
+		"GetPriceScale modelName %s priceScale %f", modelName, priceScale,
 	))
 	modelPrice = modelPrice * float64(priceScale)
 
