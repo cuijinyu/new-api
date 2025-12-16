@@ -135,14 +135,19 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	metaDuration, hasDuration := req.Metadata["duration"]
 	duration := 5.0
 	if hasDuration {
-		durFloat, ok := metaDuration.(float64)
+		strDuration, ok := metaDuration.(string)
 		if !ok {
 			return 1.0, fmt.Errorf("invalid duration in metadata")
 		}
-		if durFloat != 5.0 && durFloat != 10.0 {
-			return 1.0, fmt.Errorf("unsupported duration")
+		if strDuration != "5" && strDuration != "10" {
+			return 1.0, fmt.Errorf("invalid duration in metadata")
 		}
-		duration = durFloat
+		var floatDur float64 = 0.0
+		// convert floatDur to String
+		if _, err := fmt.Sscanf(strDuration, "%f", &floatDur); err != nil {
+			return 1.0, fmt.Errorf("invalid duration format in metadata")
+		}
+		duration = floatDur
 	}
 	Mode := req.Mode
 	if Mode == "pro" {
