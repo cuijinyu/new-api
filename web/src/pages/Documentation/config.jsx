@@ -19,6 +19,12 @@ import videoGenerationsContentZh from './content/video-generations.md?raw';
 import videoGenerationsContentEn from './content/video-generations.en.md?raw';
 import videoGenerationsStatusContentZh from './content/video-generations-status.md?raw';
 import videoGenerationsStatusContentEn from './content/video-generations-status.en.md?raw';
+import openaiTtsContentZh from './content/openai-tts.md?raw';
+import openaiTtsContentEn from './content/openai-tts.en.md?raw';
+import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
+import openaiTranscriptionsContentEn from './content/openai-transcriptions.en.md?raw';
+import openaiTranslationsContentZh from './content/openai-translations.md?raw';
+import openaiTranslationsContentEn from './content/openai-translations.en.md?raw';
 
 export const documentationConfig = [
   {
@@ -118,6 +124,39 @@ export const documentationConfig = [
     content: {
       zh: videoGenerationsStatusContentZh,
       en: videoGenerationsStatusContentEn
+    }
+  },
+  {
+    key: 'openai-tts',
+    title: 'doc.openaiTts.title',
+    description: 'doc.openaiTts.desc',
+    icon: <IconSend />,
+    path: '/docs/openai-tts',
+    content: {
+      zh: openaiTtsContentZh,
+      en: openaiTtsContentEn
+    }
+  },
+  {
+    key: 'openai-transcriptions',
+    title: 'doc.openaiTranscriptions.title',
+    description: 'doc.openaiTranscriptions.desc',
+    icon: <IconSend />,
+    path: '/docs/openai-transcriptions',
+    content: {
+      zh: openaiTranscriptionsContentZh,
+      en: openaiTranscriptionsContentEn
+    }
+  },
+  {
+    key: 'openai-translations',
+    title: 'doc.openaiTranslations.title',
+    description: 'doc.openaiTranslations.desc',
+    icon: <IconSend />,
+    path: '/docs/openai-translations',
+    content: {
+      zh: openaiTranslationsContentZh,
+      en: openaiTranslationsContentEn
     }
   }
 ];
