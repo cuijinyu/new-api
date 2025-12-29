@@ -46,6 +46,8 @@ type TaskAdaptor interface {
 	GetModelList() []string
 	GetChannelName() string
 
+	GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error)
+
 	// FetchTask
 	FetchTask(baseUrl, key string, body map[string]any) (*http.Response, error)
 

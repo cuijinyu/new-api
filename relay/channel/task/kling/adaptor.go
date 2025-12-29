@@ -69,6 +69,7 @@ type requestPayload struct {
 	CameraControl  *CameraControl `json:"camera_control,omitempty"`
 	CallbackUrl    string         `json:"callback_url,omitempty"`
 	ExternalTaskId string         `json:"external_task_id,omitempty"`
+	Sound          string         `json:"sound,omitempty"`
 }
 
 type responsePayload struct {
@@ -108,6 +109,65 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	a.apiKey = info.ApiKey
 
 	// apiKey format: "access_key|secret_key"
+}
+
+var proScaleMap = map[string]float64{
+	"kling-v2-6":       1.0 / 1.0,
+	"kling-v2-5-turbo": 2.5 / 1.5,
+	"kling-v2-1":       3.5 / 2.0,
+	"kling-v1-6":       3.5 / 2.0,
+	"kling-v1-5":       3.5 / 2.0,
+	"kling-v1":         3.5 / 1,
+}
+
+var soundScaleMap = map[string]float64{
+	"kling-v2-6": 2.0 / 1.0,
+}
+
+func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
+	v, exists := c.Get("task_request")
+	if !exists {
+		return 1.0, fmt.Errorf("request not found in context")
+	}
+	req := v.(relaycommon.TaskSubmitReq)
+
+	otherScale := 1.0
+
+	klingReq, err := a.convertToRequestPayload(&req)
+	if err != nil {
+		return 1.0, errors.Wrap(err, "convert request payload failed")
+	}
+
+	// 计算基础时长价格
+	var duration float64
+	if klingReq.Duration == "" {
+		duration = 5.0
+	} else {
+		if klingReq.Duration != "5" && klingReq.Duration != "10" {
+			return 1.0, fmt.Errorf("unsupported duration: %s", klingReq.Duration)
+		}
+		if _, err := fmt.Sscanf(klingReq.Duration, "%f", &duration); err != nil {
+			return 1.0, fmt.Errorf("invalid duration format")
+		}
+	}
+
+	Mode := klingReq.Mode
+	if Mode == "pro" {
+		modelScale, ok := proScaleMap[klingReq.Model]
+		if !ok {
+			return 1.0, fmt.Errorf("unsupported model for pro mode: %s", req.Model)
+		}
+		otherScale *= modelScale
+	}
+
+	// 需要检查 sound 的模型打表
+	soundScale, ok := soundScaleMap[klingReq.Model]
+	soundSetupOn := klingReq.Sound == "on"
+	if ok && soundSetupOn {
+		otherScale *= soundScale
+	}
+
+	return float32(duration * otherScale), nil
 }
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
@@ -258,6 +318,7 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 		CameraControl:  nil,
 		CallbackUrl:    "",
 		ExternalTaskId: "",
+		Sound:          "off",
 	}
 	if r.ModelName == "" {
 		r.ModelName = "kling-v1"

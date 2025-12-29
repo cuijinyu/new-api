@@ -94,6 +94,10 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	}
 }
 
+func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
+	return 1.0, nil
+}
+
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
