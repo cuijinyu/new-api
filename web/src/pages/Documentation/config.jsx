@@ -13,6 +13,12 @@ import examplesContentZh from './content/examples.md?raw';
 import examplesContentEn from './content/examples.en.md?raw';
 import referenceContentZh from './content/reference.md?raw';
 import referenceContentEn from './content/reference.en.md?raw';
+import openaiImagesContentZh from './content/openai-images.md?raw';
+import openaiImagesContentEn from './content/openai-images.en.md?raw';
+import videoGenerationsContentZh from './content/video-generations.md?raw';
+import videoGenerationsContentEn from './content/video-generations.en.md?raw';
+import videoGenerationsStatusContentZh from './content/video-generations-status.md?raw';
+import videoGenerationsStatusContentEn from './content/video-generations-status.en.md?raw';
 
 export const documentationConfig = [
   {
@@ -79,6 +85,39 @@ export const documentationConfig = [
     content: {
       zh: referenceContentZh,
       en: referenceContentEn
+    }
+  },
+  {
+    key: 'openai-images',
+    title: 'doc.openaiImages.title',
+    description: 'doc.openaiImages.desc',
+    icon: <IconSend />,
+    path: '/docs/openai-images',
+    content: {
+      zh: openaiImagesContentZh,
+      en: openaiImagesContentEn
+    }
+  },
+  {
+    key: 'video-generations',
+    title: 'doc.videoGenerations.title',
+    description: 'doc.videoGenerations.desc',
+    icon: <IconSend />,
+    path: '/docs/video-generations',
+    content: {
+      zh: videoGenerationsContentZh,
+      en: videoGenerationsContentEn
+    }
+  },
+  {
+    key: 'video-generations-status',
+    title: 'doc.videoGenerationsStatus.title',
+    description: 'doc.videoGenerationsStatus.desc',
+    icon: <IconSend />,
+    path: '/docs/video-generations-status',
+    content: {
+      zh: videoGenerationsStatusContentZh,
+      en: videoGenerationsStatusContentEn
     }
   }
 ];

@@ -30,17 +30,29 @@ const DocumentViewer = ({ doc }) => {
 
   const getContent = () => {
     if (!doc?.content) return '';
-    if (typeof doc.content === 'string') return doc.content;
     
-    const lang = i18n.language;
-    if (doc.content[lang]) return doc.content[lang];
+    let content = '';
+    if (typeof doc.content === 'string') {
+      content = doc.content;
+    } else {
+      const lang = i18n.language;
+      if (doc.content[lang]) {
+        content = doc.content[lang];
+      } else {
+        // Fallback for specific language codes (e.g. zh-CN -> zh)
+        const shortLang = lang.split('-')[0];
+        if (doc.content[shortLang]) {
+          content = doc.content[shortLang];
+        } else {
+          // Default fallback
+          content = doc.content.zh || doc.content.en || Object.values(doc.content)[0] || '';
+        }
+      }
+    }
     
-    // Fallback for specific language codes (e.g. zh-CN -> zh)
-    const shortLang = lang.split('-')[0];
-    if (doc.content[shortLang]) return doc.content[shortLang];
-    
-    // Default fallback
-    return doc.content.zh || doc.content.en || Object.values(doc.content)[0] || '';
+    // Replace placeholder domain with current site domain
+    const currentDomain = window.location.origin.replace(/^https?:\/\//, '');
+    return content.replace(/your-domain\.com/g, currentDomain);
   };
 
   const handleCopy = () => {
