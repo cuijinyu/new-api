@@ -67,6 +67,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	// 获取计费计数
 	priceScale, err := adaptor.GetPriceScale(c, info)
 	if err != nil {
+		logger.LogError(c.Request.Context(), fmt.Sprintf(
+			"GetPriceScale failed: platform=%s, modelName=%s, action=%s, error=%v",
+			platform, modelName, info.Action, err,
+		))
 		taskErr = service.TaskErrorWrapper(err, "get_price_scale_failed", http.StatusInternalServerError)
 		return
 	}

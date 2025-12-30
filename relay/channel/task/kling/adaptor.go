@@ -12,8 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
-	"github.com/samber/lo"
-
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pkg/errors"
@@ -53,23 +51,51 @@ type CameraControl struct {
 	Config *CameraConfig `json:"config,omitempty"`
 }
 
+type VoiceItem struct {
+	VoiceId string `json:"voice_id"`
+}
+
+type OmniImageItem struct {
+	ImageUrl string `json:"image_url"`
+	Type     string `json:"type,omitempty"` // first_frame, end_frame
+}
+
+type OmniVideoItem struct {
+	VideoUrl          string `json:"video_url"`
+	ReferType         string `json:"refer_type"`          // feature, base
+	KeepOriginalSound string `json:"keep_original_sound"` // yes, no
+}
+
+type OmniElementItem struct {
+	ElementId int64 `json:"element_id"`
+}
+
 type requestPayload struct {
-	Prompt         string         `json:"prompt,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	ImageTail      string         `json:"image_tail,omitempty"`
+	// --- 公共字段 ---
+	ModelName      string `json:"model_name,omitempty"`
+	Model          string `json:"model,omitempty"` // 兼容性字段
+	Prompt         string `json:"prompt,omitempty"`
+	Mode           string `json:"mode,omitempty"` // std, pro
+	Duration       string `json:"duration,omitempty"`
+	AspectRatio    string `json:"aspect_ratio,omitempty"`
+	CallbackUrl    string `json:"callback_url,omitempty"`
+	ExternalTaskId string `json:"external_task_id,omitempty"`
+
+	// --- List 2 (V1/V2) 专用字段 ---
 	NegativePrompt string         `json:"negative_prompt,omitempty"`
-	Mode           string         `json:"mode,omitempty"`
-	Duration       string         `json:"duration,omitempty"`
-	AspectRatio    string         `json:"aspect_ratio,omitempty"`
-	ModelName      string         `json:"model_name,omitempty"`
-	Model          string         `json:"model,omitempty"` // Compatible with upstreams that only recognize "model"
+	Image          string         `json:"image,omitempty"`      // 旧版首帧
+	ImageTail      string         `json:"image_tail,omitempty"` // 旧版尾帧
 	CfgScale       float64        `json:"cfg_scale,omitempty"`
+	Sound          string         `json:"sound,omitempty"`
+	CameraControl  *CameraControl `json:"camera_control,omitempty"`
 	StaticMask     string         `json:"static_mask,omitempty"`
 	DynamicMasks   []DynamicMask  `json:"dynamic_masks,omitempty"`
-	CameraControl  *CameraControl `json:"camera_control,omitempty"`
-	CallbackUrl    string         `json:"callback_url,omitempty"`
-	ExternalTaskId string         `json:"external_task_id,omitempty"`
-	Sound          string         `json:"sound,omitempty"`
+	VoiceList      []VoiceItem    `json:"voice_list,omitempty"`
+
+	// --- List 1 (Omni) 新增字段 ---
+	ImageList   []OmniImageItem   `json:"image_list,omitempty"`
+	VideoList   []OmniVideoItem   `json:"video_list,omitempty"`
+	ElementList []OmniElementItem `json:"element_list,omitempty"`
 }
 
 type responsePayload struct {
@@ -111,17 +137,227 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 	// apiKey format: "access_key|secret_key"
 }
 
+// withVideoInputScaleMap 带视频输入的价格倍率（可叠加在 Std 或 Pro 上）
+var withVideoInputScaleMap = map[string]float64{
+	"kling-video-o1": 0.126 / 0.084, // 1.5 - 相对于无视频输入的倍率
+}
+
+// proScaleMap Pro 模式相对于 Std 模式的价格倍率
 var proScaleMap = map[string]float64{
-	"kling-v2-6":       1.0 / 1.0,
-	"kling-v2-5-turbo": 2.5 / 1.5,
-	"kling-v2-1":       3.5 / 2.0,
-	"kling-v1-6":       3.5 / 2.0,
-	"kling-v1-5":       3.5 / 2.0,
-	"kling-v1":         3.5 / 1,
+	"kling-video-o1":   0.112 / 0.084, // 1.333 - Pro/Std 倍率
+	"kling-v2-6":       0.07 / 0.07,   // 1.0 - Pro 和 Std 价格相同
+	"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
+	"kling-v2-1":       0.098 / 0.056, // 1.75
+	"kling-v1-6":       0.098 / 0.056, // 1.75
+	"kling-v1-5":       0.098 / 0.056, // 1.75
+	"kling-v1":         0.098 / 0.028, // 3.5
+}
+
+// masterScaleMap Master 模式相对于 Std 模式的价格倍率
+var masterScaleMap = map[string]float64{
+	"kling-v2-1-master": 1.0, // 1.0 - Master 模型没有 Std，以 Master 为基准
+	"kling-v2-master":   1.0, // 1.0 - Master 模型没有 Std，以 Master 为基准
+}
+
+// stdSupportedModels 支持 Std 模式的模型列表
+var stdSupportedModels = map[string]bool{
+	"kling-video-o1":   true,
+	"kling-v2-6":       true,
+	"kling-v2-5-turbo": true,
+	"kling-v2-1":       true,
+	"kling-v1-6":       true,
+	"kling-v1-5":       true,
+	"kling-v1":         true,
 }
 
 var soundScaleMap = map[string]float64{
 	"kling-v2-6": 2.0 / 1.0,
+}
+
+var voiceControlScaleMap = map[string]float64{
+	"kling-v2-6": 1.2 / 1.0,
+}
+
+func isUseVoiceControl(req *requestPayload) bool {
+	if len(req.VoiceList) == 0 {
+		return false
+	}
+
+	// 检查 prompt 中是否包含完整的音色标记，如 <<<voice_1>>> 或 <<<voice_2>>>
+	// 一次视频生成任务至多引用2个音色
+	for i := 1; i <= len(req.VoiceList); i++ {
+		voiceTag := fmt.Sprintf("<<<voice_%d>>>", i)
+		if strings.Contains(req.Prompt, voiceTag) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateIntegerDuration 验证 duration 是否为纯整数格式，并返回解析后的值
+// 这个函数确保 duration 字符串格式正确（无小数点、无其他字符）
+func validateIntegerDuration(duration string) (int, error) {
+	var durationVal int
+	if _, err := fmt.Sscanf(duration, "%d", &durationVal); err != nil {
+		return 0, fmt.Errorf("invalid duration format: %s", duration)
+	}
+	// 验证解析后的值转回字符串是否与原始值一致，确保是纯整数
+	checkDuration := fmt.Sprintf("%d", durationVal)
+	if duration != checkDuration {
+		return 0, fmt.Errorf("duration must be an integer, got: %s", duration)
+	}
+	return durationVal, nil
+}
+
+// calculateModeScale 计算模式倍率（std/pro/master）
+func calculateModeScale(mode, model string) (float64, error) {
+	switch mode {
+	case "std", "":
+		// Std 模式，基准倍率 1.0
+		if _, ok := stdSupportedModels[model]; !ok {
+			return 1.0, fmt.Errorf("model %s does not support std mode", model)
+		}
+		return 1.0, nil
+	case "pro":
+		if scale, ok := proScaleMap[model]; ok {
+			return scale, nil
+		}
+		return 1.0, fmt.Errorf("unsupported model for pro mode: %s", model)
+	case "master":
+		if scale, ok := masterScaleMap[model]; ok {
+			return scale, nil
+		}
+		return 1.0, fmt.Errorf("unsupported model for master mode: %s", model)
+	default:
+		return 1.0, fmt.Errorf("unsupported mode: %s", mode)
+	}
+}
+
+// calculateAdvanceScale 计算高级参数倍率（视频输入、音频、音色控制）
+func calculateAdvanceScale(action string, req *requestPayload) float64 {
+	scale := 1.0
+
+	// 1. 视频输入倍率
+	hasVideoInput := action == constant.TaskActionOmniVideo && len(req.VideoList) > 0
+	if hasVideoInput {
+		if videoScale, ok := withVideoInputScaleMap[req.Model]; ok {
+			scale *= videoScale
+		}
+	}
+
+	// 2. 音频倍率
+	if req.Sound == "on" {
+		if soundScale, ok := soundScaleMap[req.Model]; ok {
+			scale *= soundScale
+
+			// 3. 音色控制倍率（只在开启音频时生效）
+			if isUseVoiceControl(req) {
+				if voiceControlScale, ok := voiceControlScaleMap[req.Model]; ok {
+					scale *= voiceControlScale
+				}
+			}
+		}
+	}
+
+	return scale
+}
+
+// calculateOmniVideoDuration 计算 omni-video 端点的 duration
+// 规则：
+// 1. 文生、图生（不含首尾帧）：可选 5s/10s
+// 2. 有视频输入且使用视频编辑功能（类型=base）：不可指定时长，跟视频对齐
+// 3. 其他情况（不传视频+传图片+主体，或传视频+类型=feature）：可选 3-10s
+func calculateOmniVideoDuration(req *requestPayload) (int, error) {
+	hasVideo := len(req.VideoList) > 0
+	hasImage := len(req.ImageList) > 0
+	isVideoBase := false
+
+	// 检查是否使用视频编辑功能（refer_type=base）
+	for _, video := range req.VideoList {
+		if video.ReferType == "base" {
+			isVideoBase = true
+			break
+		}
+	}
+
+	// 规则 2: 有视频输入且使用视频编辑功能（类型=base）
+	if hasVideo && isVideoBase {
+		return 0, fmt.Errorf("video editing mode (refer_type=base) is not supported")
+	}
+
+	// 规则 1: 文生视频（无图片、无视频输入）
+	if !hasVideo && !hasImage {
+		if req.Duration != "5" && req.Duration != "10" {
+			return 0, fmt.Errorf("text2video only supports duration 5 or 10, got: %s", req.Duration)
+		}
+		durationVal, err := validateIntegerDuration(req.Duration)
+		if err != nil {
+			return 0, err
+		}
+		return durationVal, nil
+	}
+
+	// 规则 1: 图生视频（有图片但无视频）
+	if hasImage && !hasVideo {
+		// 检查是否是首尾帧模式
+		hasFirstOrEndFrame := false
+		for _, img := range req.ImageList {
+			if img.Type == "first_frame" || img.Type == "end_frame" {
+				hasFirstOrEndFrame = true
+				break
+			}
+		}
+
+		if hasFirstOrEndFrame {
+			// 规则 3: 首尾帧模式：可选 3-10s
+			durationVal, err := validateIntegerDuration(req.Duration)
+			if err != nil {
+				return 0, err
+			}
+			if durationVal < 3 || durationVal > 10 {
+				return 0, fmt.Errorf("first/end frame mode supports duration 3-10, got: %d", durationVal)
+			}
+			return durationVal, nil
+		} else {
+			// 规则 1: 普通图生视频：仅支持 5 和 10s
+			if req.Duration != "5" && req.Duration != "10" {
+				return 0, fmt.Errorf("image2video only supports duration 5 or 10, got: %s", req.Duration)
+			}
+			durationVal, err := validateIntegerDuration(req.Duration)
+			if err != nil {
+				return 0, err
+			}
+			return durationVal, nil
+		}
+	}
+
+	// 规则 3: 其他情况（传视频+类型=feature，或混合输入）：可选 3-10s
+	durationVal, err := validateIntegerDuration(req.Duration)
+	if err != nil {
+		return 0, err
+	}
+	if durationVal < 3 || durationVal > 10 {
+		return 0, fmt.Errorf("duration must be between 3-10, got: %d", durationVal)
+	}
+	return durationVal, nil
+}
+
+// calculateLegacyVideoDuration 计算传统端点（text2video/image2video）的 duration
+// 规则：仅支持 5s 和 10s
+func calculateLegacyVideoDuration(req *requestPayload) (int, error) {
+	if req.Duration == "" {
+		return 5, nil
+	}
+
+	if req.Duration != "5" && req.Duration != "10" {
+		return 0, fmt.Errorf("legacy endpoint only supports duration 5 or 10, got: %s", req.Duration)
+	}
+
+	durationVal, err := validateIntegerDuration(req.Duration)
+	if err != nil {
+		return 0, err
+	}
+	return durationVal, nil
 }
 
 func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
@@ -131,43 +367,54 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
-	otherScale := 1.0
-
 	klingReq, err := a.convertToRequestPayload(&req)
 	if err != nil {
 		return 1.0, errors.Wrap(err, "convert request payload failed")
 	}
 
-	// 计算基础时长价格
-	var duration float64
-	if klingReq.Duration == "" {
-		duration = 5.0
+	// 从 context 中获取最新的 action（可能被 middleware 设置）
+	action := info.Action
+	if ctxAction := c.GetString("action"); ctxAction != "" {
+		action = ctxAction
+	}
+
+	// 步骤 1: 计算 duration
+	var durationInt int
+	if action == constant.TaskActionOmniVideo {
+		durationInt, err = calculateOmniVideoDuration(klingReq)
 	} else {
-		if klingReq.Duration != "5" && klingReq.Duration != "10" {
-			return 1.0, fmt.Errorf("unsupported duration: %s", klingReq.Duration)
-		}
-		if _, err := fmt.Sscanf(klingReq.Duration, "%f", &duration); err != nil {
-			return 1.0, fmt.Errorf("invalid duration format")
-		}
+		durationInt, err = calculateLegacyVideoDuration(klingReq)
+	}
+	if err != nil {
+		return 1.0, err
+	}
+	duration := float64(durationInt)
+	if duration < 1.0 {
+		return 1.0, fmt.Errorf("invalid duration: %.2f, must be >= 1.0", duration)
 	}
 
-	Mode := klingReq.Mode
-	if Mode == "pro" {
-		modelScale, ok := proScaleMap[klingReq.Model]
-		if !ok {
-			return 1.0, fmt.Errorf("unsupported model for pro mode: %s", req.Model)
-		}
-		otherScale *= modelScale
+	// 步骤 2: 计算模式倍率 (std/pro/master)
+	modeScale, err := calculateModeScale(klingReq.Mode, klingReq.Model)
+	if err != nil {
+		return 1.0, err
+	}
+	if modeScale < 1.0 {
+		return 1.0, fmt.Errorf("invalid modeScale: %.2f, must be >= 1.0", modeScale)
 	}
 
-	// 需要检查 sound 的模型打表
-	soundScale, ok := soundScaleMap[klingReq.Model]
-	soundSetupOn := klingReq.Sound == "on"
-	if ok && soundSetupOn {
-		otherScale *= soundScale
+	// 步骤 3: 计算高级参数倍率 (视频输入、音频、音色控制)
+	advanceScale := calculateAdvanceScale(action, klingReq)
+	if advanceScale < 1.0 {
+		return 1.0, fmt.Errorf("invalid advanceScale: %.2f, must be >= 1.0", advanceScale)
 	}
 
-	return float32(duration * otherScale), nil
+	// 步骤 4: 计算最终价格
+	finalScale := duration * modeScale * advanceScale
+	if finalScale < 1.0 {
+		return 1.0, fmt.Errorf("invalid finalScale: %.2f, must be >= 1.0", finalScale)
+	}
+
+	return float32(finalScale), nil
 }
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
@@ -178,7 +425,15 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	path := lo.Ternary(info.Action == constant.TaskActionGenerate, "/v1/videos/image2video", "/v1/videos/text2video")
+	var path string
+	switch info.Action {
+	case constant.TaskActionOmniVideo:
+		path = "/v1/videos/omni-video"
+	case constant.TaskActionGenerate:
+		path = "/v1/videos/image2video"
+	default:
+		path = "/v1/videos/text2video"
+	}
 
 	if isNewAPIRelay(info.ApiKey) {
 		return fmt.Sprintf("%s/kling%s", a.baseURL, path), nil
@@ -213,9 +468,18 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
-	if body.Image == "" && body.ImageTail == "" {
-		c.Set("action", constant.TaskActionTextGenerate)
+
+	// 只有在非 Omni 端点时，才判断是否为文生视频
+	currentAction := c.GetString("action")
+	if currentAction != constant.TaskActionOmniVideo {
+		// 兼容旧版和新版字段，判断是否为文生视频
+		// 只有在没有任何输入（图片、视频）时才是纯文生视频
+		hasAnyInput := body.Image != "" || body.ImageTail != ""
+		if !hasAnyInput {
+			c.Set("action", constant.TaskActionTextGenerate)
+		}
 	}
+
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -268,7 +532,17 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 	if !ok {
 		return nil, fmt.Errorf("invalid action")
 	}
-	path := lo.Ternary(action == constant.TaskActionGenerate, "/v1/videos/image2video", "/v1/videos/text2video")
+
+	var path string
+	switch action {
+	case constant.TaskActionOmniVideo:
+		path = "/v1/videos/omni-video"
+	case constant.TaskActionGenerate:
+		path = "/v1/videos/image2video"
+	default:
+		path = "/v1/videos/text2video"
+	}
+
 	url := fmt.Sprintf("%s%s/%s", baseUrl, path, taskID)
 	if isNewAPIRelay(key) {
 		url = fmt.Sprintf("%s/kling%s/%s", baseUrl, path, taskID)
