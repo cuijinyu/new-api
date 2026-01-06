@@ -180,7 +180,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 							if unitPriceAdaptor, ok := adaptor.(interface {
 								GetUnitPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error)
 							}); ok {
-								relayInfo := &relaycommon.RelayInfo{OriginModelName: modelName, Action: task.Action}
+								relayInfo := &relaycommon.RelayInfo{OriginModelName: modelName, TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: task.Action}}
 								tempCtx, _ := gin.CreateTestContext(nil)
 								tempCtx.Set("task_request", relaycommon.TaskSubmitReq{Model: modelName, Metadata: taskData})
 								if mode, ok := taskData["mode"].(string); ok {
