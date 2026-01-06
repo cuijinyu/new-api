@@ -70,6 +70,18 @@ type OmniElementItem struct {
 	ElementId int64 `json:"element_id"`
 }
 
+// motionControlRequestPayload Motion Control API 专用请求结构
+type motionControlRequestPayload struct {
+	Prompt               string `json:"prompt,omitempty"`                 // 文本提示词，可选，不超过2500字符
+	ImageUrl             string `json:"image_url"`                        // 参考图像，必须
+	VideoUrl             string `json:"video_url"`                        // 参考视频，必须
+	KeepOriginalSound    string `json:"keep_original_sound,omitempty"`    // 是否保留视频原声，可选，默认yes，枚举值：yes/no
+	CharacterOrientation string `json:"character_orientation"`            // 人物朝向，必须，枚举值：image/video
+	Mode                 string `json:"mode"`                             // 生成模式，必须，枚举值：std/pro
+	CallbackUrl          string `json:"callback_url,omitempty"`           // 回调地址，可选
+	ExternalTaskId       string `json:"external_task_id,omitempty"`       // 自定义任务ID，可选
+}
+
 type requestPayload struct {
 	// --- 公共字段 ---
 	ModelName      string `json:"model_name,omitempty"`
@@ -145,7 +157,7 @@ var withVideoInputScaleMap = map[string]float64{
 // proScaleMap Pro 模式相对于 Std 模式的价格倍率
 var proScaleMap = map[string]float64{
 	"kling-video-o1":   0.112 / 0.084, // 1.333 - Pro/Std 倍率
-	"kling-v2-6":       0.07 / 0.07,   // 1.0 - Pro 和 Std 价格相同
+	"kling-v2-6":       0.07 / 0.07,           // 普通任务 Pro 和 Std 价格相同
 	"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 	"kling-v2-1":       0.098 / 0.056, // 1.75
 	"kling-v1-6":       0.098 / 0.056, // 1.75
@@ -360,6 +372,60 @@ func calculateLegacyVideoDuration(req *requestPayload) (int, error) {
 	return durationVal, nil
 }
 
+// motionControlProScale Motion Control Pro 模式相对于 Std 模式的价格倍率
+var motionControlProScale = 1.5 // Pro 模式价格是 Std 的 1.5 倍
+
+// calculateUnitPriceScale 计算单价系数（Mode、声音、视频输入等系数的乘积）
+func (a *TaskAdaptor) calculateUnitPriceScale(action string, req *relaycommon.TaskSubmitReq) (float64, error) {
+	mode := defaultString(req.Mode, "std")
+
+	// 1. 计算模式倍率 (std/pro/master)
+	var modeScale float64 = 1.0
+	var err error
+
+	if action == constant.TaskActionMotionControl {
+		// 动作控制专用倍率：Std = 1.0, Pro = 0.8/0.5 = 1.6
+		if mode == "pro" {
+			modeScale = 1.6
+		} else {
+			modeScale = 1.0
+		}
+	} else {
+		// 普通任务沿用原有的模型倍率表
+		modeScale, err = calculateModeScale(mode, req.Model)
+		if err != nil {
+			return 1.0, err
+		}
+	}
+
+	// 2. 计算高级参数倍率 (音频、音色控制、视频输入等)
+	klingReq, _ := a.convertToRequestPayload(req)
+	advanceScale := calculateAdvanceScale(action, klingReq)
+
+	return modeScale * advanceScale, nil
+}
+
+// GetUnitPriceScale 获取单位价格倍率（用于异步核销）
+func (a *TaskAdaptor) GetUnitPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
+	v, exists := c.Get("task_request")
+	if !exists {
+		return 1.0, fmt.Errorf("request not found in context")
+	}
+	req := v.(relaycommon.TaskSubmitReq)
+
+	action := info.Action
+	if ctxAction := c.GetString("action"); ctxAction != "" {
+		action = ctxAction
+	}
+
+	scale, err := a.calculateUnitPriceScale(action, &req)
+	if err != nil {
+		return 1.0, err
+	}
+	return float32(scale), nil
+}
+
+// GetPriceScale 获取总价格倍率（用于预扣费阶段：预估时长 * 单价系数）
 func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error) {
 	v, exists := c.Get("task_request")
 	if !exists {
@@ -367,55 +433,48 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
-	klingReq, err := a.convertToRequestPayload(&req)
-	if err != nil {
-		return 1.0, errors.Wrap(err, "convert request payload failed")
-	}
-
-	// 从 context 中获取最新的 action（可能被 middleware 设置）
 	action := info.Action
 	if ctxAction := c.GetString("action"); ctxAction != "" {
 		action = ctxAction
 	}
 
-	// 步骤 1: 计算 duration
-	var durationInt int
-	if action == constant.TaskActionOmniVideo {
-		durationInt, err = calculateOmniVideoDuration(klingReq)
+	// 1. 获取单价系数
+	unitScale, err := a.calculateUnitPriceScale(action, &req)
+	if err != nil {
+		return 1.0, err
+	}
+
+	// 2. 计算预估时长
+	klingReq, _ := a.convertToRequestPayload(&req)
+	var duration float64 = 1.0
+
+	if action == constant.TaskActionMotionControl {
+		// Motion Control 预扣最大时长：image 10s, video 30s
+		duration = 10.0
+		if req.Metadata != nil {
+			orientation, _ := req.Metadata["character_orientation"].(string)
+			if orientation == "video" {
+				duration = 30.0
+			}
+		}
 	} else {
-		durationInt, err = calculateLegacyVideoDuration(klingReq)
-	}
-	if err != nil {
-		return 1.0, err
-	}
-	duration := float64(durationInt)
-	if duration < 1.0 {
-		return 1.0, fmt.Errorf("invalid duration: %.2f, must be >= 1.0", duration)
-	}
-
-	// 步骤 2: 计算模式倍率 (std/pro/master)
-	modeScale, err := calculateModeScale(klingReq.Mode, klingReq.Model)
-	if err != nil {
-		return 1.0, err
-	}
-	if modeScale < 1.0 {
-		return 1.0, fmt.Errorf("invalid modeScale: %.2f, must be >= 1.0", modeScale)
+		var durationInt int
+		if action == constant.TaskActionOmniVideo {
+			durationInt, err = calculateOmniVideoDuration(klingReq)
+		} else {
+			durationInt, err = calculateLegacyVideoDuration(klingReq)
+		}
+		if err != nil {
+			return 1.0, err
+		}
+		duration = float64(durationInt)
 	}
 
-	// 步骤 3: 计算高级参数倍率 (视频输入、音频、音色控制)
-	advanceScale := calculateAdvanceScale(action, klingReq)
-	if advanceScale < 1.0 {
-		return 1.0, fmt.Errorf("invalid advanceScale: %.2f, must be >= 1.0", advanceScale)
-	}
-
-	// 步骤 4: 计算最终价格
-	finalScale := duration * modeScale * advanceScale
-	if finalScale < 1.0 {
-		return 1.0, fmt.Errorf("invalid finalScale: %.2f, must be >= 1.0", finalScale)
-	}
-
-	return float32(finalScale), nil
+	return float32(duration * unitScale), nil
 }
+
+// ... 保持其他代码不变 ...
+
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
@@ -429,6 +488,8 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 	switch info.Action {
 	case constant.TaskActionOmniVideo:
 		path = "/v1/videos/omni-video"
+	case constant.TaskActionMotionControl:
+		path = "/v1/videos/motion-control"
 	case constant.TaskActionGenerate:
 		path = "/v1/videos/image2video"
 	default:
@@ -464,13 +525,27 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	}
 	req := v.(relaycommon.TaskSubmitReq)
 
+	currentAction := c.GetString("action")
+
+	// Motion Control 使用专用的请求结构
+	if currentAction == constant.TaskActionMotionControl {
+		body, err := a.convertToMotionControlPayload(&req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+
 	body, err := a.convertToRequestPayload(&req)
 	if err != nil {
 		return nil, err
 	}
 
 	// 只有在非 Omni 端点时，才判断是否为文生视频
-	currentAction := c.GetString("action")
 	if currentAction != constant.TaskActionOmniVideo {
 		// 兼容旧版和新版字段，判断是否为文生视频
 		// 只有在没有任何输入（图片、视频）时才是纯文生视频
@@ -510,7 +585,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return
 	}
 	if kResp.Code != 0 {
-		taskErr = service.TaskErrorWrapperLocal(fmt.Errorf(kResp.Message), "task_failed", http.StatusBadRequest)
+		taskErr = service.TaskErrorWrapperLocal(errors.New(kResp.Message), "task_failed", http.StatusBadRequest)
 		return
 	}
 	ov := dto.NewOpenAIVideo()
@@ -537,6 +612,8 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 	switch action {
 	case constant.TaskActionOmniVideo:
 		path = "/v1/videos/omni-video"
+	case constant.TaskActionMotionControl:
+		path = "/v1/videos/motion-control"
 	case constant.TaskActionGenerate:
 		path = "/v1/videos/image2video"
 	default:
@@ -606,6 +683,46 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	return &r, nil
+}
+
+// convertToMotionControlPayload 转换为 Motion Control API 专用请求格式
+func (a *TaskAdaptor) convertToMotionControlPayload(req *relaycommon.TaskSubmitReq) (*motionControlRequestPayload, error) {
+	r := motionControlRequestPayload{
+		Prompt:            req.Prompt,
+		Mode:              defaultString(req.Mode, "std"),
+		KeepOriginalSound: "yes", // 默认保留原声
+	}
+
+	// 从 metadata 中解析所有字段
+	if req.Metadata != nil {
+		metaBytes, err := json.Marshal(req.Metadata)
+		if err != nil {
+			return nil, errors.Wrap(err, "marshal metadata failed")
+		}
+		err = json.Unmarshal(metaBytes, &r)
+		if err != nil {
+			return nil, errors.Wrap(err, "unmarshal metadata failed")
+		}
+	}
+
+	// 验证必填字段
+	if r.ImageUrl == "" {
+		return nil, fmt.Errorf("image_url is required for motion-control")
+	}
+	if r.VideoUrl == "" {
+		return nil, fmt.Errorf("video_url is required for motion-control")
+	}
+	if r.CharacterOrientation == "" {
+		return nil, fmt.Errorf("character_orientation is required for motion-control, must be 'image' or 'video'")
+	}
+	if r.CharacterOrientation != "image" && r.CharacterOrientation != "video" {
+		return nil, fmt.Errorf("character_orientation must be 'image' or 'video', got: %s", r.CharacterOrientation)
+	}
+	if r.Mode != "std" && r.Mode != "pro" {
+		return nil, fmt.Errorf("mode must be 'std' or 'pro', got: %s", r.Mode)
+	}
+
 	return &r, nil
 }
 
@@ -692,9 +809,16 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	default:
 		return nil, fmt.Errorf("unknown task status: %s", status)
 	}
-	if videos := resPayload.Data.TaskResult.Videos; len(videos) > 0 {
-		video := videos[0]
+	if status == "succeed" && len(resPayload.Data.TaskResult.Videos) > 0 {
+		video := resPayload.Data.TaskResult.Videos[0]
 		taskInfo.Url = video.Url
+		// 将视频实际时长解析并存入明确的 Duration 字段（用于异步核销）
+		if video.Duration != "" {
+			var duration float64
+			if _, err := fmt.Sscanf(video.Duration, "%f", &duration); err == nil {
+				taskInfo.Duration = duration
+			}
+		}
 	}
 	return taskInfo, nil
 }

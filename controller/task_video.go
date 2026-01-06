@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/gin-gonic/gin"
 )
 
 func UpdateVideoTaskAll(ctx context.Context, platform constant.TaskPlatform, taskChannelM map[int][]string, taskM map[string]*model.Task) error {
@@ -142,89 +143,81 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 			task.FailReason = taskResult.Url
 		}
 
-		// 如果返回了 total_tokens 并且配置了模型倍率(非固定价格),则重新计费
-		if taskResult.TotalTokens > 0 {
+		// 如果返回了实际消耗数据，则进行精确核销
+		if taskResult.Duration > 0 || taskResult.TotalTokens > 0 {
+			// 优先使用 Duration，如果没有则回退到 TotalTokens
+			actualUsage := taskResult.Duration
+			if actualUsage <= 0 {
+				actualUsage = float64(taskResult.TotalTokens)
+			}
+
 			// 获取模型名称
 			var taskData map[string]interface{}
 			if err := json.Unmarshal(task.Data, &taskData); err == nil {
 				if modelName, ok := taskData["model"].(string); ok && modelName != "" {
 					// 获取模型价格和倍率
 					modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
-					// 只有配置了倍率(非固定价格)时才按 token 重新计费
 					if hasRatioSetting && modelRatio > 0 {
-						// 获取用户和组的倍率信息
 						group := task.Group
 						if group == "" {
-							user, err := model.GetUserById(task.UserId, false)
-							if err == nil {
+							if user, err := model.GetUserById(task.UserId, false); err == nil {
 								group = user.Group
 							}
 						}
 						if group != "" {
 							groupRatio := ratio_setting.GetGroupRatio(group)
 							userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-							var finalGroupRatio float64
+							finalGroupRatio := groupRatio
 							if hasUserGroupRatio {
 								finalGroupRatio = userGroupRatio
-							} else {
-								finalGroupRatio = groupRatio
 							}
 
-							// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio
-							actualQuota := int(float64(taskResult.TotalTokens) * modelRatio * finalGroupRatio)
+							// 计算单价倍率
+							actualModelRatio := modelRatio
+							dynamicScale := 1.0
 
-							// 计算差额
+							// 尝试从适配器获取“单价系数”
+							if unitPriceAdaptor, ok := adaptor.(interface {
+								GetUnitPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error)
+							}); ok {
+								relayInfo := &relaycommon.RelayInfo{OriginModelName: modelName, Action: task.Action}
+								tempCtx, _ := gin.CreateTestContext(nil)
+								tempCtx.Set("task_request", relaycommon.TaskSubmitReq{Model: modelName, Metadata: taskData})
+								if mode, ok := taskData["mode"].(string); ok {
+									tempCtx.Set("mode", mode)
+								}
+								if scale, err := unitPriceAdaptor.GetUnitPriceScale(tempCtx, relayInfo); err == nil {
+									dynamicScale = float64(scale)
+									actualModelRatio = dynamicScale * modelRatio
+								}
+							}
+
+							// 实际应扣额度 = 实际时长 * (单价系数 * 基础倍率) * 分组倍率
+							actualQuota := int(actualUsage * actualModelRatio * finalGroupRatio)
 							preConsumedQuota := task.Quota
 							quotaDelta := actualQuota - preConsumedQuota
 
+							logDetail := fmt.Sprintf("任务ID: %s, 类型: %s, 实际时长: %.2fs, 模型倍率: %.2f, 动态系数: %.2f, 分组倍率: %.2f, 预扣: %s, 实际: %s",
+								task.TaskID, task.Action, actualUsage, modelRatio, dynamicScale, finalGroupRatio,
+								logger.LogQuota(preConsumedQuota), logger.LogQuota(actualQuota))
+
 							if quotaDelta > 0 {
-								// 需要补扣费
-								logger.LogInfo(ctx, fmt.Sprintf("视频任务 %s 预扣费后补扣费：%s（实际消耗：%s，预扣费：%s，tokens：%d）",
-									task.TaskID,
-									logger.LogQuota(quotaDelta),
-									logger.LogQuota(actualQuota),
-									logger.LogQuota(preConsumedQuota),
-									taskResult.TotalTokens,
-								))
-								if err := model.DecreaseUserQuota(task.UserId, quotaDelta); err != nil {
-									logger.LogError(ctx, fmt.Sprintf("补扣费失败: %s", err.Error()))
-								} else {
+								logger.LogInfo(ctx, "视频任务补扣费: "+logDetail)
+								if err := model.DecreaseUserQuota(task.UserId, quotaDelta); err == nil {
 									model.UpdateUserUsedQuotaAndRequestCount(task.UserId, quotaDelta)
 									model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
-									task.Quota = actualQuota // 更新任务记录的实际扣费额度
-
-									// 记录消费日志
-									logContent := fmt.Sprintf("视频任务成功补扣费，模型倍率 %.2f，分组倍率 %.2f，tokens %d，预扣费 %s，实际扣费 %s，补扣费 %s",
-										modelRatio, finalGroupRatio, taskResult.TotalTokens,
-										logger.LogQuota(preConsumedQuota), logger.LogQuota(actualQuota), logger.LogQuota(quotaDelta))
-									model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
+									task.Quota = actualQuota
+									model.RecordLog(task.UserId, model.LogTypeSystem, "视频任务成功补扣费: "+logDetail)
 								}
 							} else if quotaDelta < 0 {
-								// 需要退还多扣的费用
 								refundQuota := -quotaDelta
-								logger.LogInfo(ctx, fmt.Sprintf("视频任务 %s 预扣费后返还：%s（实际消耗：%s，预扣费：%s，tokens：%d）",
-									task.TaskID,
-									logger.LogQuota(refundQuota),
-									logger.LogQuota(actualQuota),
-									logger.LogQuota(preConsumedQuota),
-									taskResult.TotalTokens,
-								))
-								if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err != nil {
-									logger.LogError(ctx, fmt.Sprintf("退还预扣费失败: %s", err.Error()))
-								} else {
-									task.Quota = actualQuota // 更新任务记录的实际扣费额度
-
-									// 记录退款日志
-									logContent := fmt.Sprintf("视频任务成功退还多扣费用，模型倍率 %.2f，分组倍率 %.2f，tokens %d，预扣费 %s，实际扣费 %s，退还 %s",
-										modelRatio, finalGroupRatio, taskResult.TotalTokens,
-										logger.LogQuota(preConsumedQuota), logger.LogQuota(actualQuota), logger.LogQuota(refundQuota))
-									model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
+								logger.LogInfo(ctx, "视频任务额度返还: "+logDetail)
+								if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err == nil {
+									task.Quota = actualQuota
+									model.RecordLog(task.UserId, model.LogTypeSystem, "视频任务成功退还多扣费用: "+logDetail)
 								}
 							} else {
-								// quotaDelta == 0, 预扣费刚好准确
-								logger.LogInfo(ctx, fmt.Sprintf("视频任务 %s 预扣费准确（%s，tokens：%d）",
-									task.TaskID, logger.LogQuota(actualQuota), taskResult.TotalTokens))
+								logger.LogInfo(ctx, "视频任务预扣费准确: "+logDetail)
 							}
 						}
 					}

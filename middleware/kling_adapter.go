@@ -39,20 +39,23 @@ func KlingRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		// 判断任务类型（在重写路径之前检测原始路径）
-		originalPath := c.Request.URL.Path
-		isOmniVideo := strings.Contains(originalPath, "omni-video")
+	// 判断任务类型（在重写路径之前检测原始路径）
+	originalPath := c.Request.URL.Path
+	isOmniVideo := strings.Contains(originalPath, "omni-video")
+	isMotionControl := strings.Contains(originalPath, "motion-control")
 
-		// Rewrite request body and path
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
-		c.Request.URL.Path = "/v1/video/generations"
+	// Rewrite request body and path
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
+	c.Request.URL.Path = "/v1/video/generations"
 
-		// 设置任务类型
-		if isOmniVideo {
-			c.Set("action", constant.TaskActionOmniVideo)
-		} else if image, ok := originalReq["image"]; !ok || image == "" {
-			c.Set("action", constant.TaskActionTextGenerate)
-		}
+	// 设置任务类型
+	if isOmniVideo {
+		c.Set("action", constant.TaskActionOmniVideo)
+	} else if isMotionControl {
+		c.Set("action", constant.TaskActionMotionControl)
+	} else if image, ok := originalReq["image"]; !ok || image == "" {
+		c.Set("action", constant.TaskActionTextGenerate)
+	}
 
 		// We have to reset the request body for the next handlers
 		c.Set(common.KeyRequestBody, jsonData)
