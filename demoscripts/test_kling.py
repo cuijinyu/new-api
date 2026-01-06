@@ -52,7 +52,7 @@ def test_kling_flow():
     t2v_payload = {
         "model": "kling-v2-6",
         "prompt": "A cute cat running in the garden, cinematic style.",
-        "mode": "std",
+        "mode": "pro",
         "duration": 5
     }
     
@@ -79,7 +79,7 @@ def test_kling_flow():
     
     motion_payload = {
         "model": "kling-v2-6",
-        "mode": "std",
+        "mode": "pro",
         "metadata": {
             "prompt": "The character follows the movement of the reference video.",
             # "image_url": "https://example.com/your_character_image.jpg", # 替换为你自己的角色图片
