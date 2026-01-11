@@ -227,6 +227,10 @@ func calculateModeScale(mode, model string) (float64, error) {
 	case "std", "":
 		// Std 模式，基准倍率 1.0
 		if _, ok := stdSupportedModels[model]; !ok {
+			// 如果该模型不在 Std 支持列表中，检查是否在 Master 支持列表中
+			if scale, ok := masterScaleMap[model]; ok {
+				return scale, nil
+			}
 			return 1.0, fmt.Errorf("model %s does not support std mode", model)
 		}
 		return 1.0, nil
@@ -643,7 +647,17 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 }
 
 func (a *TaskAdaptor) GetModelList() []string {
-	return []string{"kling-v1", "kling-v1-6", "kling-v2-master"}
+	return []string{
+		"kling-video-o1",
+		"kling-v2-6",
+		"kling-v2-5-turbo",
+		"kling-v2-1",
+		"kling-v1-6",
+		"kling-v1-5",
+		"kling-v1",
+		"kling-v2-1-master",
+		"kling-v2-master",
+	}
 }
 
 func (a *TaskAdaptor) GetChannelName() string {
@@ -655,10 +669,18 @@ func (a *TaskAdaptor) GetChannelName() string {
 // ============================
 
 func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*requestPayload, error) {
+	mode := req.Mode
+	if mode == "" || mode == "std" {
+		// 如果是默认的 std 模式，但模型本身不支持 std，则置为空（json omitempty 会忽略此字段）
+		if _, ok := stdSupportedModels[req.Model]; !ok {
+			mode = ""
+		}
+	}
+
 	r := requestPayload{
 		Prompt:         req.Prompt,
 		Image:          req.Image,
-		Mode:           defaultString(req.Mode, "std"),
+		Mode:           mode,
 		Duration:       fmt.Sprintf("%d", defaultInt(req.Duration, 5)),
 		AspectRatio:    a.getAspectRatio(req.Size),
 		ModelName:      req.Model,

@@ -106,6 +106,20 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			},
 			want: float32(10.0 * (0.07 / 0.042)), // 10s * 1.666666
 		},
+		{
+			name:   "kling-v2-master with Std mode (Auto compatibility)",
+			action: constant.TaskActionGenerate,
+			mode:   "std",
+			model:  "kling-v2-master",
+			want:   5.0, // Should use master scale (1.0) * duration (5)
+		},
+		{
+			name:   "kling-v2-master with empty mode (Auto compatibility)",
+			action: constant.TaskActionGenerate,
+			mode:   "",
+			model:  "kling-v2-master",
+			want:   5.0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -349,4 +363,31 @@ func TestKling_ConvertToRequestPayload(t *testing.T) {
 	assert.Equal(t, "on", payload.Sound)
 	assert.Len(t, payload.VoiceList, 1)
 	assert.Equal(t, "v1", payload.VoiceList[0].VoiceId)
+
+	// Test case: kling-v2-master with std mode
+	submitReq2 := &relaycommon.TaskSubmitReq{
+		Model: "kling-v2-master",
+		Mode:  "std",
+	}
+	payload2, err := adaptor.convertToRequestPayload(submitReq2)
+	assert.NoError(t, err)
+	assert.Equal(t, "", payload2.Mode) // Should be empty for non-std models
+
+	// Test case: kling-v2-master with empty mode
+	submitReq3 := &relaycommon.TaskSubmitReq{
+		Model: "kling-v2-master",
+		Mode:  "",
+	}
+	payload3, err := adaptor.convertToRequestPayload(submitReq3)
+	assert.NoError(t, err)
+	assert.Equal(t, "", payload3.Mode)
+
+	// Test case: kling-v2-6 with std mode
+	submitReq4 := &relaycommon.TaskSubmitReq{
+		Model: "kling-v2-6",
+		Mode:  "std",
+	}
+	payload4, err := adaptor.convertToRequestPayload(submitReq4)
+	assert.NoError(t, err)
+	assert.Equal(t, "std", payload4.Mode)
 }
