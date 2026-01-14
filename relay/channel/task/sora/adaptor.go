@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -76,12 +78,31 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	// 处理 Azure OpenAI 的特殊 URL 格式
+	if a.ChannelType == constant.ChannelTypeAzure {
+		apiVersion := info.ApiVersion
+		if apiVersion == "" {
+			apiVersion = constant.AzureDefaultAPIVersion
+		}
+		model_ := info.UpstreamModelName
+		if info.ChannelCreateTime < constant.AzureNoRemoveDotTime {
+			model_ = strings.Replace(model_, ".", "", -1)
+		}
+		// Azure OpenAI 格式: /openai/deployments/{deployment}/videos?api-version={version}
+		return fmt.Sprintf("%s/openai/deployments/%s/videos?api-version=%s", a.baseURL, model_, apiVersion), nil
+	}
+	// 标准 OpenAI 格式
 	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
 }
 
 // BuildRequestHeader sets required headers.
 func (a *TaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
-	req.Header.Set("Authorization", "Bearer "+a.apiKey)
+	// Azure OpenAI 使用 api-key header 而不是 Authorization
+	if a.ChannelType == constant.ChannelTypeAzure {
+		req.Header.Set("api-key", a.apiKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+a.apiKey)
+	}
 	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	return nil
 }
@@ -135,14 +156,25 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/v1/videos/%s", baseUrl, taskID)
+	var uri string
+	if a.ChannelType == constant.ChannelTypeAzure {
+		// Azure OpenAI 格式
+		uri = fmt.Sprintf("%s/openai/deployments/%s/videos/%s", baseUrl, "videos", taskID)
+	} else {
+		// 标准 OpenAI 格式
+		uri = fmt.Sprintf("%s/v1/videos/%s", baseUrl, taskID)
+	}
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+key)
+	if a.ChannelType == constant.ChannelTypeAzure {
+		req.Header.Set("api-key", key)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 
 	return service.GetHttpClient().Do(req)
 }
