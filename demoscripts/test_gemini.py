@@ -1,7 +1,7 @@
 import requests
 import json
 
-url = "https://www.ezmodel.cloud/v1beta/models/gemini-2.5-flash-image:generateContent"
+url = "https://www.ezmodel.cloud/v1beta/models/gemini-3-pro-image-preview:generateContent"
 
 payload = {
     "contents": [
@@ -12,7 +12,13 @@ payload = {
                 }
             ]
         }
-    ]
+    ],
+    "generationConfig": {
+      "imageConfig": {
+        "aspectRatio": "16:9",
+        "imageSize": "2K"
+      }
+    }
 }
 
 response = requests.post(
