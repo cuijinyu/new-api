@@ -79,12 +79,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	// 处理 Azure OpenAI 的特殊 URL 格式
 	if a.ChannelType == constant.ChannelTypeAzure {
-		apiVersion := info.ApiVersion
-		if apiVersion == "" {
-			apiVersion = constant.AzureDefaultAPIVersion
-		}
-		// Azure OpenAI 格式: /openai/v1/video/generations/jobs?api-version={version}
-		return fmt.Sprintf("%s/openai/v1/video/generations/jobs?api-version=%s", a.baseURL, apiVersion), nil
+		return fmt.Sprintf("%s/openai/v1/videos", a.baseURL), nil
 	}
 	// 标准 OpenAI 格式
 	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
@@ -154,7 +149,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 	var uri string
 	if a.ChannelType == constant.ChannelTypeAzure {
 		// Azure OpenAI 格式
-		uri = fmt.Sprintf("%s/openai/v1/video/generations/jobs/%s", baseUrl, taskID)
+		uri = fmt.Sprintf("%s/openai/v1/videos/%s/content?variant=video", baseUrl, taskID)
 	} else {
 		// 标准 OpenAI 格式
 		uri = fmt.Sprintf("%s/v1/videos/%s", baseUrl, taskID)
