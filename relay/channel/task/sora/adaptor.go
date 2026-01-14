@@ -149,7 +149,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 	var uri string
 	if a.ChannelType == constant.ChannelTypeAzure {
 		// Azure OpenAI 格式
-		uri = fmt.Sprintf("%s/openai/v1/videos/%s/content?variant=video", baseUrl, taskID)
+		uri = fmt.Sprintf("%s/openai/v1/videos/%s", baseUrl, taskID)
 	} else {
 		// 标准 OpenAI 格式
 		uri = fmt.Sprintf("%s/v1/videos/%s", baseUrl, taskID)
