@@ -208,7 +208,7 @@ const FooterBar = () => {
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
             >
-              EZModel
+              EZmodel
             </a>
           </div>
         </div>
