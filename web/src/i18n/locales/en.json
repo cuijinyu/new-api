@@ -2013,6 +2013,8 @@
     "doc.klingImageVideo.desc": "Kling Image-to-Video API documentation",
     "doc.klingImageVideoStatus.title": "Kling Image-to-Video Status",
     "doc.klingImageVideoStatus.desc": "Kling Image-to-Video Status API documentation",
+    "doc.klingMotionControl.title": "Kling Motion Control",
+    "doc.klingMotionControl.desc": "API documentation for controlling character motion using Kling model based on reference videos",
     "doc.videoGenerations.title": "Video Generation Task",
     "doc.videoGenerations.desc": "Submit video generation task API documentation",
     "doc.videoGenerationsStatus.title": "Video Task Status",

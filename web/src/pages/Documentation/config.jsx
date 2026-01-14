@@ -19,6 +19,8 @@ import videoGenerationsContentZh from './content/video-generations.md?raw';
 import videoGenerationsContentEn from './content/video-generations.en.md?raw';
 import videoGenerationsStatusContentZh from './content/video-generations-status.md?raw';
 import videoGenerationsStatusContentEn from './content/video-generations-status.en.md?raw';
+import klingMotionControlContentZh from './content/kling-motion-control.md?raw';
+import klingMotionControlContentEn from './content/kling-motion-control.en.md?raw';
 import openaiTtsContentZh from './content/openai-tts.md?raw';
 import openaiTtsContentEn from './content/openai-tts.en.md?raw';
 import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
@@ -124,6 +126,17 @@ export const documentationConfig = [
     content: {
       zh: videoGenerationsStatusContentZh,
       en: videoGenerationsStatusContentEn
+    }
+  },
+  {
+    key: 'kling-motion-control',
+    title: 'doc.klingMotionControl.title',
+    description: 'doc.klingMotionControl.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-motion-control',
+    content: {
+      zh: klingMotionControlContentZh,
+      en: klingMotionControlContentEn
     }
   },
   {
