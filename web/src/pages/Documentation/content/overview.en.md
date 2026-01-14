@@ -1,6 +1,6 @@
 # API Overview
 
-EZModel API provides a complete RESTful API interface, supporting calls compatible with OpenAI API.
+EZmodel API provides a complete RESTful API interface, supporting calls compatible with OpenAI API.
 
 # Domain
 ```

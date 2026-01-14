@@ -1,6 +1,6 @@
 # API 文档
 
-EZModel API 提供了完整的 RESTful API 接口，支持与 OpenAI API 兼容的调用方式。
+EZmodel API 提供了完整的 RESTful API 接口，支持与 OpenAI API 兼容的调用方式。
 
 # 域名
 ```

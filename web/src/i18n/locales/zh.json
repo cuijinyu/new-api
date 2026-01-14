@@ -2005,6 +2005,8 @@
     "doc.klingImageVideo.desc": "使用 Kling 模型从图片生成视频接口文档",
     "doc.klingImageVideoStatus.title": "Kling 图生视频状态",
     "doc.klingImageVideoStatus.desc": "查询 Kling 图生视频任务的状态和结果接口文档",
+    "doc.klingMotionControl.title": "Kling 动作控制",
+    "doc.klingMotionControl.desc": "使用 Kling 模型根据参考视频控制人物动作接口文档",
     "doc.videoGenerations.title": "视频生成任务",
     "doc.videoGenerations.desc": "提交通用视频生成任务接口文档",
     "doc.videoGenerationsStatus.title": "视频任务状态",
@@ -2023,10 +2025,12 @@
     "doc.reference.desc": "完整的 API 参数和响应格式参考",
     "doc.claudeMessages.title": "Claude 聊天",
     "doc.claudeMessages.desc": "Anthropic Claude Messages API 格式的请求",
+    "doc.geminiNative.title": "Gemini 原生格式",
+    "doc.geminiNative.desc": "Gemini 原生格式接口文档",
     "doc.nav.overview": "导航概览",
     "doc.nav.title": "API 文档导航",
     "doc.nav.desc": "选择您想要查看的 API 文档部分",
-    "doc.page.desc": "EZModel API 接口文档和使用说明",
+    "doc.page.desc": "EZmodel API 接口文档和使用说明",
     "doc.document": "文档",
     "重置模型倍率": "重置模型倍率",
     "重置选项": "重置选项",
@@ -2116,7 +2120,7 @@
     "Creem Setting Tips": "Creem 只支持预设的固定金额产品，这产品以及价格需要提前在Creem网站内创建配置，所以不支持自定义动态金额充值。在Creem端配置产品的名字以及价格，获取Product Id 后填到下面的产品，在new-api为该产品设置充值额度，以及展示价格。",
     "正在跳转 GitHub...": "正在跳转 GitHub...",
     "请求超时，请刷新页面后重新发起 GitHub 登录": "请求超时，请刷新页面后重新发起 GitHub 登录",
-    "统一的": "EZModel",
+    "统一的": "EZmodel",
     "大模型接口网关": "AI模型提供商"
   }
 }

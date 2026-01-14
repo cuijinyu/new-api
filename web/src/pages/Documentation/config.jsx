@@ -19,12 +19,16 @@ import videoGenerationsContentZh from './content/video-generations.md?raw';
 import videoGenerationsContentEn from './content/video-generations.en.md?raw';
 import videoGenerationsStatusContentZh from './content/video-generations-status.md?raw';
 import videoGenerationsStatusContentEn from './content/video-generations-status.en.md?raw';
+import klingMotionControlContentZh from './content/kling-motion-control.md?raw';
+import klingMotionControlContentEn from './content/kling-motion-control.en.md?raw';
 import openaiTtsContentZh from './content/openai-tts.md?raw';
 import openaiTtsContentEn from './content/openai-tts.en.md?raw';
 import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
 import openaiTranscriptionsContentEn from './content/openai-transcriptions.en.md?raw';
 import openaiTranslationsContentZh from './content/openai-translations.md?raw';
 import openaiTranslationsContentEn from './content/openai-translations.en.md?raw';
+import geminiNativeContentZh from './content/gemini-native.md?raw';
+import geminiNativeContentEn from './content/gemini-native.en.md?raw';
 
 export const documentationConfig = [
   {
@@ -127,6 +131,17 @@ export const documentationConfig = [
     }
   },
   {
+    key: 'kling-motion-control',
+    title: 'doc.klingMotionControl.title',
+    description: 'doc.klingMotionControl.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-motion-control',
+    content: {
+      zh: klingMotionControlContentZh,
+      en: klingMotionControlContentEn
+    }
+  },
+  {
     key: 'openai-tts',
     title: 'doc.openaiTts.title',
     description: 'doc.openaiTts.desc',
@@ -157,6 +172,17 @@ export const documentationConfig = [
     content: {
       zh: openaiTranslationsContentZh,
       en: openaiTranslationsContentEn
+    }
+  },
+  {
+    key: 'gemini-native',
+    title: 'doc.geminiNative.title',
+    description: 'doc.geminiNative.desc',
+    icon: <IconSend />,
+    path: '/docs/gemini-native',
+    content: {
+      zh: geminiNativeContentZh,
+      en: geminiNativeContentEn
     }
   }
 ];
