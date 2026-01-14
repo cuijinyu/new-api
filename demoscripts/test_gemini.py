@@ -8,25 +8,18 @@ payload = {
         {
             "parts": [
                 {
-                    "text": "一只在森林里奔跑的赛博朋克风格的狐狸"
+                    "text": "Create a picture of a nano banana dish in a fancy restaurant with a Gemini theme"
                 }
             ]
         }
-    ],
-    "generationConfig": {
-        "responseModalities": ["IMAGE", "TEXT"],
-        "imageConfig": {
-            "aspectRatio": "16:9",
-            "imageSize": "2K"
-        }
-    }
+    ]
 }
 
 response = requests.post(
     url, 
     json=payload,
     headers={
-        "Authorization": "Bearer YOUR_API_KEY"
+        "Authorization": "Bearer sk-"
     }
 )
 
