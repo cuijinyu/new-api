@@ -74,6 +74,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
 	}
+	logger.LogDebug(ctx, fmt.Sprintf("Start Update Task: %+v", task))
 	resp, err := adaptor.FetchTask(baseURL, channel.Key, map[string]any{
 		"task_id": taskId,
 		"action":  task.Action,
@@ -81,9 +82,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 	if err != nil {
 		return fmt.Errorf("fetchTask failed for task %s: %w", taskId, err)
 	}
-	//if resp.StatusCode != http.StatusOK {
-	//return fmt.Errorf("get Video Task status code: %d", resp.StatusCode)
-	//}
 	defer resp.Body.Close()
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -114,7 +112,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 
 	now := time.Now().Unix()
 	if taskResult.Status == "" {
-		//return fmt.Errorf("task %s status is empty", taskId)
 		taskResult = relaycommon.FailTaskInfo("upstream returned empty status")
 	}
 
@@ -225,15 +222,14 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 			}
 		}
 	case model.TaskStatusFailure:
-		logger.LogJson(ctx, fmt.Sprintf("Task %s failed", taskId), task)
 		task.Status = model.TaskStatusFailure
 		task.Progress = "100%"
 		if task.FinishTime == 0 {
 			task.FinishTime = now
 		}
 		task.FailReason = taskResult.Reason
-		logger.LogInfo(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		taskResult.Progress = "100%"
+		logger.LogError(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		if quota != 0 {
 			if preStatus != model.TaskStatusFailure {
 				shouldRefund = true
@@ -252,10 +248,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		shouldRefund = false
 	}
 
+	logger.LogDebug(ctx, fmt.Sprintf("Task %s update completed, shouldRefund: %t", taskId, shouldRefund))
 	if shouldRefund {
 		// 任务失败且之前状态不是失败才退还额度，防止重复退还
 		if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
-			logger.LogWarn(ctx, "Failed to increase user quota: "+err.Error())
+			logger.LogError(ctx, "Failed to increase user quota: "+err.Error())
 		}
 		logContent := fmt.Sprintf("Video async task failed %s, refund %s", task.TaskID, logger.LogQuota(quota))
 		model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
