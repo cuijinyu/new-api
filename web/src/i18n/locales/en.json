@@ -2033,6 +2033,8 @@
     "doc.reference.desc": "Complete API parameter and response format reference",
     "doc.claudeMessages.title": "Claude Chat",
     "doc.claudeMessages.desc": "Anthropic Claude Messages API Request Format",
+    "doc.geminiNative.title": "Gemini Native Format",
+    "doc.geminiNative.desc": "Gemini native format API documentation",
     "doc.nav.overview": "Navigation Overview",
     "doc.nav.title": "API Documentation Navigation",
     "doc.nav.desc": "Select the section of the API documentation you want to view",

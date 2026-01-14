@@ -2025,6 +2025,8 @@
     "doc.reference.desc": "完整的 API 参数和响应格式参考",
     "doc.claudeMessages.title": "Claude 聊天",
     "doc.claudeMessages.desc": "Anthropic Claude Messages API 格式的请求",
+    "doc.geminiNative.title": "Gemini 原生格式",
+    "doc.geminiNative.desc": "Gemini 原生格式接口文档",
     "doc.nav.overview": "导航概览",
     "doc.nav.title": "API 文档导航",
     "doc.nav.desc": "选择您想要查看的 API 文档部分",

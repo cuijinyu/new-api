@@ -27,6 +27,8 @@ import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?ra
 import openaiTranscriptionsContentEn from './content/openai-transcriptions.en.md?raw';
 import openaiTranslationsContentZh from './content/openai-translations.md?raw';
 import openaiTranslationsContentEn from './content/openai-translations.en.md?raw';
+import geminiNativeContentZh from './content/gemini-native.md?raw';
+import geminiNativeContentEn from './content/gemini-native.en.md?raw';
 
 export const documentationConfig = [
   {
@@ -170,6 +172,17 @@ export const documentationConfig = [
     content: {
       zh: openaiTranslationsContentZh,
       en: openaiTranslationsContentEn
+    }
+  },
+  {
+    key: 'gemini-native',
+    title: 'doc.geminiNative.title',
+    description: 'doc.geminiNative.desc',
+    icon: <IconSend />,
+    path: '/docs/gemini-native',
+    content: {
+      zh: geminiNativeContentZh,
+      en: geminiNativeContentEn
     }
   }
 ];
