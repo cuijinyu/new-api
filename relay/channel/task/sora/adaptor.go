@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -84,12 +83,8 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 		if apiVersion == "" {
 			apiVersion = constant.AzureDefaultAPIVersion
 		}
-		model_ := info.UpstreamModelName
-		if info.ChannelCreateTime < constant.AzureNoRemoveDotTime {
-			model_ = strings.Replace(model_, ".", "", -1)
-		}
-		// Azure OpenAI 格式: /openai/deployments/{deployment}/videos?api-version={version}
-		return fmt.Sprintf("%s/openai/deployments/%s/videos?api-version=%s", a.baseURL, model_, apiVersion), nil
+		// Azure OpenAI 格式: /openai/v1/video/generations/jobs?api-version={version}
+		return fmt.Sprintf("%s/openai/v1/video/generations/jobs?api-version=%s", a.baseURL, apiVersion), nil
 	}
 	// 标准 OpenAI 格式
 	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
@@ -159,7 +154,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 	var uri string
 	if a.ChannelType == constant.ChannelTypeAzure {
 		// Azure OpenAI 格式
-		uri = fmt.Sprintf("%s/openai/deployments/%s/videos/%s", baseUrl, "videos", taskID)
+		uri = fmt.Sprintf("%s/openai/v1/video/generations/jobs/%s", baseUrl, taskID)
 	} else {
 		// 标准 OpenAI 格式
 		uri = fmt.Sprintf("%s/v1/videos/%s", baseUrl, taskID)
