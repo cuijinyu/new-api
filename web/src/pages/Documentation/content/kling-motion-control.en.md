@@ -43,6 +43,40 @@ Authorization: Bearer YOUR_API_TOKEN
 
 **Endpoint:** `GET /v1/videos/motion-control/{task_id}`
 
+**Description:** Query the status and results of a video generation task by task ID.
+
+**Authentication:** Bearer Token
+```http
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+### Path Parameters
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| task_id | string | Yes | Task ID returned by the create task endpoint |
+
+### Response Parameters
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| code | integer | Error code (0 for success) |
+| message | string | Error message |
+| request_id | string | Request ID for tracking and troubleshooting |
+| data | object | Data object |
+| data.task_id | string | Task ID |
+| data.task_status | string | Task status: `submitted`, `processing`, `succeed`, `failed` |
+| data.task_status_msg | string | Task status message, shows failure reason when failed |
+| data.task_info | object | Task creation parameters |
+| data.task_info.external_task_id | string | User-defined task ID |
+| data.task_result | object | Task result (only returned on success) |
+| data.task_result.videos | array | List of generated videos |
+| data.task_result.videos[].id | string | Generated video ID, globally unique |
+| data.task_result.videos[].url | string | Generated video URL (Note: videos will be deleted after 30 days, please save in time) |
+| data.task_result.videos[].duration | string | Video duration in seconds |
+| data.created_at | integer | Task creation time, Unix timestamp (milliseconds) |
+| data.updated_at | integer | Task update time, Unix timestamp (milliseconds) |
+
 ### Response Example
 
 ```json

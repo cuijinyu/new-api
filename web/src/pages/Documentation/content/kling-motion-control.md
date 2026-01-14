@@ -43,6 +43,40 @@ Authorization: Bearer YOUR_API_TOKEN
 
 **接口地址：** `GET /v1/videos/motion-control/{task_id}`
 
+**功能描述：** 根据任务 ID 查询视频生成任务的状态和结果。
+
+**认证方式：** Bearer Token
+```http
+Authorization: Bearer YOUR_API_TOKEN
+```
+
+### 请求路径参数
+
+| 字段 | 类型 | 必填 | 描述 |
+| :--- | :--- | :--- | :--- |
+| task_id | string | 必须 | 任务 ID，由创建任务接口返回 |
+
+### 响应参数
+
+| 字段 | 类型 | 描述 |
+| :--- | :--- | :--- |
+| code | integer | 错误码 (0 表示成功) |
+| message | string | 错误信息 |
+| request_id | string | 请求ID，用于跟踪请求、排查问题 |
+| data | object | 数据对象 |
+| data.task_id | string | 任务ID |
+| data.task_status | string | 任务状态：`submitted` (已提交), `processing` (处理中), `succeed` (成功), `failed` (失败) |
+| data.task_status_msg | string | 任务状态信息，当任务失败时展示失败原因 |
+| data.task_info | object | 任务创建时的参数信息 |
+| data.task_info.external_task_id | string | 客户自定义任务ID |
+| data.task_result | object | 任务结果（仅成功时返回） |
+| data.task_result.videos | array | 生成的视频列表 |
+| data.task_result.videos[].id | string | 生成的视频ID，全局唯一 |
+| data.task_result.videos[].url | string | 生成视频的URL（注意：视频会在30天后被清理，请及时转存） |
+| data.task_result.videos[].duration | string | 视频总时长，单位秒 |
+| data.created_at | integer | 任务创建时间，Unix时间戳（毫秒） |
+| data.updated_at | integer | 任务更新时间，Unix时间戳（毫秒） |
+
 ### 响应示例
 
 ```json
