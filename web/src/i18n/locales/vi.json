@@ -2044,7 +2044,7 @@
     "请输入公告内容（支持 Markdown/HTML）": "Vui lòng nhập nội dung thông báo (hỗ trợ Markdown/HTML)",
     "请输入分类名称": "Vui lòng nhập tên danh mục",
     "请输入分类名称，如：OpenAI、Claude等": "Vui lòng nhập tên danh mục, như: OpenAI, Claude, v.v.",
-    "请输入到 /suno 前的路径，通常就是域名，例如：https://api.example.com": "Vui lòng nhập đường dẫn trước /suno, thường là tên miền, ví dụ: https://api.example.com",
+    "请输入到 /suno 前的路径，通常就是域名，例如：https://www.ezmodel.cloud": "Vui lòng nhập đường dẫn trước /suno, thường là tên miền, ví dụ: https://www.ezmodel.cloud",
     "请输入原密码！": "Vui lòng nhập mật khẩu cũ!",
     "请输入回答内容": "Vui lòng nhập nội dung câu trả lời",
     "请输入回答内容（支持 Markdown/HTML）": "Vui lòng nhập nội dung câu trả lời (hỗ trợ Markdown/HTML)",

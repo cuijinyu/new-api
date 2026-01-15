@@ -1739,7 +1739,7 @@
     "请输入公告内容（支持 Markdown/HTML）": "Veuillez saisir le contenu de l'avis (prend en charge Markdown/HTML)",
     "请输入分类名称": "Veuillez saisir le nom de la catégorie",
     "请输入分类名称，如：OpenAI、Claude等": "Veuillez saisir le nom de la catégorie, tel que : OpenAI, Claude, etc.",
-    "请输入到 /suno 前的路径，通常就是域名，例如：https://api.example.com": "Veuillez saisir le chemin avant /suno, généralement le domaine, par exemple : https://api.example.com",
+    "请输入到 /suno 前的路径，通常就是域名，例如：https://www.ezmodel.cloud": "Veuillez saisir le chemin avant /suno, généralement le domaine, par exemple : https://www.ezmodel.cloud",
     "请输入原密码": "Veuillez saisir le mot de passe original",
     "请输入原密码！": "Veuillez saisir le mot de passe original !",
     "请输入名称": "Veuillez saisir un nom",

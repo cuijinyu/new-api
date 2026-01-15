@@ -456,7 +456,7 @@ const SettingsAPIInfo = ({ options, refresh }) => {
           <Form.Input
             field='url'
             label={t('API地址')}
-            placeholder='https://api.example.com'
+            placeholder='https://www.ezmodel.cloud'
             rules={[{ required: true, message: t('请输入API地址') }]}
             onChange={(value) => setApiForm({ ...apiForm, url: value })}
           />

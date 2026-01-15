@@ -29,6 +29,12 @@ import openaiTranslationsContentZh from './content/openai-translations.md?raw';
 import openaiTranslationsContentEn from './content/openai-translations.en.md?raw';
 import geminiNativeContentZh from './content/gemini-native.md?raw';
 import geminiNativeContentEn from './content/gemini-native.en.md?raw';
+import soraVideosContentZh from './content/sora-videos.md?raw';
+import soraVideosContentEn from './content/sora-videos.en.md?raw';
+import soraVideosStatusContentZh from './content/sora-videos-status.md?raw';
+import soraVideosStatusContentEn from './content/sora-videos-status.en.md?raw';
+import soraVideosContentContentZh from './content/sora-videos-content.md?raw';
+import soraVideosContentContentEn from './content/sora-videos-content.en.md?raw';
 
 export const documentationConfig = [
   {
@@ -183,6 +189,39 @@ export const documentationConfig = [
     content: {
       zh: geminiNativeContentZh,
       en: geminiNativeContentEn
+    }
+  },
+  {
+    key: 'sora-videos',
+    title: 'doc.soraVideos.title',
+    description: 'doc.soraVideos.desc',
+    icon: <IconSend />,
+    path: '/docs/sora-videos',
+    content: {
+      zh: soraVideosContentZh,
+      en: soraVideosContentEn
+    }
+  },
+  {
+    key: 'sora-videos-status',
+    title: 'doc.soraVideosStatus.title',
+    description: 'doc.soraVideosStatus.desc',
+    icon: <IconSend />,
+    path: '/docs/sora-videos-status',
+    content: {
+      zh: soraVideosStatusContentZh,
+      en: soraVideosStatusContentEn
+    }
+  },
+  {
+    key: 'sora-videos-content',
+    title: 'doc.soraVideosContent.title',
+    description: 'doc.soraVideosContent.desc',
+    icon: <IconSend />,
+    path: '/docs/sora-videos-content',
+    content: {
+      zh: soraVideosContentContentZh,
+      en: soraVideosContentContentEn
     }
   }
 ];
