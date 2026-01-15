@@ -4,7 +4,7 @@
 
 ## 1. 创建任务
 
-**接口地址：** `POST /v1/videos/motion-control`
+**接口地址：** `POST /kling/v1/videos/motion-control`
 
 **功能描述：** 提交一个动作控制视频生成任务。视频生成是异步过程，提交成功后会返回 `task_id`，之后需要通过查询接口获取结果。
 
@@ -41,7 +41,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 ## 2. 查询任务 (单个)
 
-**接口地址：** `GET /v1/videos/motion-control/{task_id}`
+**接口地址：** `GET /v1/video/generations/:task_id`
 
 **功能描述：** 根据任务 ID 查询视频生成任务的状态和结果。
 

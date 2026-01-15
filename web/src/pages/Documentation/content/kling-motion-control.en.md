@@ -4,7 +4,7 @@ Create videos where characters in an image perform actions from a reference vide
 
 ## 1. Create Task
 
-**Endpoint:** `POST /v1/videos/motion-control`
+**Endpoint:** `POST /kling/v1/videos/motion-control`
 
 **Description:** Submit a motion control video generation task. The process is asynchronous. Upon success, a `task_id` is returned, which can be used to query the results later.
 
@@ -41,7 +41,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 ## 2. Query Task (Single)
 
-**Endpoint:** `GET /v1/videos/motion-control/{task_id}`
+**Endpoint:** `GET /v1/video/generations/:task_id`
 
 **Description:** Query the status and results of a video generation task by task ID.
 
