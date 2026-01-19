@@ -25,6 +25,7 @@ Authorization: Bearer YOUR_API_TOKEN
 |--------|------|------|--------|------|------|
 | model | string | 是 | - | 使用的模型 ID | `kling-v1` |
 | prompt | string | 是 | - | 视频描述文本 | `一只在森林里奔跑的小鹿` |
+| image_tail | string | 否 | - | 尾帧图片 URL 或 Base64 编码，用于指定视频结束画面 | `https://example.com/end.jpg` |
 | negative_prompt | string | 否 | - | 负向提示词 | `模糊, 水印` |
 | cfg_scale | float | 否 | 5.0 | 提示词相关性 | 0.0 - 100.0 |
 | mode | string | 否 | `std` | 生成模式 | `std` (标准), `pro` (专业) |

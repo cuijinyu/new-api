@@ -35,6 +35,35 @@ const Documentation = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const categories = [
+    { key: 'getting-started', title: 'doc.category.gettingStarted' },
+    { key: 'chat', title: 'doc.category.chat' },
+    { key: 'image', title: 'doc.category.image' },
+    { key: 'video', title: 'doc.category.video' },
+    { key: 'audio', title: 'doc.category.audio' },
+  ];
+
+  const navItems = [
+    {
+      itemKey: '/docs',
+      text: t('doc.nav.overview'),
+      icon: <IconHome />,
+    },
+    ...categories.map(cat => {
+      const docs = documentationConfig.filter(doc => doc.category === cat.key);
+      if (docs.length === 0) return null;
+      return {
+        itemKey: cat.key,
+        text: t(cat.title),
+        items: docs.map(doc => ({
+          itemKey: doc.path,
+          text: t(doc.title),
+          icon: doc.icon
+        }))
+      };
+    }).filter(Boolean)
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -48,24 +77,14 @@ const Documentation = () => {
         </div>
 
         <Layout className="bg-transparent min-h-[calc(100vh-80px)]">
-          <Sider className="bg-transparent mr-6 hidden md:block" style={{ width: 240 }}>
-             <div className="bg-white rounded-lg shadow-sm p-2 sticky top-24">
+          <Sider className="bg-transparent mr-6 hidden md:block" style={{ width: 260 }}>
+             <div className="bg-white rounded-lg shadow-sm p-2 sticky top-24 max-h-[calc(100vh-120px)] overflow-y-auto">
               <Nav
                 selectedKeys={[location.pathname]}
                 onSelect={(data) => navigate(data.itemKey)}
                 style={{ border: 'none' }}
-                items={[
-                  {
-                    itemKey: '/docs',
-                    text: t('doc.nav.overview'),
-                    icon: <IconHome />,
-                  },
-                  ...documentationConfig.map(doc => ({
-                    itemKey: doc.path,
-                    text: t(doc.title),
-                    icon: doc.icon
-                  }))
-                ]}
+                items={navItems}
+                defaultOpenKeys={categories.map(cat => cat.key)}
               />
              </div>
           </Sider>

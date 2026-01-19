@@ -2,6 +2,7 @@ package kling
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -120,6 +121,21 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			model:  "kling-v2-master",
 			want:   5.0,
 		},
+		{
+			name:   "MultiImage2Video Std 10s",
+			action: constant.TaskActionMultiImage2Video,
+			mode:   "std",
+			model:  "kling-v1-6",
+			metadata: map[string]interface{}{
+				"prompt":   "test multi image",
+				"duration": "10",
+				"image_list": []interface{}{
+					map[string]interface{}{"image": "url1"},
+					map[string]interface{}{"image": "url2"},
+				},
+			},
+			want: 10.0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -130,6 +146,16 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 				Model:    modelName,
 				Mode:     tt.mode,
 				Metadata: tt.metadata,
+			}
+			if tt.metadata != nil {
+				if prompt, ok := tt.metadata["prompt"].(string); ok {
+					req.Prompt = prompt
+				}
+				if duration, ok := tt.metadata["duration"].(string); ok {
+					if d, err := strconv.Atoi(duration); err == nil {
+						req.Duration = d
+					}
+				}
 			}
 			c.Set("task_request", req)
 			c.Set("action", tt.action)

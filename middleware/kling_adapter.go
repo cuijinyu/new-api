@@ -43,6 +43,7 @@ func KlingRequestConvert() func(c *gin.Context) {
 	originalPath := c.Request.URL.Path
 	isOmniVideo := strings.Contains(originalPath, "omni-video")
 	isMotionControl := strings.Contains(originalPath, "motion-control")
+	isMultiImage := strings.Contains(originalPath, "multi-image2video")
 
 	// Rewrite request body and path
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
@@ -53,6 +54,8 @@ func KlingRequestConvert() func(c *gin.Context) {
 		c.Set("action", constant.TaskActionOmniVideo)
 	} else if isMotionControl {
 		c.Set("action", constant.TaskActionMotionControl)
+	} else if isMultiImage {
+		c.Set("action", constant.TaskActionMultiImage2Video)
 	} else if image, ok := originalReq["image"]; !ok || image == "" {
 		c.Set("action", constant.TaskActionTextGenerate)
 	}

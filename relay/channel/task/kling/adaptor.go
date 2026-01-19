@@ -70,6 +70,23 @@ type OmniElementItem struct {
 	ElementId int64 `json:"element_id"`
 }
 
+type MultiImageItem struct {
+	Image string `json:"image"`
+}
+
+// multiImageRequestPayload 多图参考生视频 API 专用请求结构
+type multiImageRequestPayload struct {
+	ModelName      string           `json:"model_name,omitempty"`
+	ImageList      []MultiImageItem `json:"image_list"`
+	Prompt         string           `json:"prompt"`
+	NegativePrompt string           `json:"negative_prompt,omitempty"`
+	Mode           string           `json:"mode,omitempty"`
+	Duration       string           `json:"duration,omitempty"`
+	AspectRatio    string           `json:"aspect_ratio,omitempty"`
+	CallbackUrl    string           `json:"callback_url,omitempty"`
+	ExternalTaskId string           `json:"external_task_id,omitempty"`
+}
+
 // motionControlRequestPayload Motion Control API 专用请求结构
 type motionControlRequestPayload struct {
 	Prompt               string `json:"prompt,omitempty"`                 // 文本提示词，可选，不超过2500字符
@@ -461,6 +478,15 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 				duration = 30.0
 			}
 		}
+	} else if action == constant.TaskActionMultiImage2Video {
+		multiImageReq, _ := a.convertToMultiImagePayload(&req)
+		// 多图生视频仅支持 5s 和 10s
+		if multiImageReq.Duration != "5" && multiImageReq.Duration != "10" {
+			duration = 5.0 // 默认 5s
+		} else {
+			durationInt, _ := validateIntegerDuration(multiImageReq.Duration)
+			duration = float64(durationInt)
+		}
 	} else {
 		var durationInt int
 		if action == constant.TaskActionOmniVideo {
@@ -494,6 +520,8 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 		path = "/v1/videos/omni-video"
 	case constant.TaskActionMotionControl:
 		path = "/v1/videos/motion-control"
+	case constant.TaskActionMultiImage2Video:
+		path = "/v1/videos/multi-image2video"
 	case constant.TaskActionGenerate:
 		path = "/v1/videos/image2video"
 	default:
@@ -534,6 +562,19 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	// Motion Control 使用专用的请求结构
 	if currentAction == constant.TaskActionMotionControl {
 		body, err := a.convertToMotionControlPayload(&req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+
+	// 多图参考生视频使用专用的请求结构
+	if currentAction == constant.TaskActionMultiImage2Video {
+		body, err := a.convertToMultiImagePayload(&req)
 		if err != nil {
 			return nil, err
 		}
@@ -618,6 +659,8 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 		path = "/v1/videos/omni-video"
 	case constant.TaskActionMotionControl:
 		path = "/v1/videos/motion-control"
+	case constant.TaskActionMultiImage2Video:
+		path = "/v1/videos/multi-image2video"
 	case constant.TaskActionGenerate:
 		path = "/v1/videos/image2video"
 	default:
@@ -705,6 +748,46 @@ func (a *TaskAdaptor) convertToRequestPayload(req *relaycommon.TaskSubmitReq) (*
 	if err != nil {
 		return nil, errors.Wrap(err, "unmarshal metadata failed")
 	}
+	return &r, nil
+}
+
+// convertToMultiImagePayload 转换为多图参考生视频 API 专用请求格式
+func (a *TaskAdaptor) convertToMultiImagePayload(req *relaycommon.TaskSubmitReq) (*multiImageRequestPayload, error) {
+	r := multiImageRequestPayload{
+		Prompt:      req.Prompt,
+		Mode:        defaultString(req.Mode, "std"),
+		Duration:    fmt.Sprintf("%d", defaultInt(req.Duration, 5)),
+		AspectRatio: a.getAspectRatio(req.Size),
+		ModelName:   req.Model,
+	}
+
+	if r.ModelName == "" {
+		r.ModelName = "kling-v1-6"
+	}
+
+	// 从 metadata 中解析所有字段
+	if req.Metadata != nil {
+		metaBytes, err := json.Marshal(req.Metadata)
+		if err != nil {
+			return nil, errors.Wrap(err, "marshal metadata failed")
+		}
+		err = json.Unmarshal(metaBytes, &r)
+		if err != nil {
+			return nil, errors.Wrap(err, "unmarshal metadata failed")
+		}
+	}
+
+	// 验证必填字段
+	if len(r.ImageList) == 0 {
+		return nil, fmt.Errorf("image_list is required for multi-image2video")
+	}
+	if len(r.ImageList) > 4 {
+		return nil, fmt.Errorf("image_list supports up to 4 images, got: %d", len(r.ImageList))
+	}
+	if r.Prompt == "" {
+		return nil, fmt.Errorf("prompt is required for multi-image2video")
+	}
+
 	return &r, nil
 }
 

@@ -23,6 +23,7 @@ Authorization: Bearer YOUR_API_TOKEN
 |--------|------|------|--------|------|------|
 | model | string | 是 | - | 使用的模型 ID | `kling-v1` |
 | image | string | 是 | - | 输入图片的 URL 或 Base64 编码 | `https://example.com/start.jpg` |
+| image_tail | string | 否 | - | 尾帧图片 URL 或 Base64 编码，用于指定视频结束画面 | `https://example.com/end.jpg` |
 | prompt | string | 否 | - | 视频描述文本（引导图片动态） | `让图片中的人物微笑` |
 | negative_prompt | string | 否 | - | 负向提示词 | `模糊, 水印` |
 | cfg_scale | float | 否 | 5.0 | 提示词相关性 | 0.0 - 100.0 |
@@ -84,6 +85,8 @@ paths:
                 model:
                   type: string
                 image:
+                  type: string
+                image_tail:
                   type: string
       responses:
         '200':

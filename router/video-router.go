@@ -29,10 +29,12 @@ func SetVideoRouter(router *gin.Engine) {
 		klingV1Router.POST("/videos/image2video", controller.RelayTask)
 		klingV1Router.POST("/videos/omni-video", controller.RelayTask)
 		klingV1Router.POST("/videos/motion-control", controller.RelayTask)
+		klingV1Router.POST("/videos/multi-image2video", controller.RelayTask)
 		klingV1Router.GET("/videos/text2video/:task_id", controller.RelayTask)
 		klingV1Router.GET("/videos/image2video/:task_id", controller.RelayTask)
 		klingV1Router.GET("/videos/omni-video/:task_id", controller.RelayTask)
 		klingV1Router.GET("/videos/motion-control/:task_id", controller.RelayTask)
+		klingV1Router.GET("/videos/multi-image2video/:task_id", controller.RelayTask)
 	}
 
 	// Jimeng official API routes - direct mapping to official API format

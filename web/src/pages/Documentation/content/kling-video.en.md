@@ -25,6 +25,7 @@ Authorization: Bearer YOUR_API_TOKEN
 |-----------|------|----------|---------|-------------|---------|
 | model | string | Yes | - | The ID of the model to use | `kling-v1` |
 | prompt | string | Yes | - | Text description of the video | `A deer running in the forest` |
+| image_tail | string | No | - | Tail frame image URL or Base64 encoded data, used to specify the ending frame of the video | `https://example.com/end.jpg` |
 | negative_prompt | string | No | - | Negative prompts | `blur, watermark` |
 | cfg_scale | float | No | 5.0 | Prompt correlation scale | 0.0 - 100.0 |
 | mode | string | No | `std` | Generation mode | `std` (Standard), `pro` (Professional) |
