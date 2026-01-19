@@ -1,11 +1,10 @@
 import requests
 import time
 import json
-import os
 
 # 配置信息
-BASE_URL = "http://localhost:3000"  # 替换为你的本地或服务器地址
-API_KEY = os.getenv("EZMODEL_API_KEY") or "sk-your-key"
+BASE_URL = "https://www.ezmodel.cloud"
+API_KEY = ""
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -13,7 +12,10 @@ HEADERS = {
 }
 
 def wait_for_task(task_id):
-    """循环轮询任务状态，直到成功或失败"""
+    """
+    按照文档查询任务状态
+    参考文档: web/src/pages/Documentation/content/kling-multi-image-video-status.md
+    """
     url = f"{BASE_URL}/kling/v1/videos/multi-image2video/{task_id}"
     print(f"正在查询任务状态: {url}")
     
@@ -21,37 +23,64 @@ def wait_for_task(task_id):
         try:
             response = requests.get(url, headers=HEADERS)
             if response.status_code != 200:
-                print(f"查询失败: {response.status_code} - {response.text}")
+                print(f"查询请求失败: {response.status_code}")
                 return None
             
-            data = response.json()            
-            # 从返回的数据结构中提取信息 (OpenAI Video 格式)
-            status = data.get("status")
-            print(f"任务状态: {status}")
+            res_data = response.json()
             
-            if status == "SUCCESS":
-                # 视频URL在 metadata.url 中
-                video_url = data.get("metadata", {}).get("url")
-                if video_url:
-                    print(f"获取到视频URL: {video_url}")
-                    return video_url
+            # 严格按照文档定义的嵌套结构解析
+            # code: "success"
+            # data.status: 统一状态 (SUCCESS/FAILURE/IN_PROGRESS)
+            # data.data.data.task_status: Kling 任务状态 (succeed/failed/processing)
+            
+            if res_data.get("code") != "success":
+                print(f"业务请求失败: {res_data}")
                 return None
-            elif status == "FAILED":
-                print(f"任务失败: {data}")
+            
+            # 获取统一状态层
+            unified_data = res_data.get("data", {})
+            unified_status = unified_data.get("status")
+            print(f"统一任务状态: {unified_status}, 进度: {unified_data.get('progress')}")
+            
+            if unified_status == "SUCCESS":
+                # 获取 Kling 原始响应层
+                kling_raw_wrapper = unified_data.get("data", {}) # 这是后端 TaskDto.Data
+                if kling_raw_wrapper.get("code") == 0:
+                    kling_data = kling_raw_wrapper.get("data", {})
+                    task_status = kling_data.get("task_status")
+                    
+                    if task_status == "succeed":
+                        videos = kling_data.get("task_result", {}).get("videos", [])
+                        if videos:
+                            video_url = videos[0].get("url")
+                            print(f"任务成功！视频 URL: {video_url}")
+                            return video_url
                 return None
+            
+            elif unified_status == "FAILURE":
+                print(f"任务失败: {unified_data}")
+                return None
+                
+            # 如果是 SUBMITTED 或 IN_PROGRESS，继续等待
+            
         except Exception as e:
-            print(f"请求发生异常: {e}")
+            print(f"轮询发生异常: {e}")
             return None
         
-        time.sleep(5)  # 每 5 秒查询一次
+        time.sleep(10)
 
-def test_kling_multi_image():
-    print("\n[多图参考生视频] 正在提交请求...")
+def test_kling_multi_image_full_flow():
+    """
+    完整测试流程：提交任务 -> 轮询状态
+    参考文档: 
+    - 提交: web/src/pages/Documentation/content/kling-multi-image-video.md
+    - 查询: web/src/pages/Documentation/content/kling-multi-image-video-status.md
+    """
+    print("\n[多图参考生视频] 1. 正在提交任务...")
     
-    # 测试数据：两张示例图片
+    submit_url = f"{BASE_URL}/kling/v1/videos/multi-image2video"
     payload = {
         "model": "kling-v1-6",
-        "prompt": "The two characters in the images are dancing together in a futuristic city.",
         "image_list": [
             {
                 "image": "https://p2-kling.klingai.com/bs2/upload-ylab-stunt/special-effect/output/HB1_PROD_ai_web_299690834263822_-4012665849171309178/-7957711300647229468/tempwyvwb.png?x-kcdn-pid=112452&x-oss-process=image%2Fresize%2Cw_1440%2Ch_1851%2Cm_mfit%2Fformat%2Cwebp"
@@ -60,27 +89,38 @@ def test_kling_multi_image():
                 "image": "https://p2-kling.klingai.com/bs2/upload-ylab-stunt/special-effect/output/HB1_PROD_ai_web_299690834263822_-4012665849171309178/-7957711300647229468/tempwyvwb.png?x-kcdn-pid=112452&x-oss-process=image%2Fresize%2Cw_1440%2Ch_1851%2Cm_mfit%2Fformat%2Cwebp"
             }
         ],
-        "mode": "std",
+        "prompt": "The characters in the images are dancing together in a futuristic city.",
         "duration": "5",
         "aspect_ratio": "16:9"
     }
     
-    url = f"{BASE_URL}/kling/v1/videos/multi-image2video"
-    res = requests.post(url, headers=HEADERS, json=payload)
-    
-    if res.status_code != 200:
-        print(f"提交请求失败: {res.status_code} - {res.text}")
-        return
-
-    task_id = res.json().get("id")
-    print(f"任务提交成功，Task ID: {task_id}")
-
-    # 等待视频生成完成
-    video_url = wait_for_task(task_id)
-    if video_url:
-        print(f"\n恭喜！多图参考生视频已生成: {video_url}")
-    else:
-        print("\n生成失败或超时。")
+    try:
+        res = requests.post(submit_url, headers=HEADERS, json=payload)
+        if res.status_code != 200:
+            print(f"提交失败: {res.status_code} - {res.text}")
+            return
+        
+        # 按照文档解析提交响应
+        submit_res = res.json()
+        task_id = submit_res.get("id") or submit_res.get("data", {}).get("task_id")
+        
+        if not task_id:
+            print(f"未能获取 Task ID: {submit_res}")
+            return
+            
+        print(f"任务提交成功，Task ID: {task_id}")
+        
+        # 2. 开始轮询
+        print("\n[多图参考生视频] 2. 开始轮询任务状态...")
+        video_url = wait_for_task(task_id)
+        
+        if video_url:
+            print(f"\n恭喜！视频生成成功: {video_url}")
+        else:
+            print("\n视频生成失败。")
+            
+    except Exception as e:
+        print(f"提交过程发生异常: {e}")
 
 if __name__ == "__main__":
-    test_kling_multi_image()
+    test_kling_multi_image_full_flow()

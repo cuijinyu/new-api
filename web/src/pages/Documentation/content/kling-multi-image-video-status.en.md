@@ -29,15 +29,49 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| code | integer | Status code (0 for success) |
+| code | string | Status code (`success` for success) |
 | message | string | Status message |
-| data | object | Data object |
+| data | object | Task detail object |
 | data.task_id | string | Task ID |
-| data.task_status | string | Task status: `submitted`, `processing`, `succeed`, `failed` |
-| data.task_result | object | Task result (only present when status is `succeed`) |
-| data.task_result.videos | array | List of generated videos |
-| data.task_result.videos[0].url | string | URL for video download or playback |
-| data.task_result.videos[0].duration | string | Total duration of the video |
+| data.status | string | Unified task status: `SUBMITTED`, `IN_PROGRESS`, `SUCCESS`, `FAILURE` |
+| data.progress | string | Task progress (e.g., "100%") |
+| data.data | object | Original Kling response data |
+| data.data.data.task_status | string | Kling task status: `submitted`, `processing`, `succeed`, `failed` |
+| data.data.data.task_result.videos | array | List of generated videos |
+| data.data.data.task_result.videos[0].url | string | URL for video download or playback |
+| data.data.data.task_result.videos[0].duration | string | Total duration of the video |
+
+---
+
+## Response Example
+
+```json
+{
+  "code": "success",
+  "message": "",
+  "data": {
+    "task_id": "842250903629086785",
+    "status": "SUCCESS",
+    "progress": "100%",
+    "data": {
+      "code": 0,
+      "data": {
+        "task_id": "842250903629086785",
+        "task_status": "succeed",
+        "task_result": {
+          "videos": [
+            {
+              "id": "842250903708762200",
+              "url": "https://v16-kling-fdl.klingai.com/...",
+              "duration": "5.1"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
 
 ---
 
