@@ -40,6 +40,10 @@ import klingMultiImageVideoContentZh from './content/kling-multi-image-video.md?
 import klingMultiImageVideoContentEn from './content/kling-multi-image-video.en.md?raw';
 import klingMultiImageVideoStatusContentZh from './content/kling-multi-image-video-status.md?raw';
 import klingMultiImageVideoStatusContentEn from './content/kling-multi-image-video-status.en.md?raw';
+import klingOmniVideoContentZh from './content/kling-omni-video.md?raw';
+import klingOmniVideoContentEn from './content/kling-omni-video.en.md?raw';
+import klingOmniVideoStatusContentZh from './content/kling-omni-video-status.md?raw';
+import klingOmniVideoStatusContentEn from './content/kling-omni-video-status.en.md?raw';
 import openaiTtsContentZh from './content/openai-tts.md?raw';
 import openaiTtsContentEn from './content/openai-tts.en.md?raw';
 import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
@@ -246,6 +250,30 @@ export const documentationConfig = [
     content: {
       zh: klingMultiImageVideoStatusContentZh,
       en: klingMultiImageVideoStatusContentEn
+    }
+  },
+  {
+    key: 'kling-omni-video',
+    title: 'doc.klingOmniVideo.title',
+    description: 'doc.klingOmniVideo.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-omni-video',
+    category: 'video',
+    content: {
+      zh: klingOmniVideoContentZh,
+      en: klingOmniVideoContentEn
+    }
+  },
+  {
+    key: 'kling-omni-video-status',
+    title: 'doc.klingOmniVideoStatus.title',
+    description: 'doc.klingOmniVideoStatus.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-omni-video-status',
+    category: 'video',
+    content: {
+      zh: klingOmniVideoStatusContentZh,
+      en: klingOmniVideoStatusContentEn
     }
   },
   {
