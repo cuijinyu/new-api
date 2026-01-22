@@ -44,3 +44,6 @@ export const TASK_ACTION_FIRST_TAIL_GENERATE = 'firstTailGenerate';
 export const TASK_ACTION_REFERENCE_GENERATE = 'referenceGenerate';
 export const TASK_ACTION_MOTION_CONTROL = 'motionControl';
 export const TASK_ACTION_OMNI_VIDEO = 'omniVideo';
+export const TASK_ACTION_ADVANCED_LIP_SYNC = 'advancedLipSync';
+export const TASK_ACTION_VIDEO_EXTEND = 'videoExtend';
+export const TASK_ACTION_IDENTIFY_FACE = 'identifyFace';

@@ -23,4 +23,5 @@ web/bun.lock
 electron/node_modules
 electron/dist
 
-*_localtest.py
+*_local.py
+*_local.yml

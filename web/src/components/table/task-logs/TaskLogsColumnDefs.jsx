@@ -139,6 +139,24 @@ const renderType = (type, t) => {
           {t('全能视频')}
         </Tag>
       );
+      case TASK_ACTION_ADVANCED_LIP_SYNC:
+      return (
+        <Tag color='teal' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('对口型')}
+        </Tag>
+      );
+    case TASK_ACTION_VIDEO_EXTEND:
+      return (
+        <Tag color='indigo' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('视频延长')}
+        </Tag>
+      );
+    case TASK_ACTION_IDENTIFY_FACE:
+      return (
+        <Tag color='pink' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('人脸识别')}
+        </Tag>
+      );
     default:
       return (
         <Tag color='white' shape='circle' prefixIcon={<HelpCircle size={14} />}>
