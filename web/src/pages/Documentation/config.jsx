@@ -44,6 +44,12 @@ import klingOmniVideoContentZh from './content/kling-omni-video.md?raw';
 import klingOmniVideoContentEn from './content/kling-omni-video.en.md?raw';
 import klingOmniVideoStatusContentZh from './content/kling-omni-video-status.md?raw';
 import klingOmniVideoStatusContentEn from './content/kling-omni-video-status.en.md?raw';
+import klingVideoExtendContentZh from './content/kling-video-extend.md?raw';
+import klingVideoExtendContentEn from './content/kling-video-extend.en.md?raw';
+import klingLipSyncContentZh from './content/kling-lip-sync.md?raw';
+import klingLipSyncContentEn from './content/kling-lip-sync.en.md?raw';
+import klingMultiElementsContentZh from './content/kling-multi-elements.md?raw';
+import klingMultiElementsContentEn from './content/kling-multi-elements.en.md?raw';
 import openaiTtsContentZh from './content/openai-tts.md?raw';
 import openaiTtsContentEn from './content/openai-tts.en.md?raw';
 import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
@@ -274,6 +280,42 @@ export const documentationConfig = [
     content: {
       zh: klingOmniVideoStatusContentZh,
       en: klingOmniVideoStatusContentEn
+    }
+  },
+  {
+    key: 'kling-video-extend',
+    title: 'doc.klingVideoExtend.title',
+    description: 'doc.klingVideoExtend.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-video-extend',
+    category: 'video',
+    content: {
+      zh: klingVideoExtendContentZh,
+      en: klingVideoExtendContentEn
+    }
+  },
+  {
+    key: 'kling-lip-sync',
+    title: 'doc.klingLipSync.title',
+    description: 'doc.klingLipSync.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-lip-sync',
+    category: 'video',
+    content: {
+      zh: klingLipSyncContentZh,
+      en: klingLipSyncContentEn
+    }
+  },
+  {
+    key: 'kling-multi-elements',
+    title: 'doc.klingMultiElements.title',
+    description: 'doc.klingMultiElements.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-multi-elements',
+    category: 'video',
+    content: {
+      zh: klingMultiElementsContentZh,
+      en: klingMultiElementsContentEn
     }
   },
   {

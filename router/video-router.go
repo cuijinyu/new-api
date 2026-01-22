@@ -35,6 +35,22 @@ func SetVideoRouter(router *gin.Engine) {
 		klingV1Router.GET("/videos/omni-video/:task_id", controller.RelayTask)
 		klingV1Router.GET("/videos/motion-control/:task_id", controller.RelayTask)
 		klingV1Router.GET("/videos/multi-image2video/:task_id", controller.RelayTask)
+		// 对口型 (Lip-Sync) 端点
+		klingV1Router.POST("/videos/identify-face", controller.RelayTask)
+		klingV1Router.POST("/videos/advanced-lip-sync", controller.RelayTask)
+		klingV1Router.GET("/videos/advanced-lip-sync/:task_id", controller.RelayTask)
+		// 视频延长 (Video Extend) 端点
+		klingV1Router.POST("/videos/video-extend", controller.RelayTask)
+		klingV1Router.GET("/videos/video-extend/:task_id", controller.RelayTask)
+		// 多模态视频编辑 (Multi-Elements) 端点
+		klingV1Router.POST("/videos/multi-elements/init-selection", controller.RelayTask)    // 初始化待编辑视频
+		klingV1Router.POST("/videos/multi-elements/add-selection", controller.RelayTask)     // 增加视频选区
+		klingV1Router.POST("/videos/multi-elements/delete-selection", controller.RelayTask)  // 删减视频选区
+		klingV1Router.POST("/videos/multi-elements/clear-selection", controller.RelayTask)   // 清除视频选区
+		klingV1Router.POST("/videos/multi-elements/preview-selection", controller.RelayTask) // 预览已选区视频
+		klingV1Router.POST("/videos/multi-elements", controller.RelayTask)                   // 创建多模态视频编辑任务
+		klingV1Router.POST("/videos/multi-elements/", controller.RelayTask)                  // 创建多模态视频编辑任务（带斜杠）
+		klingV1Router.GET("/videos/multi-elements/:task_id", controller.RelayTask)           // 查询多模态视频编辑任务
 	}
 
 	// Jimeng official API routes - direct mapping to official API format
