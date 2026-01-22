@@ -154,7 +154,7 @@ type multiElementsInitResponsePayload struct {
 		Status           int     `json:"status"`            // 拒识码，非0为识别失败
 		SessionId        string  `json:"session_id"`        // 会话ID，有效期24小时
 		Fps              float64 `json:"fps"`               // 解析后视频的帧数
-		OriginalDuration int     `json:"original_duration"` // 解析后视频的时长
+		OriginalDuration float64 `json:"original_duration"` // 解析后视频的时长（毫秒）
 		Width            int     `json:"width"`             // 解析后视频的宽
 		Height           int     `json:"height"`            // 解析后视频的高
 		TotalFrame       int     `json:"total_frame"`       // 解析后视频的总帧数

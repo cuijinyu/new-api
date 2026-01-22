@@ -20,25 +20,6 @@ func KlingRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		// Support both model_name and model fields
-		model, _ := originalReq["model_name"].(string)
-		if model == "" {
-			model, _ = originalReq["model"].(string)
-		}
-		prompt, _ := originalReq["prompt"].(string)
-
-		unifiedReq := map[string]interface{}{
-			"model":    model,
-			"prompt":   prompt,
-			"metadata": originalReq,
-		}
-
-		jsonData, err := json.Marshal(unifiedReq)
-		if err != nil {
-			c.Next()
-			return
-		}
-
 		// 判断任务类型（在重写路径之前检测原始路径）
 		originalPath := c.Request.URL.Path
 		isOmniVideo := strings.Contains(originalPath, "omni-video")
@@ -56,6 +37,36 @@ func KlingRequestConvert() func(c *gin.Context) {
 		isMultiElementsPreview := strings.Contains(originalPath, "multi-elements/preview-selection")
 		// 创建任务端点：POST /v1/videos/multi-elements/ (注意末尾有/)
 		isMultiElementsCreate := strings.HasSuffix(originalPath, "multi-elements") || strings.HasSuffix(originalPath, "multi-elements/")
+
+		// Support both model_name and model fields
+		model, _ := originalReq["model_name"].(string)
+		if model == "" {
+			model, _ = originalReq["model"].(string)
+		}
+
+		// 对于不需要 model 的辅助接口，设置默认模型名称以便渠道路由
+		// 这些接口本身不使用 model 参数，但 new-api 需要 model 来选择渠道
+		if model == "" {
+			if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
+				isMultiElementsClearSelection || isMultiElementsPreview ||
+				isIdentifyFace || isAdvancedLipSync || isVideoExtend {
+				model = "kling-v1-6" // 默认模型，用于渠道路由
+			}
+		}
+
+		prompt, _ := originalReq["prompt"].(string)
+
+		unifiedReq := map[string]interface{}{
+			"model":    model,
+			"prompt":   prompt,
+			"metadata": originalReq,
+		}
+
+		jsonData, err := json.Marshal(unifiedReq)
+		if err != nil {
+			c.Next()
+			return
+		}
 
 		// Rewrite request body and path
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
