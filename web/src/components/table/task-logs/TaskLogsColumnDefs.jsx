@@ -41,6 +41,9 @@ import {
   TASK_ACTION_TEXT_GENERATE,
   TASK_ACTION_MOTION_CONTROL,
   TASK_ACTION_OMNI_VIDEO,
+  TASK_ACTION_ADVANCED_LIP_SYNC,
+  TASK_ACTION_VIDEO_EXTEND,
+  TASK_ACTION_IDENTIFY_FACE,
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
 
