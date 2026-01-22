@@ -17,19 +17,20 @@ import os
 
 # 配置信息
 BASE_URL = os.getenv("KLING_BASE_URL", "https://www.ezmodel.cloud")
-API_KEY = os.getenv("EZMODEL_API_KEY", "YOUR_API_KEY")
+API_KEY = os.getenv("EZMODEL_API_KEY", "")
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 # 测试用的视频和图片 URL（请替换为实际可用的 URL）
-TEST_VIDEO_URL = "https://example.com/test_video.mp4"
-TEST_IMAGE_URL = "https://example.com/test_image.jpg"
+TEST_VIDEO_URL = "https://tmp-hd100.vx-cdn.com/file-69724a9e83cab-69724ad303f69/Video-Audio%2BVA.mov"
+TEST_IMAGE_URL = "https://tmp-hd105.vx-cdn.com/file-6972497ad609e-69724ad0b4d33/photo1.jpg"
 
 
-def step1_init_selection(video_url: str = None, video_id: str = None):
+def step1_init_selection(video_url: str = None, video_id: str = None, model: str = "kling-v1-6"):
     """
     步骤1: 初始化待编辑视频
     
@@ -41,6 +42,7 @@ def step1_init_selection(video_url: str = None, video_id: str = None):
             - 时长: ≥2s且≤5s，或 ≥7s且≤10s
             - 宽高: 720px - 2160px
             - 帧率: 24, 30, 60fps
+        - model: 模型名称 (必须，用于 new-api 路由)
     返回:
         - session_id: 会话ID，有效期24小时
         - fps: 帧率
@@ -53,7 +55,9 @@ def step1_init_selection(video_url: str = None, video_id: str = None):
     print(f"\n[步骤 1] 初始化待编辑视频")
     print(f"请求地址: POST {url}")
     
-    payload = {}
+    payload = {
+        "model": model
+    }
     if video_id:
         payload["video_id"] = video_id
     elif video_url:
@@ -246,6 +250,7 @@ def step4_create_task(session_id: str, edit_mode: str, prompt: str,
     print(f"请求地址: POST {url}")
     
     payload = {
+        "model": model_name,
         "model_name": model_name,
         "session_id": session_id,
         "edit_mode": edit_mode,

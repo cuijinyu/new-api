@@ -154,7 +154,7 @@ type multiElementsInitResponsePayload struct {
 		Status           int     `json:"status"`            // 拒识码，非0为识别失败
 		SessionId        string  `json:"session_id"`        // 会话ID，有效期24小时
 		Fps              float64 `json:"fps"`               // 解析后视频的帧数
-		OriginalDuration int     `json:"original_duration"` // 解析后视频的时长
+		OriginalDuration float64 `json:"original_duration"` // 解析后视频的时长（毫秒）
 		Width            int     `json:"width"`             // 解析后视频的宽
 		Height           int     `json:"height"`            // 解析后视频的高
 		TotalFrame       int     `json:"total_frame"`       // 解析后视频的总帧数
@@ -765,6 +765,20 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 		action = ctxAction
 	}
 
+	// 免费辅助操作不扣费，返回 0
+	// 这些操作是多模态视频编辑和对口型的前置/辅助步骤
+	freeActions := map[string]bool{
+		constant.TaskActionMultiElementsInit:            true, // 初始化待编辑视频
+		constant.TaskActionMultiElementsAddSelection:    true, // 增加视频选区
+		constant.TaskActionMultiElementsDeleteSelection: true, // 删减视频选区
+		constant.TaskActionMultiElementsClearSelection:  true, // 清除视频选区
+		constant.TaskActionMultiElementsPreview:         true, // 预览已选区视频
+		constant.TaskActionIdentifyFace:                 true, // 人脸识别（对口型前置步骤）
+	}
+	if freeActions[action] {
+		return 0, nil
+	}
+
 	// 1. 获取单价系数
 	unitScale, err := a.calculateUnitPriceScale(action, &req)
 	if err != nil {
@@ -856,8 +870,19 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	// Use the standard validation method for TaskSubmitReq
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	// 检查是否是不需要 prompt 的接口
+	currentAction := c.GetString("action")
+	noPromptRequired := currentAction == constant.TaskActionMultiElementsInit || // 多模态视频编辑 - 初始化
+		currentAction == constant.TaskActionMultiElementsAddSelection || // 多模态视频编辑 - 增加选区
+		currentAction == constant.TaskActionMultiElementsDeleteSelection || // 多模态视频编辑 - 删减选区
+		currentAction == constant.TaskActionMultiElementsClearSelection || // 多模态视频编辑 - 清除选区
+		currentAction == constant.TaskActionMultiElementsPreview || // 多模态视频编辑 - 预览
+		currentAction == constant.TaskActionIdentifyFace || // 人脸识别（对口型前置步骤）
+		currentAction == constant.TaskActionAdvancedLipSync || // 对口型
+		currentAction == constant.TaskActionVideoExtend // 视频延长
+
+	// 使用带选项的验证方法
+	return relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
 }
 
 // BuildRequestURL constructs the upstream URL.

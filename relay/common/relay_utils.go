@@ -205,6 +205,12 @@ func isKnownTaskField(field string) bool {
 }
 
 func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *dto.TaskError {
+	return ValidateBasicTaskRequestWithOptions(c, info, action, true)
+}
+
+// ValidateBasicTaskRequestWithOptions 带选项的任务请求验证
+// requirePrompt: 是否要求 prompt 必填（某些辅助接口如 multi-elements/init-selection 不需要 prompt）
+func ValidateBasicTaskRequestWithOptions(c *gin.Context, info *RelayInfo, action string, requirePrompt bool) *dto.TaskError {
 	var err error
 	contentType := c.GetHeader("Content-Type")
 	var req TaskSubmitReq
@@ -217,8 +223,11 @@ func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *d
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
-	if taskErr := validatePrompt(req.Prompt); taskErr != nil {
-		return taskErr
+	// 仅在 requirePrompt 为 true 时验证 prompt
+	if requirePrompt {
+		if taskErr := validatePrompt(req.Prompt); taskErr != nil {
+			return taskErr
+		}
 	}
 
 	if len(req.Images) == 0 && strings.TrimSpace(req.Image) != "" {
