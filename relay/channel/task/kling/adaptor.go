@@ -856,8 +856,19 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
-	// Use the standard validation method for TaskSubmitReq
-	return relaycommon.ValidateBasicTaskRequest(c, info, constant.TaskActionGenerate)
+	// 检查是否是不需要 prompt 的接口
+	currentAction := c.GetString("action")
+	noPromptRequired := currentAction == constant.TaskActionMultiElementsInit || // 多模态视频编辑 - 初始化
+		currentAction == constant.TaskActionMultiElementsAddSelection || // 多模态视频编辑 - 增加选区
+		currentAction == constant.TaskActionMultiElementsDeleteSelection || // 多模态视频编辑 - 删减选区
+		currentAction == constant.TaskActionMultiElementsClearSelection || // 多模态视频编辑 - 清除选区
+		currentAction == constant.TaskActionMultiElementsPreview || // 多模态视频编辑 - 预览
+		currentAction == constant.TaskActionIdentifyFace || // 人脸识别（对口型前置步骤）
+		currentAction == constant.TaskActionAdvancedLipSync || // 对口型
+		currentAction == constant.TaskActionVideoExtend // 视频延长
+
+	// 使用带选项的验证方法
+	return relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
 }
 
 // BuildRequestURL constructs the upstream URL.
