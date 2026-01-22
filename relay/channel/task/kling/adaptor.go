@@ -613,6 +613,19 @@ var motionControlProScale = 1.5 // Pro 模式价格是 Std 的 1.5 倍
 // Pro/Std 倍率 = 5/3 ≈ 1.667
 var multiElementsProScale = 5.0 / 3.0
 
+// multiImage2VideoProScale 多图参考生视频 Pro 模式相对于 Std 模式的价格倍率
+// 官方价格: V1.6 std 5s=2元, 10s=4元; pro 5s=3.5元, 10s=7元
+// Pro/Std 倍率 = 3.5/2 = 1.75
+var multiImage2VideoProScale = 3.5 / 2.0
+
+// multiImage2VideoStdScaleMap 多图参考生视频 Std 模式的基础倍率（相对于普通视频）
+// 官方价格: V1.6 std 5s=2元, 10s=4元 → 每秒0.4元
+// 普通视频 V1.6 std: 每秒约0.056元（5s=0.28元）
+// 倍率 = 0.4 / 0.056 ≈ 7.14
+var multiImage2VideoStdScaleMap = map[string]float64{
+	"kling-v1-6": 2.0 / 0.28, // 约 7.14，使多图生视频 5s=2元（普通视频 5s=0.28元）
+}
+
 // videoExtendProScaleMap 视频延长 Pro 模式相对于 Std 模式的价格倍率
 // 官方价格:
 //   V1: std=1元, pro=3.5元 → pro/std = 3.5
@@ -686,6 +699,24 @@ func (a *TaskAdaptor) calculateUnitPriceScale(action string, req *relaycommon.Ta
 		// 对口型计费：每5秒0.5元，不足5秒按5秒计算
 		// 这里返回1.0，实际计费在 GetPriceScale 中按时长计算
 		modeScale = 1.0
+	} else if action == constant.TaskActionMultiImage2Video {
+		// 多图参考生视频计费：根据模型和模式计算
+		// 官方价格: V1.6 std 5s=2元, 10s=4元; pro 5s=3.5元, 10s=7元
+		model := req.Model
+		if model == "" {
+			model = "kling-v1-6" // 默认模型
+		}
+		// 获取 std 基础倍率
+		stdScale, ok := multiImage2VideoStdScaleMap[model]
+		if !ok {
+			stdScale = multiImage2VideoStdScaleMap["kling-v1-6"] // 默认使用 V1.6 的价格
+		}
+		if mode == "pro" {
+			// pro 模式：基础倍率 * pro/std 倍率
+			modeScale = stdScale * multiImage2VideoProScale
+		} else {
+			modeScale = stdScale
+		}
 	} else {
 		// 普通任务沿用原有的模型倍率表
 		modeScale, err = calculateModeScale(mode, req.Model)
