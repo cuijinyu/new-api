@@ -765,6 +765,20 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 		action = ctxAction
 	}
 
+	// 免费辅助操作不扣费，返回 0
+	// 这些操作是多模态视频编辑和对口型的前置/辅助步骤
+	freeActions := map[string]bool{
+		constant.TaskActionMultiElementsInit:            true, // 初始化待编辑视频
+		constant.TaskActionMultiElementsAddSelection:    true, // 增加视频选区
+		constant.TaskActionMultiElementsDeleteSelection: true, // 删减视频选区
+		constant.TaskActionMultiElementsClearSelection:  true, // 清除视频选区
+		constant.TaskActionMultiElementsPreview:         true, // 预览已选区视频
+		constant.TaskActionIdentifyFace:                 true, // 人脸识别（对口型前置步骤）
+	}
+	if freeActions[action] {
+		return 0, nil
+	}
+
 	// 1. 获取单价系数
 	unitScale, err := a.calculateUnitPriceScale(action, &req)
 	if err != nil {
