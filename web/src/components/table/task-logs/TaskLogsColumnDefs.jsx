@@ -41,6 +41,9 @@ import {
   TASK_ACTION_TEXT_GENERATE,
   TASK_ACTION_MOTION_CONTROL,
   TASK_ACTION_OMNI_VIDEO,
+  TASK_ACTION_ADVANCED_LIP_SYNC,
+  TASK_ACTION_VIDEO_EXTEND,
+  TASK_ACTION_IDENTIFY_FACE,
 } from '../../../constants/common.constant';
 import { CHANNEL_OPTIONS } from '../../../constants/channel.constants';
 
@@ -137,6 +140,24 @@ const renderType = (type, t) => {
       return (
         <Tag color='cyan' shape='circle' prefixIcon={<Sparkles size={14} />}>
           {t('全能视频')}
+        </Tag>
+      );
+      case TASK_ACTION_ADVANCED_LIP_SYNC:
+      return (
+        <Tag color='teal' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('对口型')}
+        </Tag>
+      );
+    case TASK_ACTION_VIDEO_EXTEND:
+      return (
+        <Tag color='indigo' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('视频延长')}
+        </Tag>
+      );
+    case TASK_ACTION_IDENTIFY_FACE:
+      return (
+        <Tag color='pink' shape='circle' prefixIcon={<Video size={14} />}>
+          {t('人脸识别')}
         </Tag>
       );
     default:
