@@ -472,8 +472,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--url", 
         type=str, 
-        default="https://www.ezmodel.cloud/v1",
-        help="API Base URL (默认: https://www.ezmodel.cloud/v1)"
+        default="https://www.ezmodel.cloud",
+        help="API Base URL (默认: https://www.ezmodel.cloud)"
     )
     parser.add_argument(
         "--key", 
