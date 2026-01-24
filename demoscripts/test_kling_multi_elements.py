@@ -17,7 +17,7 @@ import os
 
 # 配置信息
 BASE_URL = os.getenv("KLING_BASE_URL", "https://www.ezmodel.cloud")
-API_KEY = os.getenv("EZMODEL_API_KEY", "")
+API_KEY = os.getenv("EZMODEL_API_KEY", "sk-d1v0wkVPaROrjoP62CsFfUtaBL6Pl06GA8BZTCBWFevccGZN")
 
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
@@ -26,11 +26,11 @@ HEADERS = {
 }
 
 # 测试用的视频和图片 URL（请替换为实际可用的 URL）
-TEST_VIDEO_URL = "https://tmp-hd100.vx-cdn.com/file-69724a9e83cab-69724ad303f69/Video-Audio%2BVA.mov"
+TEST_VIDEO_URL = "https://v16-kling-fdl.klingai.com/bs2/upload-ylab-stunt-sgp/muse/839917463969071127/VIDEO/20260123/aedb8183979fc798cd58bc7daae41dfd-3f4f0061-2623-42ee-ae3c-a7cf4a97ff0e.mp4?cacheKey=ChtzZWN1cml0eS5rbGluZy5tZXRhX2VuY3J5cHQSsAH6dwNa3o5s4GVPBtXPxQM48a5h3nH7BdpnKq9ofgNbwlsQOssVxQQ_NZcptcZnhe00nYSjwnNmeU9WGQ0H7aMp7Peo5wwAW2gpMdk35VRz4mos8Jq8jJrPBV8cK1rJIolr0HK7-quY4DmEslJTwCgfe3eWPmcXlx8lDvF-yG2VsharHOCN2Rc-X7d6vszeT8LZNagrT26eQvez__0VGCjpAOLEMOkvIl0kO7CXU5ftsxoSLL46pEJbTw3u2hySdPDYoj5mIiC7YfTJHCgm973cStIYqPfGa5AwE_wmSmcFnQuaEG5m_SgFMAE&x-kcdn-pid=112781&ksSecret=b4d3e0510b2e55f8c620eb0e782bc101&ksTime=6999de21"
 TEST_IMAGE_URL = "https://tmp-hd105.vx-cdn.com/file-6972497ad609e-69724ad0b4d33/photo1.jpg"
 
 
-def step1_init_selection(video_url: str = None, video_id: str = None, model: str = "kling-v1-6"):
+def step1_init_selection(video_url: str = None, video_id: str = None):
     """
     步骤1: 初始化待编辑视频
     
@@ -42,7 +42,6 @@ def step1_init_selection(video_url: str = None, video_id: str = None, model: str
             - 时长: ≥2s且≤5s，或 ≥7s且≤10s
             - 宽高: 720px - 2160px
             - 帧率: 24, 30, 60fps
-        - model: 模型名称 (必须，用于 new-api 路由)
     返回:
         - session_id: 会话ID，有效期24小时
         - fps: 帧率
@@ -55,9 +54,7 @@ def step1_init_selection(video_url: str = None, video_id: str = None, model: str
     print(f"\n[步骤 1] 初始化待编辑视频")
     print(f"请求地址: POST {url}")
     
-    payload = {
-        "model": model
-    }
+    payload = {}
     if video_id:
         payload["video_id"] = video_id
     elif video_url:
@@ -250,7 +247,6 @@ def step4_create_task(session_id: str, edit_mode: str, prompt: str,
     print(f"请求地址: POST {url}")
     
     payload = {
-        "model": model_name,
         "model_name": model_name,
         "session_id": session_id,
         "edit_mode": edit_mode,
