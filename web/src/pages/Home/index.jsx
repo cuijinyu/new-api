@@ -375,7 +375,7 @@ const Home = () => {
                 <StepItem
                   number='1'
                   title={t('注册账号')}
-                  description={t('免费注册并获得体验额度')}
+                  description={t('免费注册')}
                 />
                 <StepItem
                   number='2'
