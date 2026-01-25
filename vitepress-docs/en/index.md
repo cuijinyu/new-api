@@ -101,3 +101,9 @@ console.log(response.choices[0].message.content);
 | Image | DALL-E 3, DALL-E 2 | Text-to-image, image editing |
 | Video | Kling, Sora | Text-to-video, image-to-video, video extension |
 | Audio | Whisper, TTS | Speech recognition, text-to-speech |
+
+## Why EZmodel?
+
+- **Unified API** - One API key to access all models
+- **Complete Documentation** - Detailed API docs and code examples
+- **Technical Support** - Professional technical team support

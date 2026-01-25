@@ -220,14 +220,10 @@ export default defineConfig({
     ],
 
     sidebar: zhSidebar,
-
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/your-repo/new-api' }
-    ],
     
     footer: {
-      message: 'Released under the AGPL-3.0 License.',
-      copyright: 'Copyright © 2024-present EZmodel'
+      message: '企业合作联系：jasonhu@ezmodel.cloud',
+      copyright: 'Copyright © 2025-present EZmodel'
     },
     
     search: {

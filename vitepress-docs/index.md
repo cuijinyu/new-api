@@ -16,9 +16,6 @@ hero:
     - theme: alt
       text: API 参考
       link: /guide/reference
-    - theme: alt
-      text: GitHub
-      link: https://github.com/your-repo/new-api
 
 features:
   - icon: 🚀
@@ -144,7 +141,5 @@ curl https://ezmodel.cloud/v1/chat/completions \
 ## 为什么选择 EZmodel？
 
 - **统一接口** - 一个 API 密钥访问所有模型
-- **高可用性** - 多节点部署，99.9% 可用性保证
-- **快速响应** - 全球 CDN 加速，低延迟访问
 - **完善文档** - 详细的 API 文档和示例代码
 - **技术支持** - 专业的技术团队提供支持
