@@ -502,9 +502,9 @@ const Home = () => {
                 {headerNavModules.pricing && (
                   <Link to='/pricing'>
                     <Button
-                      theme='borderless'
+                      theme='light'
                       size='large'
-                      className='!rounded-full !px-8 !py-4 !text-lg !text-white !font-medium !border-2 !border-white/60 hover:!border-white hover:!bg-white/10'
+                      className='!rounded-full !px-8 !py-4 !text-lg !bg-white/20 !text-white !font-semibold !backdrop-blur-sm hover:!bg-white hover:!text-gray-900'
                     >
                       {t('查看定价')}
                     </Button>
