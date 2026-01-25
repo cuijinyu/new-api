@@ -24,12 +24,11 @@ jobs:
       - name: Generate image tag
         id: tag
         run: |
-          DATE=$(date +%Y%m%d)
-          RANDOM=$((RANDOM % 1000))
-          TAG="${DATE}-${RANDOM}"
+          TAG=$(date +%Y%m%d%H%M%S)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -37,5 +36,10 @@ jobs:
           tags: docker.io/gallon666/ezmodel:${{ steps.tag.outputs.tag }}
           platforms: linux/amd64
 
-      - name: Image digest
-        run: echo ${{ steps.build.outputs.digest }}
+      - name: Output image path
+        run: |
+          IMAGE_PATH="docker.io/gallon666/ezmodel:${{ steps.tag.outputs.tag }}"
+          echo "=========================================="
+          echo "镜像已推送完成"
+          echo "完整路径: ${IMAGE_PATH}"
+          echo "=========================================="
