@@ -54,7 +54,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	if modelName == "" {
 		modelName = service.CoverTaskActionToModelName(platform, info.Action)
 	}
-	modelPrice, success := ratio_setting.GetModelPrice(modelName, true)
+
+	// 为可灵特殊功能使用专用计费模型名
+	// 这些功能的官方价格与普通视频不同，需要使用独立的 ModelPrice
+	billingModelName := service.GetBillingModelName(platform, info.Action, modelName)
+	modelPrice, success := ratio_setting.GetModelPrice(billingModelName, true)
 	if !success {
 		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[modelName]
 		if !ok {

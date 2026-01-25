@@ -4,7 +4,8 @@ type TaskPlatform string
 
 const (
 	TaskPlatformSuno       TaskPlatform = "suno"
-	TaskPlatformMidjourney              = "mj"
+	TaskPlatformMidjourney TaskPlatform = "mj"
+	TaskPlatformKling      TaskPlatform = "kling"
 )
 
 const (
