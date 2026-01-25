@@ -647,8 +647,16 @@ var videoExtendStdScaleMap = map[string]float64{
 
 // advancedLipSyncPricePerUnit 对口型计费：每5秒0.5元，不足5秒按5秒计算
 // 计费单位为5秒，每单位0.5元
-const advancedLipSyncPricePerUnit = 0.5  // 每5秒0.5元
-const advancedLipSyncUnitSeconds = 5.0   // 计费单位：5秒
+const advancedLipSyncPricePerUnit = 0.5 // 每5秒0.5元
+const advancedLipSyncUnitSeconds = 5.0  // 计费单位：5秒
+
+// identifyFacePricePerCall 人脸识别计费：每次0.05元
+// 官方价格：每次从资源包总数里扣减0.05积分
+const identifyFacePricePerCall = 0.05 // 每次0.05元
+
+// priceRatioToOfficial 内部计价单位与官方价格的比例
+// ModelPrice = 官方价格 × 0.14
+const priceRatioToOfficial = 0.14
 
 // calculateUnitPriceScale 计算单价系数（Mode、声音、视频输入等系数的乘积）
 func (a *TaskAdaptor) calculateUnitPriceScale(action string, req *relaycommon.TaskSubmitReq) (float64, error) {
@@ -700,22 +708,16 @@ func (a *TaskAdaptor) calculateUnitPriceScale(action string, req *relaycommon.Ta
 		// 这里返回1.0，实际计费在 GetPriceScale 中按时长计算
 		modeScale = 1.0
 	} else if action == constant.TaskActionMultiImage2Video {
-		// 多图参考生视频计费：根据模型和模式计算
+		// 多图参考生视频计费：与普通视频相同
 		// 官方价格: V1.6 std 5s=2元, 10s=4元; pro 5s=3.5元, 10s=7元
+		// 与普通 V1.6 视频价格完全一致，使用相同的计费逻辑
 		model := req.Model
 		if model == "" {
 			model = "kling-v1-6" // 默认模型
 		}
-		// 获取 std 基础倍率
-		stdScale, ok := multiImage2VideoStdScaleMap[model]
-		if !ok {
-			stdScale = multiImage2VideoStdScaleMap["kling-v1-6"] // 默认使用 V1.6 的价格
-		}
-		if mode == "pro" {
-			// pro 模式：基础倍率 * pro/std 倍率
-			modeScale = stdScale * multiImage2VideoProScale
-		} else {
-			modeScale = stdScale
+		modeScale, err = calculateModeScale(mode, model)
+		if err != nil {
+			return 1.0, err
 		}
 	} else {
 		// 普通任务沿用原有的模型倍率表
@@ -766,17 +768,24 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	}
 
 	// 免费辅助操作不扣费，返回 0
-	// 这些操作是多模态视频编辑和对口型的前置/辅助步骤
+	// 这些操作是多模态视频编辑的前置/辅助步骤
 	freeActions := map[string]bool{
 		constant.TaskActionMultiElementsInit:            true, // 初始化待编辑视频
 		constant.TaskActionMultiElementsAddSelection:    true, // 增加视频选区
 		constant.TaskActionMultiElementsDeleteSelection: true, // 删减视频选区
 		constant.TaskActionMultiElementsClearSelection:  true, // 清除视频选区
 		constant.TaskActionMultiElementsPreview:         true, // 预览已选区视频
-		constant.TaskActionIdentifyFace:                 true, // 人脸识别（对口型前置步骤）
+		// 注意：人脸识别不再免费，按次收费 0.05 元
 	}
 	if freeActions[action] {
 		return 0, nil
+	}
+
+	// 人脸识别按次计费：0.05 元/次
+	// 官方价格：每次从资源包总数里扣减 0.05 积分
+	if action == constant.TaskActionIdentifyFace {
+		// 返回 0.05 / 0.14 ≈ 0.357，使 ModelPrice(0.14) × 0.357 ≈ 0.05
+		return float32(identifyFacePricePerCall / priceRatioToOfficial), nil
 	}
 
 	// 1. 获取单价系数
