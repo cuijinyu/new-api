@@ -47,9 +47,8 @@ import {
   Gemini,
   Grok,
   DeepSeek,
-  Mistral,
-  Qwen,
-  Zhipu,
+  Doubao,
+  Kling,
 } from '@lobehub/icons';
 
 const { Text } = Typography;
@@ -84,14 +83,15 @@ const StepItem = ({ number, title, description }) => (
 // 模型图标横幅
 const ModelIconBanner = () => {
   const icons = [
+    // 文生图/视频供应商前置
+    <Kling.Color key='kling' size={32} />,
+    // 大语言模型
     <OpenAI key='openai' size={32} />,
     <Claude.Color key='claude' size={32} />,
     <Gemini.Color key='gemini' size={32} />,
     <Grok key='grok' size={32} />,
     <DeepSeek.Color key='deepseek' size={32} />,
-    <Mistral.Color key='mistral' size={32} />,
-    <Qwen.Color key='qwen' size={32} />,
-    <Zhipu.Color key='zhipu' size={32} />,
+    <Doubao.Color key='doubao' size={32} />,
   ];
 
   return (
@@ -482,10 +482,10 @@ const Home = () => {
           {/* ========== CTA Section ========== */}
           <section className='py-24 px-4 ez-cta-section'>
             <div className='max-w-4xl mx-auto text-center relative z-10'>
-              <h2 className='text-3xl md:text-4xl font-bold text-white mb-6'>
+              <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-6'>
                 {t('准备好开始了吗？')}
               </h2>
-              <p className='text-white/80 text-lg mb-10'>
+              <p className='text-semi-color-text-2 text-lg mb-10'>
                 {t('注册即获免费额度，立即体验 AI 的强大能力')}
               </p>
               
@@ -494,7 +494,7 @@ const Home = () => {
                   <Button
                     theme='solid'
                     size='large'
-                    className='!rounded-full !px-12 !py-4 !text-lg !bg-white !text-gray-900 hover:!bg-gray-100'
+                    className='!rounded-full !px-12 !py-4 !text-lg ez-cta-btn'
                   >
                     {t('免费注册')}
                   </Button>
@@ -502,9 +502,9 @@ const Home = () => {
                 {headerNavModules.pricing && (
                   <Link to='/pricing'>
                     <Button
-                      theme='light'
+                      theme='outline'
                       size='large'
-                      className='!rounded-full !px-8 !py-4 !text-lg !bg-white/20 !text-white !font-semibold !backdrop-blur-sm hover:!bg-white hover:!text-gray-900'
+                      className='!rounded-full !px-8 !py-4 !text-lg !font-semibold'
                     >
                       {t('查看定价')}
                     </Button>
@@ -513,16 +513,16 @@ const Home = () => {
               </div>
 
               {/* 企业联系方式 */}
-              <div className='ez-contact-card rounded-2xl p-6 max-w-md mx-auto'>
-                <div className='flex items-center justify-center gap-4 text-white'>
-                  <div className='w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center'>
-                    <IconMail size='large' className='text-white' />
+              <div className='ez-contact-card rounded-2xl p-5 max-w-sm mx-auto'>
+                <div className='flex items-center gap-4'>
+                  <div className='w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0'>
+                    <IconMail size='extra-large' className='text-white' />
                   </div>
-                  <div className='text-left'>
-                    <div className='text-sm text-white/70'>{t('企业接入咨询')}</div>
+                  <div className='text-left min-w-0'>
+                    <div className='text-sm text-semi-color-text-2 mb-0.5'>{t('企业接入咨询')}</div>
                     <a 
                       href='mailto:jasonhu@ezmodel.cloud' 
-                      className='text-white font-medium hover:underline'
+                      className='text-semi-color-primary font-medium hover:underline truncate block'
                     >
                       jasonhu@ezmodel.cloud
                     </a>

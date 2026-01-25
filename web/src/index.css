@@ -925,9 +925,9 @@ html.dark .ez-feature-card {
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
-/* CTA Section - 蓝青渐变 */
+/* CTA Section - 浅色背景 */
 .ez-cta-section {
-  background: linear-gradient(135deg, #1e3a8a 0%, #0369a1 50%, #0891b2 100%);
+  background: var(--semi-color-bg-1);
   position: relative;
   overflow: hidden;
 }
@@ -937,13 +937,19 @@ html.dark .ez-feature-card {
   position: absolute;
   inset: 0;
   background: 
-    radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+    radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(14, 165, 233, 0.05) 0%, transparent 50%);
 }
 
 /* 企业联系卡片 */
 .ez-contact-card {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--semi-color-bg-0);
+  border: 1px solid var(--semi-color-border);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.ez-contact-card:hover {
+  border-color: var(--semi-color-primary);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);
 }
