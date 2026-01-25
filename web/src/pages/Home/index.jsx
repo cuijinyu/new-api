@@ -18,25 +18,26 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useContext, useEffect, useState } from 'react';
-import {
-  Button,
-  Typography,
-  Input,
-  ScrollList,
-  ScrollItem,
-} from '@douyinfe/semi-ui';
+import { Button, Typography } from '@douyinfe/semi-ui';
 import { API, showError, copy, showSuccess } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
-import { API_ENDPOINTS } from '../../constants/common.constant';
 import { StatusContext } from '../../context/Status';
 import { useActualTheme } from '../../context/Theme';
 import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
 import {
   IconGithubLogo,
-  IconPlay,
-  IconFile,
+  IconArrowRight,
   IconCopy,
+  IconCustomerSupport,
+  IconEdit,
+  IconSearch,
+  IconImage,
+  IconBolt,
+  IconPriceTag,
+  IconRefresh,
+  IconLineChartStroked,
+  IconMail,
 } from '@douyinfe/semi-icons';
 import { Link } from 'react-router-dom';
 import NoticeModal from '../../components/layout/NoticeModal';
@@ -45,10 +46,64 @@ import {
   Claude,
   Gemini,
   Grok,
-  Kling,
+  DeepSeek,
+  Mistral,
+  Qwen,
+  Zhipu,
 } from '@lobehub/icons';
 
 const { Text } = Typography;
+
+// 使用场景卡片
+const UseCaseCard = ({ icon, title, description, gradient }) => (
+  <div className={`relative p-6 rounded-3xl overflow-hidden group cursor-pointer transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl ${gradient}`}>
+    <div className='relative z-10'>
+      <div className='w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center mb-4'>
+        {icon}
+      </div>
+      <h3 className='text-xl font-bold text-white mb-2'>{title}</h3>
+      <p className='text-white/80 text-sm leading-relaxed'>{description}</p>
+    </div>
+    <div className='absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300' />
+  </div>
+);
+
+// 步骤组件
+const StepItem = ({ number, title, description }) => (
+  <div className='flex gap-4'>
+    <div className='flex-shrink-0 w-10 h-10 rounded-full ez-step-circle flex items-center justify-center text-white font-bold text-lg'>
+      {number}
+    </div>
+    <div>
+      <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{title}</h4>
+      <p className='text-semi-color-text-2 text-sm'>{description}</p>
+    </div>
+  </div>
+);
+
+// 模型图标横幅
+const ModelIconBanner = () => {
+  const icons = [
+    <OpenAI key='openai' size={32} />,
+    <Claude.Color key='claude' size={32} />,
+    <Gemini.Color key='gemini' size={32} />,
+    <Grok key='grok' size={32} />,
+    <DeepSeek.Color key='deepseek' size={32} />,
+    <Mistral.Color key='mistral' size={32} />,
+    <Qwen.Color key='qwen' size={32} />,
+    <Zhipu.Color key='zhipu' size={32} />,
+  ];
+
+  return (
+    <div className='flex items-center justify-center gap-6 md:gap-8 flex-wrap opacity-60'>
+      {icons.map((icon, index) => (
+        <div key={index} className='transition-transform hover:scale-110'>
+          {icon}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const Home = () => {
   const { t, i18n } = useTranslation();
@@ -59,30 +114,18 @@ const Home = () => {
   const [noticeVisible, setNoticeVisible] = useState(false);
   const isMobile = useIsMobile();
   const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
-  // 获取顶栏模块配置
+
   const headerNavModulesConfig = statusState?.status?.HeaderNavModules;
   let headerNavModules;
   try {
-    headerNavModules = headerNavModulesConfig ? JSON.parse(headerNavModulesConfig) : {
-      home: true,
-      console: true,
-      pricing: true,
-      docs: true,
-      about: true,
-    };
+    headerNavModules = headerNavModulesConfig
+      ? JSON.parse(headerNavModulesConfig)
+      : { home: true, console: true, pricing: true, docs: true, about: true };
   } catch (error) {
-    headerNavModules = {
-      home: true,
-      console: true,
-      pricing: true,
-      docs: true,
-      about: true,
-    };
+    headerNavModules = { home: true, console: true, pricing: true, docs: true, about: true };
   }
-  const serverAddress =
-    statusState?.status?.server_address || `${window.location.origin}`;
-  const endpointItems = API_ENDPOINTS.map((e) => ({ value: e }));
-  const [endpointIndex, setEndpointIndex] = useState(0);
+
+  const serverAddress = statusState?.status?.server_address || `${window.location.origin}`;
   const isChinese = i18n.language.startsWith('zh');
 
   const displayHomePageContent = async () => {
@@ -97,7 +140,6 @@ const Home = () => {
       setHomePageContent(content);
       localStorage.setItem('home_page_content', content);
 
-      // 如果内容是 URL，则发送主题模式
       if (data.startsWith('https://')) {
         const iframe = document.querySelector('iframe');
         if (iframe) {
@@ -114,8 +156,8 @@ const Home = () => {
     setHomePageContentLoaded(true);
   };
 
-  const handleCopyBaseURL = async () => {
-    const ok = await copy(serverAddress);
+  const handleCopyURL = async () => {
+    const ok = await copy(`${serverAddress}/v1`);
     if (ok) {
       showSuccess(t('已复制到剪切板'));
     }
@@ -137,7 +179,6 @@ const Home = () => {
         }
       }
     };
-
     checkNoticeAndShow();
   }, []);
 
@@ -145,12 +186,33 @@ const Home = () => {
     displayHomePageContent().then();
   }, []);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setEndpointIndex((prev) => (prev + 1) % endpointItems.length);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [endpointItems.length]);
+  // 使用场景数据
+  const useCases = [
+    {
+      icon: <IconCustomerSupport size='extra-large' className='text-white' />,
+      title: t('智能客服'),
+      description: t('构建7×24小时在线的AI客服系统，提升客户满意度'),
+      gradient: 'bg-gradient-to-br from-blue-500 to-cyan-400',
+    },
+    {
+      icon: <IconEdit size='extra-large' className='text-white' />,
+      title: t('内容创作'),
+      description: t('AI辅助文案撰写、翻译、摘要生成，提高创作效率'),
+      gradient: 'bg-gradient-to-br from-teal-500 to-emerald-400',
+    },
+    {
+      icon: <IconSearch size='extra-large' className='text-white' />,
+      title: t('知识问答'),
+      description: t('基于企业知识库的智能问答系统，赋能员工与客户'),
+      gradient: 'bg-gradient-to-br from-sky-500 to-indigo-400',
+    },
+    {
+      icon: <IconImage size='extra-large' className='text-white' />,
+      title: t('图像生成'),
+      description: t('AI驱动的创意设计，快速生成营销素材与产品图'),
+      gradient: 'bg-gradient-to-br from-orange-500 to-amber-400',
+    },
+  ];
 
   return (
     <div className='w-full overflow-x-hidden'>
@@ -161,133 +223,314 @@ const Home = () => {
       />
       {homePageContentLoaded && homePageContent === '' ? (
         <div className='w-full overflow-x-hidden'>
-          {/* Banner 部分 */}
-          <div className='w-full border-b border-semi-color-border min-h-[500px] md:min-h-[600px] lg:min-h-[700px] relative overflow-x-hidden'>
-            {/* 背景模糊晕染球 */}
-            <div className='blur-ball blur-ball-indigo' />
-            <div className='blur-ball blur-ball-teal' />
-            <div className='flex items-center justify-center h-full px-4 py-20 md:py-24 lg:py-32 mt-10'>
-              {/* 居中内容区 */}
-              <div className='flex flex-col items-center justify-center text-center max-w-4xl mx-auto'>
-                <div className='flex flex-col items-center justify-center mb-6 md:mb-8'>
-                  <h1
-                    className={`text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-semi-color-text-0 leading-tight ${isChinese ? 'tracking-wide md:tracking-wider' : ''}`}
-                  >
-                    <>
-                      {t('统一的')}
-                      <br />
-                      <span className='shine-text'>{t('大模型接口网关')}</span>
-                    </>
-                  </h1>
-                  <p className='text-base md:text-lg lg:text-xl text-semi-color-text-1 mt-4 md:mt-6 max-w-xl'>
-                    {t('更好的价格，更好的稳定性，只需要将模型基址替换为：')}
-                  </p>
-                  {/* BASE URL 与端点选择 */}
-                  <div className='flex flex-col md:flex-row items-center justify-center gap-4 w-full mt-4 md:mt-6 max-w-md'>
-                    <Input
-                      readonly
-                      value={serverAddress}
-                      className='flex-1 !rounded-full'
-                      size={isMobile ? 'default' : 'large'}
-                      suffix={
-                        <div className='flex items-center gap-2'>
-                          <ScrollList
-                            bodyHeight={32}
-                            style={{ border: 'unset', boxShadow: 'unset' }}
-                          >
-                            <ScrollItem
-                              mode='wheel'
-                              cycled={true}
-                              list={endpointItems}
-                              selectedIndex={endpointIndex}
-                              onSelect={({ index }) => setEndpointIndex(index)}
-                            />
-                          </ScrollList>
-                          <Button
-                            type='primary'
-                            onClick={handleCopyBaseURL}
-                            icon={<IconCopy />}
-                            className='!rounded-full'
-                          />
-                        </div>
-                      }
-                    />
-                  </div>
-                </div>
+          {/* ========== Hero Section ========== */}
+          <section className='relative min-h-screen flex items-center justify-center overflow-hidden'>
+            {/* 动态背景 */}
+            <div className='absolute inset-0 ez-hero-bg' />
+            
+            {/* 渐变遮罩 */}
+            <div className='absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-semi-color-bg-0' />
 
-                {/* 操作按钮 */}
-                <div className='flex flex-row gap-4 justify-center items-center'>
-                  <Link to='/console'>
+            <div className='relative z-10 max-w-5xl mx-auto px-4 py-32 text-center'>
+              {/* Logo/品牌名 */}
+              <div className='mb-8'>
+                <h1 className='text-6xl md:text-7xl lg:text-8xl font-black tracking-tight'>
+                  <span className='ez-brand-text'>EZ</span>
+                  <span className='text-semi-color-text-0'>model</span>
+                </h1>
+              </div>
+
+              {/* 主标语 */}
+              <h2 className={`text-2xl md:text-3xl lg:text-4xl font-medium text-semi-color-text-0 mb-6 ${isChinese ? 'tracking-wider' : ''}`}>
+                {t('一个接口，所有AI模型')}
+              </h2>
+
+              {/* 副标语 */}
+              <p className='text-lg md:text-xl text-semi-color-text-2 mb-12 max-w-2xl mx-auto leading-relaxed'>
+                {t('像调用GPT一样简单地使用Claude、Gemini、DeepSeek等全球顶尖AI模型')}
+              </p>
+
+              {/* CTA 按钮组 */}
+              <div className='flex flex-col sm:flex-row gap-4 justify-center items-center mb-16'>
+                <Link to='/register'>
+                  <Button
+                    theme='solid'
+                    size='large'
+                    className='!rounded-full !px-10 !py-3 !text-lg ez-cta-btn'
+                  >
+                    {t('立即体验')}
+                    <IconArrowRight className='ml-2' />
+                  </Button>
+                </Link>
+                {headerNavModules.docs && (
+                  <Link to='/docs'>
                     <Button
-                      theme='solid'
-                      type='primary'
-                      size={isMobile ? 'default' : 'large'}
-                      className='!rounded-3xl px-8 py-2'
-                      icon={<IconPlay />}
+                      theme='borderless'
+                      size='large'
+                      className='!rounded-full !px-8 !py-3 !text-lg text-semi-color-text-1 hover:text-semi-color-text-0'
                     >
-                      {t('获取密钥')}
+                      {t('阅读文档')}
                     </Button>
                   </Link>
-                  {isDemoSiteMode && statusState?.status?.version ? (
-                    <Button
-                      size={isMobile ? 'default' : 'large'}
-                      className='flex items-center !rounded-3xl px-6 py-2'
-                      icon={<IconGithubLogo />}
-                      onClick={() =>
-                        window.open(
-                          'https://github.com/QuantumNous/new-api',
-                          '_blank',
-                        )
-                      }
-                    >
-                      {statusState.status.version}
-                    </Button>
-                  ) : (
-                    headerNavModules.docs && (
-                      <Link to='/docs'>
-                        <Button
-                          size={isMobile ? 'default' : 'large'}
-                          className='flex items-center !rounded-3xl px-6 py-2'
-                          icon={<IconFile />}
-                        >
-                          {t('文档')}
-                        </Button>
-                      </Link>
-                    )
-                  )}
+                )}
+                {isDemoSiteMode && statusState?.status?.version && (
+                  <Button
+                    theme='borderless'
+                    size='large'
+                    className='!rounded-full !px-6 !py-3'
+                    icon={<IconGithubLogo />}
+                    onClick={() => window.open('https://github.com/QuantumNous/new-api', '_blank')}
+                  >
+                    {statusState.status.version}
+                  </Button>
+                )}
+              </div>
+
+              {/* 模型图标横幅 */}
+              <ModelIconBanner />
+            </div>
+          </section>
+
+          {/* ========== API 展示区 ========== */}
+          <section className='py-20 px-4 bg-semi-color-bg-0'>
+            <div className='max-w-4xl mx-auto'>
+              <div className='text-center mb-12'>
+                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
+                  {t('三行代码，即刻接入')}
+                </h2>
+                <p className='text-semi-color-text-2 text-lg'>
+                  {t('完全兼容 OpenAI SDK，无需学习新的 API')}
+                </p>
+              </div>
+
+              <div className='ez-code-block rounded-2xl overflow-hidden shadow-lg'>
+                <div className='ez-code-header flex items-center justify-between px-4 py-3'>
+                  <div className='flex gap-2'>
+                    <div className='w-3 h-3 rounded-full bg-red-400' />
+                    <div className='w-3 h-3 rounded-full bg-yellow-400' />
+                    <div className='w-3 h-3 rounded-full bg-green-400' />
+                  </div>
+                  <span className='text-semi-color-text-2 text-sm font-medium'>Python</span>
+                  <Button
+                    theme='borderless'
+                    size='small'
+                    icon={<IconCopy />}
+                    onClick={handleCopyURL}
+                    className='text-semi-color-text-2 hover:text-semi-color-text-0'
+                  />
+                </div>
+                <pre className='p-6 text-sm md:text-base overflow-x-auto'>
+                  <code>
+                    <span className='code-keyword'>from</span>
+                    <span className='code-text'> openai </span>
+                    <span className='code-keyword'>import</span>
+                    <span className='code-text'> OpenAI</span>
+                    {'\n\n'}
+                    <span className='code-text'>client = OpenAI(</span>
+                    {'\n'}
+                    <span className='code-text'>    base_url=</span>
+                    <span className='code-string'>"{serverAddress}/v1"</span>
+                    <span className='code-comment'>  # {t('只需修改这里')}</span>
+                    {'\n'}
+                    <span className='code-text'>)</span>
+                  </code>
+                </pre>
+              </div>
+            </div>
+          </section>
+
+          {/* ========== 使用场景 ========== */}
+          <section className='py-20 px-4 bg-semi-color-bg-1'>
+            <div className='max-w-6xl mx-auto'>
+              <div className='text-center mb-16'>
+                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
+                  {t('赋能无限场景')}
+                </h2>
+                <p className='text-semi-color-text-2 text-lg'>
+                  {t('从创意到生产，AI 能力触手可及')}
+                </p>
+              </div>
+
+              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6'>
+                {useCases.map((useCase, index) => (
+                  <UseCaseCard key={index} {...useCase} />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ========== 如何开始 ========== */}
+          <section className='py-20 px-4 bg-semi-color-bg-0'>
+            <div className='max-w-4xl mx-auto'>
+              <div className='text-center mb-16'>
+                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
+                  {t('三步开始')}
+                </h2>
+                <p className='text-semi-color-text-2 text-lg'>
+                  {t('几分钟内即可完成接入')}
+                </p>
+              </div>
+
+              <div className='grid md:grid-cols-3 gap-8'>
+                <StepItem
+                  number='1'
+                  title={t('注册账号')}
+                  description={t('免费注册并获得体验额度')}
+                />
+                <StepItem
+                  number='2'
+                  title={t('获取密钥')}
+                  description={t('在控制台创建 API Key')}
+                />
+                <StepItem
+                  number='3'
+                  title={t('开始调用')}
+                  description={t('修改 base_url 即可使用')}
+                />
+              </div>
+
+              <div className='text-center mt-12'>
+                <Link to='/register'>
+                  <Button
+                    theme='solid'
+                    size='large'
+                    className='!rounded-full !px-10 !py-3 ez-cta-btn'
+                  >
+                    {t('免费开始')}
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          {/* ========== 为什么选择 ========== */}
+          <section className='py-20 px-4 bg-semi-color-bg-1'>
+            <div className='max-w-6xl mx-auto'>
+              <div className='grid md:grid-cols-2 gap-16 items-center'>
+                <div>
+                  <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-8'>
+                    {t('为什么选择 EZmodel')}
+                  </h2>
+                  
+                  <div className='space-y-6'>
+                    <div className='flex gap-4'>
+                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center'>
+                        <IconBolt size='extra-large' className='text-blue-500' />
+                      </div>
+                      <div>
+                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('简单易用')}</h4>
+                        <p className='text-semi-color-text-2'>{t('与 OpenAI SDK 完全兼容，零学习成本')}</p>
+                      </div>
+                    </div>
+                    
+                    <div className='flex gap-4'>
+                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center'>
+                        <IconPriceTag size='extra-large' className='text-emerald-500' />
+                      </div>
+                      <div>
+                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('按量付费')}</h4>
+                        <p className='text-semi-color-text-2'>{t('用多少付多少，无最低消费')}</p>
+                      </div>
+                    </div>
+                    
+                    <div className='flex gap-4'>
+                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center'>
+                        <IconRefresh size='extra-large' className='text-orange-500' />
+                      </div>
+                      <div>
+                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('智能切换')}</h4>
+                        <p className='text-semi-color-text-2'>{t('自动负载均衡，故障无感切换')}</p>
+                      </div>
+                    </div>
+                    
+                    <div className='flex gap-4'>
+                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center'>
+                        <IconLineChartStroked size='extra-large' className='text-sky-500' />
+                      </div>
+                      <div>
+                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('透明账单')}</h4>
+                        <p className='text-semi-color-text-2'>{t('详细的用量统计与成本分析')}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* 框架兼容性图标 */}
-                <div className='mt-12 md:mt-16 lg:mt-20 w-full'>
-                  <div className='flex items-center mb-6 md:mb-8 justify-center'>
-                    <Text
-                      type='tertiary'
-                      className='text-lg md:text-xl lg:text-2xl font-light'
-                    >
-                      {t('支持众多的大模型供应商')}
-                    </Text>
-                  </div>
-                  <div className='flex flex-wrap items-center justify-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 max-w-5xl mx-auto px-4'>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <OpenAI size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Claude.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Gemini.Color size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Grok size={40} />
-                    </div>
-                    <div className='w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 flex items-center justify-center'>
-                      <Kling size={40} />
+                <div className='relative'>
+                  <div className='ez-feature-card p-8 rounded-3xl'>
+                    <div className='text-center'>
+                      <div className='text-5xl md:text-6xl font-bold ez-brand-text mb-2'>{t('低至官方')}</div>
+                      <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>5 {t('折')}</div>
+                      <div className='text-semi-color-text-2 mb-8'>{t('同等质量，更优价格')}</div>
+                      
+                      <div className='grid grid-cols-2 gap-4 text-left'>
+                        <div className='p-4 rounded-xl bg-semi-color-bg-0'>
+                          <div className='text-2xl font-bold text-semi-color-text-0'>{t('零')}</div>
+                          <div className='text-sm text-semi-color-text-2'>{t('最低消费')}</div>
+                        </div>
+                        <div className='p-4 rounded-xl bg-semi-color-bg-0'>
+                          <div className='text-2xl font-bold text-semi-color-text-0'>{t('实时')}</div>
+                          <div className='text-sm text-semi-color-text-2'>{t('用量结算')}</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
+
+          {/* ========== CTA Section ========== */}
+          <section className='py-24 px-4 ez-cta-section'>
+            <div className='max-w-4xl mx-auto text-center relative z-10'>
+              <h2 className='text-3xl md:text-4xl font-bold text-white mb-6'>
+                {t('准备好开始了吗？')}
+              </h2>
+              <p className='text-white/80 text-lg mb-10'>
+                {t('注册即获免费额度，立即体验 AI 的强大能力')}
+              </p>
+              
+              <div className='flex flex-col sm:flex-row gap-4 justify-center items-center mb-12'>
+                <Link to='/register'>
+                  <Button
+                    theme='solid'
+                    size='large'
+                    className='!rounded-full !px-12 !py-4 !text-lg !bg-white !text-gray-900 hover:!bg-gray-100'
+                  >
+                    {t('免费注册')}
+                  </Button>
+                </Link>
+                {headerNavModules.pricing && (
+                  <Link to='/pricing'>
+                    <Button
+                      theme='borderless'
+                      size='large'
+                      className='!rounded-full !px-8 !py-4 !text-lg !text-white !font-medium !border-2 !border-white/60 hover:!border-white hover:!bg-white/10'
+                    >
+                      {t('查看定价')}
+                    </Button>
+                  </Link>
+                )}
+              </div>
+
+              {/* 企业联系方式 */}
+              <div className='ez-contact-card rounded-2xl p-6 max-w-md mx-auto'>
+                <div className='flex items-center justify-center gap-4 text-white'>
+                  <div className='w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center'>
+                    <IconMail size='large' className='text-white' />
+                  </div>
+                  <div className='text-left'>
+                    <div className='text-sm text-white/70'>{t('企业接入咨询')}</div>
+                    <a 
+                      href='mailto:jasonhu@ezmodel.cloud' 
+                      className='text-white font-medium hover:underline'
+                    >
+                      jasonhu@ezmodel.cloud
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       ) : (
         <div className='overflow-x-hidden w-full'>

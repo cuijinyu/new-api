@@ -817,3 +817,133 @@ html.dark .with-pastel-balls::before {
 .semi-datepicker-range-input {
   border-radius: 10px !important;
 }
+
+/* ==================== EZmodel 品牌首页样式 ==================== */
+
+/* Hero 背景 - 蓝青色调 */
+.ez-hero-bg {
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.25), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(6, 182, 212, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(16, 185, 129, 0.12), transparent);
+}
+
+html.dark .ez-hero-bg {
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.2), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(6, 182, 212, 0.1), transparent),
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(16, 185, 129, 0.08), transparent);
+}
+
+/* 品牌文字渐变 - 蓝青色调 */
+.ez-brand-text {
+  background: linear-gradient(135deg, #3b82f6 0%, #0ea5e9 50%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* CTA 按钮 - 蓝色 */
+.ez-cta-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%) !important;
+  border: none !important;
+  color: white !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35) !important;
+  transition: all 0.3s ease !important;
+}
+
+.ez-cta-btn:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 30px rgba(59, 130, 246, 0.45) !important;
+}
+
+/* 步骤圆圈 - 蓝色 */
+.ez-step-circle {
+  background: linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%);
+}
+
+/* 代码块样式 - 浅色更易读 */
+.ez-code-block {
+  background: var(--semi-color-bg-2);
+  border: 1px solid var(--semi-color-border);
+}
+
+.ez-code-block .ez-code-header {
+  background: var(--semi-color-bg-1);
+  border-bottom: 1px solid var(--semi-color-border);
+}
+
+.ez-code-block pre {
+  background: transparent;
+  margin: 0;
+}
+
+.ez-code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Andale Mono', monospace;
+  line-height: 1.8;
+}
+
+.ez-code-block .code-keyword {
+  color: #0369a1;
+}
+
+.ez-code-block .code-string {
+  color: #059669;
+}
+
+.ez-code-block .code-comment {
+  color: var(--semi-color-text-2);
+}
+
+.ez-code-block .code-text {
+  color: var(--semi-color-text-0);
+}
+
+html.dark .ez-code-block .code-keyword {
+  color: #7dd3fc;
+}
+
+html.dark .ez-code-block .code-string {
+  color: #6ee7b7;
+}
+
+/* 特性卡片 - 蓝青色调 */
+.ez-feature-card {
+  background: linear-gradient(145deg, 
+    rgba(59, 130, 246, 0.08) 0%, 
+    rgba(14, 165, 233, 0.08) 50%,
+    rgba(6, 182, 212, 0.08) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+}
+
+html.dark .ez-feature-card {
+  background: linear-gradient(145deg, 
+    rgba(59, 130, 246, 0.12) 0%, 
+    rgba(14, 165, 233, 0.12) 50%,
+    rgba(6, 182, 212, 0.12) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* CTA Section - 蓝青渐变 */
+.ez-cta-section {
+  background: linear-gradient(135deg, #1e3a8a 0%, #0369a1 50%, #0891b2 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.ez-cta-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+}
+
+/* 企业联系卡片 */
+.ez-contact-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
