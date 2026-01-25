@@ -305,9 +305,13 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 		// 减去 cached tokens
+		// Anthropic API 的 input_tokens 已经不包含缓存 tokens，不需要减去
+		// OpenAI/OpenRouter 等 API 的 prompt_tokens 包含缓存 tokens，需要减去
 		var cachedTokensWithRatio decimal.Decimal
 		if !dCacheTokens.IsZero() {
-			baseTokens = baseTokens.Sub(dCacheTokens)
+			if relayInfo.ChannelType != constant.ChannelTypeAnthropic {
+				baseTokens = baseTokens.Sub(dCacheTokens)
+			}
 			cachedTokensWithRatio = dCacheTokens.Mul(dCacheRatio)
 		}
 		var dCachedCreationTokensWithRatio decimal.Decimal
@@ -319,7 +323,9 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		// 减去 image tokens
 		var imageTokensWithRatio decimal.Decimal
 		if !dImageTokens.IsZero() {
-			baseTokens = baseTokens.Sub(dImageTokens)
+			if relayInfo.ChannelType != constant.ChannelTypeAnthropic {
+				baseTokens = baseTokens.Sub(dCachedCreationTokens)
+			}
 			imageTokensWithRatio = dImageTokens.Mul(dImageRatio)
 		}
 
