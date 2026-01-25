@@ -31,7 +31,7 @@ Example:
 | :--- | :--- | :--- | :--- | :--- |
 | model | string | Required | Model Name | `claude-3-opus-20240229` |
 | messages | array[object] | Required | List of conversation messages | |
-| messages.role | enum<string> | Required | Role, options: `user`, `assistant` | |
+| messages.role | `enum<string>` | Required | Role, options: `user`, `assistant` | |
 | messages.content | string/array | Required | Message content | |
 | system | string/array | Optional | System prompt | |
 | max_tokens | integer | Required | Max generation tokens (>= 1) | `1` |
@@ -45,10 +45,10 @@ Example:
 | tools.description | string | Optional | Tool description | |
 | tools.input_schema | object | Optional | Tool input parameter schema | |
 | tool_choice | object | Optional | Tool choice strategy | |
-| tool_choice.type | enum<string> | Optional | Type: `auto`, `any`, `tool` | |
+| tool_choice.type | `enum<string>` | Optional | Type: `auto`, `any`, `tool` | |
 | tool_choice.name | string | Optional | Tool name (when type is `tool`) | |
 | thinking | object | Optional | Thinking mode configuration | |
-| thinking.type | enum<string> | Optional | Type: `enabled`, `disabled` | |
+| thinking.type | `enum<string>` | Optional | Type: `enabled`, `disabled` | |
 | thinking.budget_tokens | integer | Optional | Thinking budget tokens | |
 | metadata | object | Optional | Metadata | |
 | metadata.user_id | string | Optional | User ID | |
@@ -88,7 +88,7 @@ Example:
 | content.type | string | Content type | `text` |
 | content.text | string | Text content | |
 | model | string | Model Name | |
-| stop_reason | enum<string> | Stop reason: `end_turn`, `max_tokens`, `stop_sequence`, `tool_use` | `end_turn` |
+| stop_reason | `enum<string>` | Stop reason: `end_turn`, `max_tokens`, `stop_sequence`, `tool_use` | `end_turn` |
 | usage | object | Token usage | |
 | usage.input_tokens | integer | Input tokens | |
 | usage.output_tokens | integer | Output tokens | |
