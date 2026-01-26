@@ -2024,6 +2024,8 @@
     "doc.klingLipSync.desc": "让视频中的人物根据音频进行口型同步接口文档",
     "doc.klingMultiElements.title": "Kling 多模态视频编辑",
     "doc.klingMultiElements.desc": "通过自然语言对视频进行增加、替换、删除元素等编辑接口文档",
+    "doc.klingTts.title": "Kling 语音合成",
+    "doc.klingTts.desc": "将文本转换为自然流畅的语音接口文档",
     "doc.videoGenerations.title": "视频生成任务",
     "doc.videoGenerations.desc": "提交通用视频生成任务接口文档",
     "doc.videoGenerationsStatus.title": "视频任务状态",

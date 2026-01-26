@@ -2032,6 +2032,8 @@
     "doc.klingLipSync.desc": "API documentation for synchronizing lip movements with audio in videos",
     "doc.klingMultiElements.title": "Kling Multi-Elements Editing",
     "doc.klingMultiElements.desc": "API documentation for editing videos using natural language to add, replace, or remove elements",
+    "doc.klingTts.title": "Kling Text-to-Speech",
+    "doc.klingTts.desc": "API documentation for converting text into natural speech",
     "doc.videoGenerations.title": "Video Generation Task",
     "doc.videoGenerations.desc": "Submit video generation task API documentation",
     "doc.videoGenerationsStatus.title": "Video Task Status",
