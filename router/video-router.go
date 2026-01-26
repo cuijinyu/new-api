@@ -42,6 +42,8 @@ func SetVideoRouter(router *gin.Engine) {
 		// 视频延长 (Video Extend) 端点
 		klingV1Router.POST("/videos/video-extend", controller.RelayTask)
 		klingV1Router.GET("/videos/video-extend/:task_id", controller.RelayTask)
+		// 语音合成 (TTS) 端点
+		klingV1Router.POST("/tts", controller.RelayTask)
 		// 多模态视频编辑 (Multi-Elements) 端点
 		klingV1Router.POST("/videos/multi-elements/init-selection", controller.RelayTask)    // 初始化待编辑视频
 		klingV1Router.POST("/videos/multi-elements/add-selection", controller.RelayTask)     // 增加视频选区

@@ -128,11 +128,38 @@ type advancedLipSyncRequestPayload struct {
 
 // videoExtendRequestPayload 视频延长 API 专用请求结构
 type videoExtendRequestPayload struct {
-	VideoId        string  `json:"video_id"`                   // 视频ID，必须
-	Prompt         string  `json:"prompt,omitempty"`           // 正向文本提示词，不超过2500字符
-	NegativePrompt string  `json:"negative_prompt,omitempty"`  // 负向文本提示词，不超过2500字符
-	CfgScale       float64 `json:"cfg_scale,omitempty"`        // 提示词参考强度，取值范围[0,1]，默认0.5
-	CallbackUrl    string  `json:"callback_url,omitempty"`     // 回调地址，可选
+	VideoId        string  `json:"video_id"`                  // 视频ID，必须
+	Prompt         string  `json:"prompt,omitempty"`          // 正向文本提示词，不超过2500字符
+	NegativePrompt string  `json:"negative_prompt,omitempty"` // 负向文本提示词，不超过2500字符
+	CfgScale       float64 `json:"cfg_scale,omitempty"`       // 提示词参考强度，取值范围[0,1]，默认0.5
+	CallbackUrl    string  `json:"callback_url,omitempty"`    // 回调地址，可选
+}
+
+// ============================
+// 语音合成 (TTS) 请求/响应结构体
+// ============================
+
+// ttsRequestPayload 语音合成 API 请求结构
+// 官方文档: https://app.klingai.com/cn/dev/document-api/apiReference/model/TTS
+type ttsRequestPayload struct {
+	Text       string  `json:"text"`                  // 待合成的文本内容，必须，最大长度10000字符
+	VoiceId    string  `json:"voice_id"`              // 音色ID，必须
+	Speed      float64 `json:"speed,omitempty"`       // 语速，可选，取值范围[0.5, 2]，默认1
+	Volume     float64 `json:"volume,omitempty"`      // 音量，可选，取值范围[0, 2]，默认1
+	CallbackUrl string `json:"callback_url,omitempty"` // 回调地址，可选
+}
+
+// ttsResponsePayload 语音合成 API 响应结构
+type ttsResponsePayload struct {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	RequestId string `json:"request_id"`
+	Data      struct {
+		AudioId   string `json:"audio_id"`   // 生成的音频ID
+		AudioUrl  string `json:"audio_url"`  // 生成的音频URL
+		Duration  int64  `json:"duration"`   // 音频时长（毫秒）
+		CreatedAt int64  `json:"created_at"` // 创建时间
+	} `json:"data"`
 }
 
 // ============================
@@ -654,6 +681,10 @@ const advancedLipSyncUnitSeconds = 5.0  // 计费单位：5秒
 // 官方价格：每次从资源包总数里扣减0.05积分
 const identifyFacePricePerCall = 0.05 // 每次0.05元
 
+// ttsPricePerCall 语音合成计费：每次0.05元
+// 官方价格：每次从资源包总数里扣减0.05积分
+const ttsPricePerCall = 0.05 // 每次0.05元
+
 // priceRatioToOfficial 内部计价单位与官方价格的比例
 // ModelPrice = 官方价格 × 0.14
 const priceRatioToOfficial = 0.14
@@ -788,6 +819,13 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 		return float32(identifyFacePricePerCall / priceRatioToOfficial), nil
 	}
 
+	// 语音合成按次计费：0.05 元/次
+	// 官方价格：每次从资源包总数里扣减 0.05 积分
+	if action == constant.TaskActionTTS {
+		// 返回 0.05 / 0.14 ≈ 0.357，使 ModelPrice(0.14) × 0.357 ≈ 0.05
+		return float32(ttsPricePerCall / priceRatioToOfficial), nil
+	}
+
 	// 1. 获取单价系数
 	unitScale, err := a.calculateUnitPriceScale(action, &req)
 	if err != nil {
@@ -888,7 +926,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		currentAction == constant.TaskActionMultiElementsPreview || // 多模态视频编辑 - 预览
 		currentAction == constant.TaskActionIdentifyFace || // 人脸识别（对口型前置步骤）
 		currentAction == constant.TaskActionAdvancedLipSync || // 对口型
-		currentAction == constant.TaskActionVideoExtend // 视频延长
+		currentAction == constant.TaskActionVideoExtend || // 视频延长
+		currentAction == constant.TaskActionTTS // 语音合成（使用 text 而非 prompt）
 
 	// 使用带选项的验证方法
 	return relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
@@ -910,6 +949,8 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 		path = "/v1/videos/advanced-lip-sync"
 	case constant.TaskActionVideoExtend:
 		path = "/v1/videos/video-extend"
+	case constant.TaskActionTTS:
+		path = "/v1/tts"
 	// 多模态视频编辑端点
 	case constant.TaskActionMultiElementsInit:
 		path = "/v1/videos/multi-elements/init-selection"
@@ -1015,6 +1056,19 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	// 视频延长使用专用的请求结构
 	if currentAction == constant.TaskActionVideoExtend {
 		body, err := a.convertToVideoExtendPayload(&req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+
+	// 语音合成使用专用的请求结构
+	if currentAction == constant.TaskActionTTS {
+		body, err := a.convertToTTSPayload(&req)
 		if err != nil {
 			return nil, err
 		}
@@ -1153,6 +1207,23 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		}
 		if faceResp.Code != 0 {
 			taskErr = service.TaskErrorWrapperLocal(errors.New(faceResp.Message), "identify_face_failed", http.StatusBadRequest)
+			return
+		}
+		// 直接返回原始响应给客户端
+		c.Data(http.StatusOK, "application/json", responseBody)
+		return "", responseBody, nil
+	}
+
+	// 语音合成端点返回的是音频数据而非任务ID，直接透传响应
+	if currentAction == constant.TaskActionTTS {
+		var ttsResp ttsResponsePayload
+		err = json.Unmarshal(responseBody, &ttsResp)
+		if err != nil {
+			taskErr = service.TaskErrorWrapper(err, "unmarshal_response_failed", http.StatusInternalServerError)
+			return
+		}
+		if ttsResp.Code != 0 {
+			taskErr = service.TaskErrorWrapperLocal(errors.New(ttsResp.Message), "tts_failed", http.StatusBadRequest)
 			return
 		}
 		// 直接返回原始响应给客户端
@@ -1556,6 +1627,49 @@ func (a *TaskAdaptor) convertToVideoExtendPayload(req *relaycommon.TaskSubmitReq
 	// 验证 cfg_scale 范围
 	if r.CfgScale < 0 || r.CfgScale > 1 {
 		return nil, fmt.Errorf("cfg_scale must be between 0 and 1, got: %f", r.CfgScale)
+	}
+
+	return &r, nil
+}
+
+// convertToTTSPayload 转换为语音合成 API 专用请求格式
+func (a *TaskAdaptor) convertToTTSPayload(req *relaycommon.TaskSubmitReq) (*ttsRequestPayload, error) {
+	r := ttsRequestPayload{
+		Speed:  1.0, // 默认语速
+		Volume: 1.0, // 默认音量
+	}
+
+	// 从 metadata 中解析所有字段
+	if req.Metadata != nil {
+		metaBytes, err := json.Marshal(req.Metadata)
+		if err != nil {
+			return nil, errors.Wrap(err, "marshal metadata failed")
+		}
+		err = json.Unmarshal(metaBytes, &r)
+		if err != nil {
+			return nil, errors.Wrap(err, "unmarshal metadata failed")
+		}
+	}
+
+	// 验证必填字段
+	if r.Text == "" {
+		return nil, fmt.Errorf("text is required for tts")
+	}
+	if len(r.Text) > 10000 {
+		return nil, fmt.Errorf("text length exceeds maximum 10000 characters, got: %d", len(r.Text))
+	}
+	if r.VoiceId == "" {
+		return nil, fmt.Errorf("voice_id is required for tts")
+	}
+
+	// 验证 speed 范围
+	if r.Speed < 0.5 || r.Speed > 2 {
+		return nil, fmt.Errorf("speed must be between 0.5 and 2, got: %f", r.Speed)
+	}
+
+	// 验证 volume 范围
+	if r.Volume < 0 || r.Volume > 2 {
+		return nil, fmt.Errorf("volume must be between 0 and 2, got: %f", r.Volume)
 	}
 
 	return &r, nil

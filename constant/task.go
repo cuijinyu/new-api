@@ -22,6 +22,7 @@ const (
 	TaskActionIdentifyFace      = "identifyFace"
 	TaskActionAdvancedLipSync   = "advancedLipSync"
 	TaskActionVideoExtend       = "videoExtend"
+	TaskActionTTS               = "tts" // 语音合成 (Text-to-Speech)
 
 	// 多模态视频编辑 (Multi-Elements) 相关 Action
 	TaskActionMultiElementsInit           = "multiElementsInit"           // 初始化待编辑视频
