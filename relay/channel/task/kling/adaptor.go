@@ -141,24 +141,33 @@ type videoExtendRequestPayload struct {
 
 // ttsRequestPayload 语音合成 API 请求结构
 // 官方文档: https://app.klingai.com/cn/dev/document-api/apiReference/model/TTS
+// 接口地址: POST /v1/audio/tts
 type ttsRequestPayload struct {
-	Text       string  `json:"text"`                  // 待合成的文本内容，必须，最大长度10000字符
-	VoiceId    string  `json:"voice_id"`              // 音色ID，必须
-	Speed      float64 `json:"speed,omitempty"`       // 语速，可选，取值范围[0.5, 2]，默认1
-	Volume     float64 `json:"volume,omitempty"`      // 音量，可选，取值范围[0, 2]，默认1
-	CallbackUrl string `json:"callback_url,omitempty"` // 回调地址，可选
+	Text          string  `json:"text"`                     // 待合成的文本内容，必须，最大长度1000字符
+	VoiceId       string  `json:"voice_id"`                 // 音色ID，必须
+	VoiceLanguage string  `json:"voice_language,omitempty"` // 音色语种，枚举值：zh, en，默认zh
+	VoiceSpeed    float64 `json:"voice_speed,omitempty"`    // 语速，可选，取值范围[0.8, 2.0]，默认1.0
+	CallbackUrl   string  `json:"callback_url,omitempty"`   // 回调地址，可选
 }
 
-// ttsResponsePayload 语音合成 API 响应结构
+// ttsResponsePayload 语音合成 API 响应结构（同步返回音频结果）
 type ttsResponsePayload struct {
 	Code      int    `json:"code"`
 	Message   string `json:"message"`
 	RequestId string `json:"request_id"`
 	Data      struct {
-		AudioId   string `json:"audio_id"`   // 生成的音频ID
-		AudioUrl  string `json:"audio_url"`  // 生成的音频URL
-		Duration  int64  `json:"duration"`   // 音频时长（毫秒）
-		CreatedAt int64  `json:"created_at"` // 创建时间
+		TaskId        string `json:"task_id"`         // 任务ID
+		TaskStatus    string `json:"task_status"`     // 任务状态：succeed
+		TaskStatusMsg string `json:"task_status_msg"` // 任务状态信息
+		TaskResult    struct {
+			Audios []struct {
+				Id       string `json:"id"`       // 生成音频的ID
+				Url      string `json:"url"`      // 生成音频的URL
+				Duration string `json:"duration"` // 音频时长（秒）
+			} `json:"audios"`
+		} `json:"task_result"`
+		CreatedAt int64 `json:"created_at"` // 任务创建时间
+		UpdatedAt int64 `json:"updated_at"` // 任务更新时间
 	} `json:"data"`
 }
 
@@ -950,7 +959,7 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 	case constant.TaskActionVideoExtend:
 		path = "/v1/videos/video-extend"
 	case constant.TaskActionTTS:
-		path = "/v1/tts"
+		path = "/v1/audio/tts"
 	// 多模态视频编辑端点
 	case constant.TaskActionMultiElementsInit:
 		path = "/v1/videos/multi-elements/init-selection"
@@ -1214,7 +1223,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 		return "", responseBody, nil
 	}
 
-	// 语音合成端点返回的是音频数据而非任务ID，直接透传响应
+	// 语音合成是同步接口，直接返回音频结果，无需轮询
 	if currentAction == constant.TaskActionTTS {
 		var ttsResp ttsResponsePayload
 		err = json.Unmarshal(responseBody, &ttsResp)
@@ -1226,7 +1235,7 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 			taskErr = service.TaskErrorWrapperLocal(errors.New(ttsResp.Message), "tts_failed", http.StatusBadRequest)
 			return
 		}
-		// 直接返回原始响应给客户端
+		// 直接返回原始响应给客户端（同步接口，一次返回音频结果）
 		c.Data(http.StatusOK, "application/json", responseBody)
 		return "", responseBody, nil
 	}
@@ -1635,8 +1644,8 @@ func (a *TaskAdaptor) convertToVideoExtendPayload(req *relaycommon.TaskSubmitReq
 // convertToTTSPayload 转换为语音合成 API 专用请求格式
 func (a *TaskAdaptor) convertToTTSPayload(req *relaycommon.TaskSubmitReq) (*ttsRequestPayload, error) {
 	r := ttsRequestPayload{
-		Speed:  1.0, // 默认语速
-		Volume: 1.0, // 默认音量
+		VoiceLanguage: "zh",  // 默认中文
+		VoiceSpeed:    1.0,   // 默认语速
 	}
 
 	// 从 metadata 中解析所有字段
@@ -1655,21 +1664,21 @@ func (a *TaskAdaptor) convertToTTSPayload(req *relaycommon.TaskSubmitReq) (*ttsR
 	if r.Text == "" {
 		return nil, fmt.Errorf("text is required for tts")
 	}
-	if len(r.Text) > 10000 {
-		return nil, fmt.Errorf("text length exceeds maximum 10000 characters, got: %d", len(r.Text))
+	if len(r.Text) > 1000 {
+		return nil, fmt.Errorf("text length exceeds maximum 1000 characters, got: %d", len(r.Text))
 	}
 	if r.VoiceId == "" {
 		return nil, fmt.Errorf("voice_id is required for tts")
 	}
 
-	// 验证 speed 范围
-	if r.Speed < 0.5 || r.Speed > 2 {
-		return nil, fmt.Errorf("speed must be between 0.5 and 2, got: %f", r.Speed)
+	// 验证 voice_language 枚举值
+	if r.VoiceLanguage != "" && r.VoiceLanguage != "zh" && r.VoiceLanguage != "en" {
+		return nil, fmt.Errorf("voice_language must be 'zh' or 'en', got: %s", r.VoiceLanguage)
 	}
 
-	// 验证 volume 范围
-	if r.Volume < 0 || r.Volume > 2 {
-		return nil, fmt.Errorf("volume must be between 0 and 2, got: %f", r.Volume)
+	// 验证 voice_speed 范围 [0.8, 2.0]
+	if r.VoiceSpeed != 0 && (r.VoiceSpeed < 0.8 || r.VoiceSpeed > 2.0) {
+		return nil, fmt.Errorf("voice_speed must be between 0.8 and 2.0, got: %f", r.VoiceSpeed)
 	}
 
 	return &r, nil

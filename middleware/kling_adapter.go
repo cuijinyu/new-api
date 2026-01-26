@@ -28,7 +28,7 @@ func KlingRequestConvert() func(c *gin.Context) {
 	isIdentifyFace := strings.Contains(originalPath, "identify-face")
 	isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
 	isVideoExtend := strings.Contains(originalPath, "video-extend")
-	isTTS := strings.HasSuffix(originalPath, "/tts") || strings.HasSuffix(originalPath, "/tts/")
+	isTTS := strings.Contains(originalPath, "/audio/tts")
 
 	// 多模态视频编辑端点识别
 	isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")

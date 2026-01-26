@@ -24,29 +24,31 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# 测试用的音色 ID（请替换为实际可用的音色 ID）
-# 可从可灵平台获取可用音色列表
-TEST_VOICE_ID = "voice_001"
+# 测试用的音色 ID
+# 中文音色: 阳光少年 (genshin_vindi2), 语种: zh
+# 英文音色: Sunny (genshin_vindi2), 语种: en
+TEST_VOICE_ID_ZH = "genshin_vindi2"
+TEST_VOICE_ID_EN = "genshin_vindi2"
+TEST_VOICE_ID = TEST_VOICE_ID_ZH  # 默认使用中文音色
 
 
 def test_tts_basic(text: str, voice_id: str):
     """
     基础 TTS 测试 - 使用默认参数
     
-    接口: POST /kling/v1/tts
+    接口: POST /kling/v1/audio/tts
     参数:
-        - text: 待合成的文本内容 (必须，最大 10000 字符)
+        - text: 待合成的文本内容 (必须，最大 1000 字符)
         - voice_id: 音色ID (必须)
     返回:
         - code: 错误码 (0 表示成功)
         - message: 错误信息
         - request_id: 请求ID
-        - data.audio_id: 生成的音频ID
-        - data.audio_url: 生成的音频URL
-        - data.duration: 音频时长 (毫秒)
-        - data.created_at: 创建时间 (毫秒时间戳)
+        - data.task_result.audios[].id: 生成音频的ID
+        - data.task_result.audios[].url: 生成音频的URL
+        - data.task_result.audios[].duration: 音频时长 (秒)
     """
-    url = f"{BASE_URL}/kling/v1/tts"
+    url = f"{BASE_URL}/kling/v1/audio/tts"
     print(f"\n[基础 TTS 测试]")
     print(f"请求地址: POST {url}")
     
@@ -73,46 +75,51 @@ def test_tts_basic(text: str, voice_id: str):
             print(f"✗ 业务错误: {data.get('message')}")
             return None
         
-        audio_data = data.get("data", {})
-        audio_id = audio_data.get("audio_id")
-        audio_url = audio_data.get("audio_url")
-        duration = audio_data.get("duration")
-        created_at = audio_data.get("created_at")
+        task_data = data.get("data", {})
+        task_result = task_data.get("task_result", {})
+        audios = task_result.get("audios", [])
         
-        print(f"✓ TTS 生成成功！")
-        print(f"  - 音频ID: {audio_id}")
-        print(f"  - 音频URL: {audio_url}")
-        print(f"  - 时长: {duration} 毫秒")
-        print(f"  - 创建时间: {created_at}")
-        
-        return audio_url
+        if audios:
+            audio = audios[0]
+            audio_id = audio.get("id")
+            audio_url = audio.get("url")
+            duration = audio.get("duration")
+            
+            print(f"✓ TTS 生成成功！")
+            print(f"  - 音频ID: {audio_id}")
+            print(f"  - 音频URL: {audio_url}")
+            print(f"  - 时长: {duration} 秒")
+            
+            return audio_url
+        else:
+            print(f"✗ 未获取到音频数据")
+            return None
         
     except Exception as e:
         print(f"请求异常: {e}")
         return None
 
 
-def test_tts_full_params(text: str, voice_id: str, speed: float = 1.0, volume: float = 1.0):
+def test_tts_full_params(text: str, voice_id: str, voice_speed: float = 1.0, voice_language: str = "zh"):
     """
-    完整参数 TTS 测试 - 自定义语速和音量
+    完整参数 TTS 测试 - 自定义语速和语种
     
-    接口: POST /kling/v1/tts
+    接口: POST /kling/v1/audio/tts
     参数:
-        - text: 待合成的文本内容 (必须，最大 10000 字符)
+        - text: 待合成的文本内容 (必须，最大 1000 字符)
         - voice_id: 音色ID (必须)
-        - speed: 语速 [0.5, 2.0]，1.0 为正常语速 (可选)
-        - volume: 音量 [0, 2.0]，1.0 为正常音量 (可选)
-        - callback_url: 回调通知地址 (可选)
+        - voice_speed: 语速 [0.8, 2.0]，1.0 为正常语速 (可选)
+        - voice_language: 语种 zh/en，默认 zh (可选)
     """
-    url = f"{BASE_URL}/kling/v1/tts"
+    url = f"{BASE_URL}/kling/v1/audio/tts"
     print(f"\n[完整参数 TTS 测试]")
     print(f"请求地址: POST {url}")
     
     payload = {
         "text": text,
         "voice_id": voice_id,
-        "speed": speed,
-        "volume": volume
+        "voice_speed": voice_speed,
+        "voice_language": voice_language
     }
     
     print(f"请求参数: {json.dumps(payload, ensure_ascii=False, indent=2)}")
@@ -133,19 +140,27 @@ def test_tts_full_params(text: str, voice_id: str, speed: float = 1.0, volume: f
             print(f"✗ 业务错误: {data.get('message')}")
             return None
         
-        audio_data = data.get("data", {})
-        audio_id = audio_data.get("audio_id")
-        audio_url = audio_data.get("audio_url")
-        duration = audio_data.get("duration")
+        task_data = data.get("data", {})
+        task_result = task_data.get("task_result", {})
+        audios = task_result.get("audios", [])
         
-        print(f"✓ TTS 生成成功！")
-        print(f"  - 音频ID: {audio_id}")
-        print(f"  - 音频URL: {audio_url}")
-        print(f"  - 时长: {duration} 毫秒")
-        print(f"  - 语速: {speed}")
-        print(f"  - 音量: {volume}")
-        
-        return audio_url
+        if audios:
+            audio = audios[0]
+            audio_id = audio.get("id")
+            audio_url = audio.get("url")
+            duration = audio.get("duration")
+            
+            print(f"✓ TTS 生成成功！")
+            print(f"  - 音频ID: {audio_id}")
+            print(f"  - 音频URL: {audio_url}")
+            print(f"  - 时长: {duration} 秒")
+            print(f"  - 语速: {voice_speed}")
+            print(f"  - 语种: {voice_language}")
+            
+            return audio_url
+        else:
+            print(f"✗ 未获取到音频数据")
+            return None
         
     except Exception as e:
         print(f"请求异常: {e}")
@@ -156,7 +171,7 @@ def test_tts_error_handling():
     """
     错误处理测试 - 测试各种错误情况
     """
-    url = f"{BASE_URL}/kling/v1/tts"
+    url = f"{BASE_URL}/kling/v1/audio/tts"
     print(f"\n[错误处理测试]")
     
     # 测试1: 缺少 text 参数
@@ -177,12 +192,12 @@ def test_tts_error_handling():
     except Exception as e:
         print(f"异常: {e}")
     
-    # 测试3: speed 超出范围
-    print("\n--- 测试3: speed 超出范围 (3.0) ---")
+    # 测试3: voice_speed 超出范围
+    print("\n--- 测试3: voice_speed 超出范围 (3.0) ---")
     payload = {
         "text": "测试文本",
         "voice_id": TEST_VOICE_ID,
-        "speed": 3.0  # 超出 [0.5, 2.0] 范围
+        "voice_speed": 3.0  # 超出 [0.8, 2.0] 范围
     }
     try:
         response = requests.post(url, headers=HEADERS, json=payload)
@@ -190,12 +205,12 @@ def test_tts_error_handling():
     except Exception as e:
         print(f"异常: {e}")
     
-    # 测试4: volume 超出范围
-    print("\n--- 测试4: volume 超出范围 (5.0) ---")
+    # 测试4: voice_language 无效值
+    print("\n--- 测试4: voice_language 无效值 (fr) ---")
     payload = {
         "text": "测试文本",
         "voice_id": TEST_VOICE_ID,
-        "volume": 5.0  # 超出 [0, 2.0] 范围
+        "voice_language": "fr"  # 只支持 zh/en
     }
     try:
         response = requests.post(url, headers=HEADERS, json=payload)
@@ -229,30 +244,30 @@ def test_tts_full_flow():
     audio_url_2 = test_tts_full_params(
         text="这是一段快速播放的测试语音，语速设置为1.5倍。",
         voice_id=TEST_VOICE_ID,
-        speed=1.5,
-        volume=1.0
+        voice_speed=1.5,
+        voice_language="zh"
     )
     
     # 测试3: 完整参数 - 慢速语速
     print("\n" + "-" * 40)
-    print("测试3: 完整参数 - 慢速语速 (0.7x)")
+    print("测试3: 完整参数 - 慢速语速 (0.8x)")
     print("-" * 40)
     audio_url_3 = test_tts_full_params(
-        text="这是一段慢速播放的测试语音，语速设置为0.7倍。",
+        text="这是一段慢速播放的测试语音，语速设置为0.8倍。",
         voice_id=TEST_VOICE_ID,
-        speed=0.7,
-        volume=1.0
+        voice_speed=0.8,
+        voice_language="zh"
     )
     
-    # 测试4: 完整参数 - 低音量
+    # 测试4: 完整参数 - 英文语种
     print("\n" + "-" * 40)
-    print("测试4: 完整参数 - 低音量 (0.5)")
+    print("测试4: 完整参数 - 英文语种")
     print("-" * 40)
     audio_url_4 = test_tts_full_params(
-        text="这是一段低音量的测试语音，音量设置为0.5。",
-        voice_id=TEST_VOICE_ID,
-        speed=1.0,
-        volume=0.5
+        text="Hello, this is a test for English text-to-speech.",
+        voice_id=TEST_VOICE_ID_EN,  # 使用英文音色
+        voice_speed=1.0,
+        voice_language="en"
     )
     
     # 测试5: 长文本测试
@@ -281,8 +296,8 @@ def test_tts_full_flow():
     results = [
         ("基础 TTS - 短文本", audio_url_1),
         ("快速语速 (1.5x)", audio_url_2),
-        ("慢速语速 (0.7x)", audio_url_3),
-        ("低音量 (0.5)", audio_url_4),
+        ("慢速语速 (0.8x)", audio_url_3),
+        ("英文语种", audio_url_4),
         ("长文本测试", audio_url_5),
     ]
     
