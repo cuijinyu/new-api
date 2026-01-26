@@ -1401,6 +1401,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 
 func (a *TaskAdaptor) GetModelList() []string {
 	return []string{
+		// 视频生成模型
 		"kling-video-o1",
 		"kling-v2-6",
 		"kling-v2-5-turbo",
@@ -1410,6 +1411,12 @@ func (a *TaskAdaptor) GetModelList() []string {
 		"kling-v1",
 		"kling-v2-1-master",
 		"kling-v2-master",
+		// 特殊功能模型（用于独立计费）
+		"kling-tts",            // 语音合成
+		"kling-lip-sync",       // 对口型
+		"kling-identify-face",  // 人脸识别
+		"kling-video-extend",   // 视频延长
+		"kling-multi-elements", // 多模态视频编辑
 	}
 }
 
