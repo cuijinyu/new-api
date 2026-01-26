@@ -302,6 +302,7 @@ var defaultModelPrice = map[string]float64{
 	"kling-video-extend":   0.14,  // 视频延长: 按次计费，PriceScale 直接返回官方价格倍率
 	"kling-lip-sync":       0.14,  // 对口型: 每5秒0.5元，PriceScale 直接返回官方价格倍率
 	"kling-identify-face":  0.14,  // 人脸识别: 每次0.05元，PriceScale=0.05/0.14≈0.357
+	"kling-tts":            0.14,  // 语音合成: 每次0.05元，PriceScale=0.05/0.14≈0.357
 }
 
 var defaultAudioRatio = map[string]float64{

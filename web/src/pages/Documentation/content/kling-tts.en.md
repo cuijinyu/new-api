@@ -13,8 +13,6 @@ Convert text into natural and fluent speech with multiple voice options.
 Authorization: Bearer YOUR_API_TOKEN
 ```
 
-**Pricing:** Charged per call, **0.05 CNY** per request, regardless of text length.
-
 ---
 
 ## Request Parameters (Body)
@@ -171,11 +169,10 @@ if (result.code === 0) {
 
 ## Notes
 
-1. **Text Length Limit**: Maximum 10000 characters per request
-2. **Pricing**: Charged per call, 0.05 CNY per request, regardless of text length
-3. **Synchronous API**: This is a synchronous endpoint that returns audio information directly, no polling required
-4. **Audio Format**: The returned audio is in MP3 format
-5. **Voice Selection**: Ensure you use a valid `voice_id`, available voices can be obtained from Kling platform
+1. **Text Length Limit**: Maximum 1000 characters per request
+2. **Synchronous API**: This is a synchronous endpoint that returns audio information directly, no polling required
+3. **Audio Format**: The returned audio is in MP3 format
+4. **Voice Selection**: Ensure you use a valid `voice_id`, available voices can be obtained from Kling platform
 
 ---
 

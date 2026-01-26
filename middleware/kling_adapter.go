@@ -48,9 +48,11 @@ func KlingRequestConvert() func(c *gin.Context) {
 		// 对于不需要 model 的辅助接口，设置默认模型名称以便渠道路由
 		// 这些接口本身不使用 model 参数，但 new-api 需要 model 来选择渠道
 		if model == "" {
-			if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
+			if isTTS {
+				model = "kling-tts" // TTS 专用模型，用于独立计费
+			} else if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
 				isMultiElementsClearSelection || isMultiElementsPreview ||
-				isIdentifyFace || isAdvancedLipSync || isVideoExtend || isTTS {
+				isIdentifyFace || isAdvancedLipSync || isVideoExtend {
 				model = "kling-v1-6" // 默认模型，用于渠道路由
 			}
 		}
