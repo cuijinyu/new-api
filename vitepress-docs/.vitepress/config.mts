@@ -224,7 +224,7 @@ export default defineConfig({
     sidebar: zhSidebar,
     
     footer: {
-      message: '企业合作联系：jasonhu@ezmodel.cloud',
+      message: '企业合作联系：service@ezmodel.cloud',
       copyright: 'Copyright © 2025-present EZmodel'
     },
     

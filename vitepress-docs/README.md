@@ -54,4 +54,4 @@ docker run -d -p 3100:80 ezmodel-docs
 
 ## 企业合作
 
-联系邮箱：jasonhu@ezmodel.cloud
+联系邮箱：service@ezmodel.cloud

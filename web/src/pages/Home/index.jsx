@@ -521,10 +521,10 @@ const Home = () => {
                   <div className='text-left min-w-0'>
                     <div className='text-sm text-semi-color-text-2 mb-0.5'>{t('企业接入咨询')}</div>
                     <a 
-                      href='mailto:jasonhu@ezmodel.cloud' 
+                      href='mailto:service@ezmodel.cloud' 
                       className='text-semi-color-primary font-medium hover:underline truncate block'
                     >
-                      jasonhu@ezmodel.cloud
+                      service@ezmodel.cloud
                     </a>
                   </div>
                 </div>
