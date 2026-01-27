@@ -29,6 +29,8 @@ func KlingRequestConvert() func(c *gin.Context) {
 	isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
 	isVideoExtend := strings.Contains(originalPath, "video-extend")
 	isTTS := strings.Contains(originalPath, "/audio/tts")
+	// 数字人端点识别
+	isAvatarImage2Video := strings.Contains(originalPath, "avatar/image2video")
 
 	// 多模态视频编辑端点识别
 	isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")
@@ -50,6 +52,8 @@ func KlingRequestConvert() func(c *gin.Context) {
 		if model == "" {
 			if isTTS {
 				model = "kling-tts" // TTS 专用模型，用于独立计费
+			} else if isAvatarImage2Video {
+				model = "kling-avatar" // 数字人专用模型，用于独立计费
 			} else if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
 				isMultiElementsClearSelection || isMultiElementsPreview ||
 				isIdentifyFace || isAdvancedLipSync || isVideoExtend {
@@ -76,7 +80,9 @@ func KlingRequestConvert() func(c *gin.Context) {
 		c.Request.URL.Path = "/v1/video/generations"
 
 		// 设置任务类型
-		if isIdentifyFace {
+		if isAvatarImage2Video {
+			c.Set("action", constant.TaskActionAvatarImage2Video)
+		} else if isIdentifyFace {
 			c.Set("action", constant.TaskActionIdentifyFace)
 		} else if isAdvancedLipSync {
 			c.Set("action", constant.TaskActionAdvancedLipSync)

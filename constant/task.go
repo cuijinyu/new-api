@@ -25,13 +25,16 @@ const (
 	TaskActionTTS               = "tts" // 语音合成 (Text-to-Speech)
 
 	// 多模态视频编辑 (Multi-Elements) 相关 Action
-	TaskActionMultiElementsInit           = "multiElementsInit"           // 初始化待编辑视频
-	TaskActionMultiElementsAddSelection   = "multiElementsAddSelection"   // 增加视频选区
+	TaskActionMultiElementsInit            = "multiElementsInit"            // 初始化待编辑视频
+	TaskActionMultiElementsAddSelection    = "multiElementsAddSelection"    // 增加视频选区
 	TaskActionMultiElementsDeleteSelection = "multiElementsDeleteSelection" // 删减视频选区
-	TaskActionMultiElementsClearSelection = "multiElementsClearSelection" // 清除视频选区
-	TaskActionMultiElementsPreview        = "multiElementsPreview"        // 预览已选区视频
-	TaskActionMultiElementsCreate         = "multiElementsCreate"         // 创建多模态视频编辑任务
-	TaskActionMultiElementsQuery          = "multiElementsQuery"          // 查询多模态视频编辑任务
+	TaskActionMultiElementsClearSelection  = "multiElementsClearSelection"  // 清除视频选区
+	TaskActionMultiElementsPreview         = "multiElementsPreview"         // 预览已选区视频
+	TaskActionMultiElementsCreate          = "multiElementsCreate"          // 创建多模态视频编辑任务
+	TaskActionMultiElementsQuery           = "multiElementsQuery"           // 查询多模态视频编辑任务
+
+	// 数字人 (Avatar) 相关 Action
+	TaskActionAvatarImage2Video = "avatarImage2Video" // 数字人图生视频
 )
 
 var SunoModel2Action = map[string]string{

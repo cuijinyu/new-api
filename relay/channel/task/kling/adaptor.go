@@ -331,6 +331,63 @@ type multiElementsQueryResponsePayload struct {
 	} `json:"data"`
 }
 
+// ============================
+// 数字人 (Avatar) 请求/响应结构体
+// ============================
+
+// avatarImage2VideoRequestPayload 数字人图生视频 API 请求结构
+// 官方文档: https://app.klingai.com/cn/dev/document-api/apiReference/model/avatar
+// 接口地址: POST /v1/videos/avatar/image2video
+type avatarImage2VideoRequestPayload struct {
+	Image          string `json:"image"`                      // 数字人参考图，必须，支持Base64编码或图片URL
+	AudioId        string `json:"audio_id,omitempty"`         // 试听接口生成的音频ID，与sound_file二选一
+	SoundFile      string `json:"sound_file,omitempty"`       // 音频文件（Base64编码或URL），与audio_id二选一
+	Prompt         string `json:"prompt,omitempty"`           // 正向文本提示词，可定义数字人动作、情绪及运镜等，不超过2500字符
+	Mode           string `json:"mode,omitempty"`             // 生成视频的模式，枚举值：std（标准模式）, pro（专家模式），默认std
+	CallbackUrl    string `json:"callback_url,omitempty"`     // 回调通知地址，可选
+	ExternalTaskId string `json:"external_task_id,omitempty"` // 自定义任务ID，可选
+}
+
+// avatarImage2VideoResponsePayload 数字人图生视频 API 响应结构
+type avatarImage2VideoResponsePayload struct {
+	Code      int    `json:"code"`       // 错误码
+	Message   string `json:"message"`    // 错误信息
+	RequestId string `json:"request_id"` // 请求ID
+	Data      struct {
+		TaskId     string `json:"task_id"`     // 任务ID
+		TaskInfo   struct {
+			ExternalTaskId string `json:"external_task_id"` // 客户自定义任务ID
+		} `json:"task_info"`
+		TaskStatus string `json:"task_status"` // 任务状态：submitted, processing, succeed, failed
+		CreatedAt  int64  `json:"created_at"`  // 任务创建时间，Unix时间戳ms
+		UpdatedAt  int64  `json:"updated_at"`  // 任务更新时间，Unix时间戳ms
+	} `json:"data"`
+}
+
+// avatarImage2VideoQueryResponsePayload 数字人任务查询响应结构
+type avatarImage2VideoQueryResponsePayload struct {
+	Code      int    `json:"code"`       // 错误码
+	Message   string `json:"message"`    // 错误信息
+	RequestId string `json:"request_id"` // 请求ID
+	Data      struct {
+		TaskId        string `json:"task_id"`         // 任务ID
+		TaskStatus    string `json:"task_status"`     // 任务状态：submitted, processing, succeed, failed
+		TaskStatusMsg string `json:"task_status_msg"` // 任务状态信息，失败时展示失败原因
+		TaskInfo      struct {
+			ExternalTaskId string `json:"external_task_id"` // 客户自定义任务ID
+		} `json:"task_info"`
+		TaskResult struct {
+			Videos []struct {
+				Id       string `json:"id"`       // 生成的视频ID
+				Url      string `json:"url"`      // 生成视频的URL
+				Duration string `json:"duration"` // 视频总时长，单位s
+			} `json:"videos"`
+		} `json:"task_result"`
+		CreatedAt int64 `json:"created_at"` // 任务创建时间，Unix时间戳ms
+		UpdatedAt int64 `json:"updated_at"` // 任务更新时间，Unix时间戳ms
+	} `json:"data"`
+}
+
 type requestPayload struct {
 	// --- 公共字段 ---
 	ModelName      string `json:"model_name,omitempty"`
@@ -694,6 +751,14 @@ const identifyFacePricePerCall = 0.05 // 每次0.05元
 // 官方价格：每次从资源包总数里扣减0.05积分
 const ttsPricePerCall = 0.05 // 每次0.05元
 
+// avatarStdPricePerCall 数字人 Std 模式计费：每次价格
+// 官方价格：std 模式按次计费
+const avatarStdPricePerCall = 1.0 // 每次1元（std模式），请根据官方价格调整
+
+// avatarProPricePerCall 数字人 Pro 模式计费：每次价格
+// 官方价格：pro 模式按次计费
+const avatarProPricePerCall = 2.0 // 每次2元（pro模式），请根据官方价格调整
+
 // priceRatioToOfficial 内部计价单位与官方价格的比例
 // ModelPrice = 官方价格 × 0.14
 const priceRatioToOfficial = 0.14
@@ -759,6 +824,10 @@ func (a *TaskAdaptor) calculateUnitPriceScale(action string, req *relaycommon.Ta
 		if err != nil {
 			return 1.0, err
 		}
+	} else if action == constant.TaskActionAvatarImage2Video {
+		// 数字人图生视频按次计费，在 GetPriceScale 中单独处理
+		// 这里返回 1.0，实际计费在 GetPriceScale 中按次计算
+		modeScale = 1.0
 	} else {
 		// 普通任务沿用原有的模型倍率表
 		modeScale, err = calculateModeScale(mode, req.Model)
@@ -833,6 +902,17 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 	if action == constant.TaskActionTTS {
 		// 返回 0.05 / 0.14 ≈ 0.357，使 ModelPrice(0.14) × 0.357 ≈ 0.05
 		return float32(ttsPricePerCall / priceRatioToOfficial), nil
+	}
+
+	// 数字人图生视频按次计费
+	// 官方价格：std 模式和 pro 模式分别计费
+	if action == constant.TaskActionAvatarImage2Video {
+		mode := defaultString(req.Mode, "std")
+		pricePerCall := avatarStdPricePerCall
+		if mode == "pro" {
+			pricePerCall = avatarProPricePerCall
+		}
+		return float32(pricePerCall / priceRatioToOfficial), nil
 	}
 
 	// 1. 获取单价系数
@@ -936,7 +1016,8 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		currentAction == constant.TaskActionIdentifyFace || // 人脸识别（对口型前置步骤）
 		currentAction == constant.TaskActionAdvancedLipSync || // 对口型
 		currentAction == constant.TaskActionVideoExtend || // 视频延长
-		currentAction == constant.TaskActionTTS // 语音合成（使用 text 而非 prompt）
+		currentAction == constant.TaskActionTTS || // 语音合成（使用 text 而非 prompt）
+		currentAction == constant.TaskActionAvatarImage2Video // 数字人图生视频（prompt 可选）
 
 	// 使用带选项的验证方法
 	return relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
@@ -960,6 +1041,9 @@ func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, erro
 		path = "/v1/videos/video-extend"
 	case constant.TaskActionTTS:
 		path = "/v1/audio/tts"
+	// 数字人端点
+	case constant.TaskActionAvatarImage2Video:
+		path = "/v1/videos/avatar/image2video"
 	// 多模态视频编辑端点
 	case constant.TaskActionMultiElementsInit:
 		path = "/v1/videos/multi-elements/init-selection"
@@ -1078,6 +1162,19 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	// 语音合成使用专用的请求结构
 	if currentAction == constant.TaskActionTTS {
 		body, err := a.convertToTTSPayload(&req)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+
+	// 数字人图生视频使用专用的请求结构
+	if currentAction == constant.TaskActionAvatarImage2Video {
+		body, err := a.convertToAvatarImage2VideoPayload(&req)
 		if err != nil {
 			return nil, err
 		}
@@ -1368,6 +1465,9 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 		path = "/v1/videos/advanced-lip-sync"
 	case constant.TaskActionVideoExtend:
 		path = "/v1/videos/video-extend"
+	// 数字人任务查询
+	case constant.TaskActionAvatarImage2Video:
+		path = "/v1/videos/avatar/image2video"
 	// 多模态视频编辑任务查询
 	case constant.TaskActionMultiElementsCreate, constant.TaskActionMultiElementsQuery:
 		path = "/v1/videos/multi-elements"
@@ -1417,6 +1517,7 @@ func (a *TaskAdaptor) GetModelList() []string {
 		"kling-identify-face",  // 人脸识别
 		"kling-video-extend",   // 视频延长
 		"kling-multi-elements", // 多模态视频编辑
+		"kling-avatar",         // 数字人
 	}
 }
 
@@ -1900,6 +2001,51 @@ func (a *TaskAdaptor) convertToMultiElementsCreatePayload(req *relaycommon.TaskS
 	// 验证 mode
 	if r.Mode != "std" && r.Mode != "pro" {
 		return nil, fmt.Errorf("mode must be 'std' or 'pro', got: %s", r.Mode)
+	}
+
+	return &r, nil
+}
+
+// convertToAvatarImage2VideoPayload 转换为数字人图生视频 API 请求格式
+func (a *TaskAdaptor) convertToAvatarImage2VideoPayload(req *relaycommon.TaskSubmitReq) (*avatarImage2VideoRequestPayload, error) {
+	r := avatarImage2VideoRequestPayload{
+		Prompt: req.Prompt,
+		Mode:   defaultString(req.Mode, "std"),
+	}
+
+	// 从 metadata 中解析所有字段
+	if req.Metadata != nil {
+		metaBytes, err := json.Marshal(req.Metadata)
+		if err != nil {
+			return nil, errors.Wrap(err, "marshal metadata failed")
+		}
+		err = json.Unmarshal(metaBytes, &r)
+		if err != nil {
+			return nil, errors.Wrap(err, "unmarshal metadata failed")
+		}
+	}
+
+	// 验证必填字段
+	if r.Image == "" {
+		return nil, fmt.Errorf("image is required for avatar image2video")
+	}
+
+	// 验证 audio_id 和 sound_file 二选一
+	if r.AudioId == "" && r.SoundFile == "" {
+		return nil, fmt.Errorf("either audio_id or sound_file is required for avatar image2video")
+	}
+	if r.AudioId != "" && r.SoundFile != "" {
+		return nil, fmt.Errorf("audio_id and sound_file cannot be both provided for avatar image2video")
+	}
+
+	// 验证 mode 枚举值
+	if r.Mode != "" && r.Mode != "std" && r.Mode != "pro" {
+		return nil, fmt.Errorf("mode must be 'std' or 'pro', got: %s", r.Mode)
+	}
+
+	// 验证 prompt 长度
+	if len(r.Prompt) > 2500 {
+		return nil, fmt.Errorf("prompt length exceeds maximum 2500 characters, got: %d", len(r.Prompt))
 	}
 
 	return &r, nil
