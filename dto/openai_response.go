@@ -224,6 +224,7 @@ type Usage struct {
 	CompletionTokens     int `json:"completion_tokens"`
 	TotalTokens          int `json:"total_tokens"`
 	PromptCacheHitTokens int `json:"prompt_cache_hit_tokens,omitempty"`
+	CachedTokens         int `json:"cached_tokens,omitempty"` // Moonshot kimi-k2.5 缓存 token
 
 	PromptTokensDetails    InputTokenDetails  `json:"prompt_tokens_details"`
 	CompletionTokenDetails OutputTokenDetails `json:"completion_tokens_details"`
