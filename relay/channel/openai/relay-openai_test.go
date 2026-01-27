@@ -10,39 +10,41 @@ import (
 
 func TestApplyUsagePostProcessing_Moonshot(t *testing.T) {
 	tests := []struct {
-		name                   string
-		channelType            int
-		cachedTokens           int
-		promptDetailsCached    int
-		expectedPromptCached   int
+		name                 string
+		channelType          int
+		cachedTokens         int
+		promptDetailsCached  int
+		expectedPromptCached int
 	}{
 		{
-			name:                   "Moonshot with cached_tokens should set PromptTokensDetails.CachedTokens",
-			channelType:            constant.ChannelTypeMoonshot,
-			cachedTokens:           10,
-			promptDetailsCached:    0,
-			expectedPromptCached:   10,
+			name:                 "Moonshot with cached_tokens should set PromptTokensDetails.CachedTokens",
+			channelType:          constant.ChannelTypeMoonshot,
+			cachedTokens:         10,
+			promptDetailsCached:  0,
+			expectedPromptCached: 10,
 		},
 		{
-			name:                   "Moonshot without cached_tokens should not change PromptTokensDetails.CachedTokens",
-			channelType:            constant.ChannelTypeMoonshot,
-			cachedTokens:           0,
-			promptDetailsCached:    0,
-			expectedPromptCached:   0,
+			name:                 "Moonshot without cached_tokens should not change PromptTokensDetails.CachedTokens",
+			channelType:          constant.ChannelTypeMoonshot,
+			cachedTokens:         0,
+			promptDetailsCached:  0,
+			expectedPromptCached: 0,
 		},
 		{
-			name:                   "Moonshot should not override existing PromptTokensDetails.CachedTokens",
-			channelType:            constant.ChannelTypeMoonshot,
-			cachedTokens:           10,
-			promptDetailsCached:    5,
-			expectedPromptCached:   5,
+			name:                 "Moonshot should not override existing PromptTokensDetails.CachedTokens",
+			channelType:          constant.ChannelTypeMoonshot,
+			cachedTokens:         10,
+			promptDetailsCached:  5,
+			expectedPromptCached: 5,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			info := &relaycommon.RelayInfo{
-				ChannelType: tt.channelType,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType: tt.channelType,
+				},
 			}
 			usage := &dto.Usage{
 				PromptTokens:     100,
@@ -66,29 +68,31 @@ func TestApplyUsagePostProcessing_Moonshot(t *testing.T) {
 
 func TestApplyUsagePostProcessing_DeepSeek(t *testing.T) {
 	tests := []struct {
-		name                   string
-		promptCacheHitTokens   int
-		promptDetailsCached    int
-		expectedPromptCached   int
+		name                 string
+		promptCacheHitTokens int
+		promptDetailsCached  int
+		expectedPromptCached int
 	}{
 		{
-			name:                   "DeepSeek with PromptCacheHitTokens should set PromptTokensDetails.CachedTokens",
-			promptCacheHitTokens:   20,
-			promptDetailsCached:    0,
-			expectedPromptCached:   20,
+			name:                 "DeepSeek with PromptCacheHitTokens should set PromptTokensDetails.CachedTokens",
+			promptCacheHitTokens: 20,
+			promptDetailsCached:  0,
+			expectedPromptCached: 20,
 		},
 		{
-			name:                   "DeepSeek should not override existing PromptTokensDetails.CachedTokens",
-			promptCacheHitTokens:   20,
-			promptDetailsCached:    15,
-			expectedPromptCached:   15,
+			name:                 "DeepSeek should not override existing PromptTokensDetails.CachedTokens",
+			promptCacheHitTokens: 20,
+			promptDetailsCached:  15,
+			expectedPromptCached: 15,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			info := &relaycommon.RelayInfo{
-				ChannelType: constant.ChannelTypeDeepSeek,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType: constant.ChannelTypeDeepSeek,
+				},
 			}
 			usage := &dto.Usage{
 				PromptTokens:         100,
@@ -117,7 +121,11 @@ func TestApplyUsagePostProcessing_NilInputs(t *testing.T) {
 	// Should not panic
 
 	// Test with nil usage
-	info := &relaycommon.RelayInfo{ChannelType: constant.ChannelTypeMoonshot}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType: constant.ChannelTypeMoonshot,
+		},
+	}
 	applyUsagePostProcessing(info, nil, nil)
 	// Should not panic
 }
