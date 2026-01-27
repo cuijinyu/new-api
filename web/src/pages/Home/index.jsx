@@ -459,7 +459,7 @@ const Home = () => {
                   <div className='ez-feature-card p-8 rounded-3xl'>
                     <div className='text-center'>
                       <div className='text-5xl md:text-6xl font-bold ez-brand-text mb-2'>{t('低至官方')}</div>
-                      <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>5 {t('折')}</div>
+                      <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>{t('5折')}</div>
                       <div className='text-semi-color-text-2 mb-8'>{t('同等质量，更优价格')}</div>
                       
                       <div className='grid grid-cols-2 gap-4 text-left'>
