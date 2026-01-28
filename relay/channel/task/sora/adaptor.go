@@ -188,14 +188,14 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	}
 
 	switch resTask.Status {
-	case "queued", "pending":
+	case "queued", "pending", "submitted":
 		taskResult.Status = model.TaskStatusQueued
 	case "processing", "in_progress":
 		taskResult.Status = model.TaskStatusInProgress
-	case "completed":
+	case "completed", "succeeded":
 		taskResult.Status = model.TaskStatusSuccess
 		taskResult.Url = fmt.Sprintf("%s/v1/videos/%s/content", system_setting.ServerAddress, resTask.ID)
-	case "failed", "cancelled":
+	case "failed", "cancelled", "canceled":
 		taskResult.Status = model.TaskStatusFailure
 		if resTask.Error != nil {
 			taskResult.Reason = resTask.Error.Message
@@ -203,6 +203,10 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 			taskResult.Reason = "task failed"
 		}
 	default:
+		// 处理未知状态，记录日志并设置为队列状态
+		common.SysError(fmt.Sprintf("sora: unknown task status: %s, task_id: %s", resTask.Status, resTask.ID))
+		taskResult.Status = model.TaskStatusQueued
+		taskResult.Reason = fmt.Sprintf("unknown status: %s", resTask.Status)
 	}
 	if resTask.Progress > 0 && resTask.Progress < 100 {
 		taskResult.Progress = fmt.Sprintf("%d%%", resTask.Progress)
