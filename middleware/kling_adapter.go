@@ -20,23 +20,26 @@ func KlingRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		// 判断任务类型（在重写路径之前检测原始路径）
-		originalPath := c.Request.URL.Path
-		isOmniVideo := strings.Contains(originalPath, "omni-video")
-		isMotionControl := strings.Contains(originalPath, "motion-control")
-		isMultiImage := strings.Contains(originalPath, "multi-image2video")
-		isIdentifyFace := strings.Contains(originalPath, "identify-face")
-		isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
-		isVideoExtend := strings.Contains(originalPath, "video-extend")
+	// 判断任务类型（在重写路径之前检测原始路径）
+	originalPath := c.Request.URL.Path
+	isOmniVideo := strings.Contains(originalPath, "omni-video")
+	isMotionControl := strings.Contains(originalPath, "motion-control")
+	isMultiImage := strings.Contains(originalPath, "multi-image2video")
+	isIdentifyFace := strings.Contains(originalPath, "identify-face")
+	isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
+	isVideoExtend := strings.Contains(originalPath, "video-extend")
+	isTTS := strings.Contains(originalPath, "/audio/tts")
+	// 数字人端点识别
+	isAvatarImage2Video := strings.Contains(originalPath, "avatar/image2video")
 
-		// 多模态视频编辑端点识别
-		isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")
-		isMultiElementsAddSelection := strings.Contains(originalPath, "multi-elements/add-selection")
-		isMultiElementsDeleteSelection := strings.Contains(originalPath, "multi-elements/delete-selection")
-		isMultiElementsClearSelection := strings.Contains(originalPath, "multi-elements/clear-selection")
-		isMultiElementsPreview := strings.Contains(originalPath, "multi-elements/preview-selection")
-		// 创建任务端点：POST /v1/videos/multi-elements/ (注意末尾有/)
-		isMultiElementsCreate := strings.HasSuffix(originalPath, "multi-elements") || strings.HasSuffix(originalPath, "multi-elements/")
+	// 多模态视频编辑端点识别
+	isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")
+	isMultiElementsAddSelection := strings.Contains(originalPath, "multi-elements/add-selection")
+	isMultiElementsDeleteSelection := strings.Contains(originalPath, "multi-elements/delete-selection")
+	isMultiElementsClearSelection := strings.Contains(originalPath, "multi-elements/clear-selection")
+	isMultiElementsPreview := strings.Contains(originalPath, "multi-elements/preview-selection")
+	// 创建任务端点：POST /v1/videos/multi-elements/ (注意末尾有/)
+	isMultiElementsCreate := strings.HasSuffix(originalPath, "multi-elements") || strings.HasSuffix(originalPath, "multi-elements/")
 
 		// Support both model_name and model fields
 		model, _ := originalReq["model_name"].(string)
@@ -47,7 +50,11 @@ func KlingRequestConvert() func(c *gin.Context) {
 		// 对于不需要 model 的辅助接口，设置默认模型名称以便渠道路由
 		// 这些接口本身不使用 model 参数，但 new-api 需要 model 来选择渠道
 		if model == "" {
-			if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
+			if isTTS {
+				model = "kling-tts" // TTS 专用模型，用于独立计费
+			} else if isAvatarImage2Video {
+				model = "kling-avatar" // 数字人专用模型，用于独立计费
+			} else if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
 				isMultiElementsClearSelection || isMultiElementsPreview ||
 				isIdentifyFace || isAdvancedLipSync || isVideoExtend {
 				model = "kling-v1-6" // 默认模型，用于渠道路由
@@ -73,12 +80,16 @@ func KlingRequestConvert() func(c *gin.Context) {
 		c.Request.URL.Path = "/v1/video/generations"
 
 		// 设置任务类型
-		if isIdentifyFace {
+		if isAvatarImage2Video {
+			c.Set("action", constant.TaskActionAvatarImage2Video)
+		} else if isIdentifyFace {
 			c.Set("action", constant.TaskActionIdentifyFace)
 		} else if isAdvancedLipSync {
 			c.Set("action", constant.TaskActionAdvancedLipSync)
 		} else if isVideoExtend {
 			c.Set("action", constant.TaskActionVideoExtend)
+		} else if isTTS {
+			c.Set("action", constant.TaskActionTTS)
 		} else if isMultiElementsInit {
 			c.Set("action", constant.TaskActionMultiElementsInit)
 		} else if isMultiElementsAddSelection {

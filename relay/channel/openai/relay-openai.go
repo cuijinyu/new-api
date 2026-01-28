@@ -659,6 +659,11 @@ func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, res
 		if usage.PromptTokensDetails.CachedTokens == 0 && usage.PromptCacheHitTokens != 0 {
 			usage.PromptTokensDetails.CachedTokens = usage.PromptCacheHitTokens
 		}
+	case constant.ChannelTypeMoonshot:
+		// Moonshot kimi-k2.5 返回 usage.cached_tokens
+		if usage.PromptTokensDetails.CachedTokens == 0 && usage.CachedTokens != 0 {
+			usage.PromptTokensDetails.CachedTokens = usage.CachedTokens
+		}
 	case constant.ChannelTypeZhipu_v4:
 		if usage.PromptTokensDetails.CachedTokens == 0 {
 			if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens > 0 {

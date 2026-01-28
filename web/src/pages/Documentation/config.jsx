@@ -50,6 +50,8 @@ import klingLipSyncContentZh from './content/kling-lip-sync.md?raw';
 import klingLipSyncContentEn from './content/kling-lip-sync.en.md?raw';
 import klingMultiElementsContentZh from './content/kling-multi-elements.md?raw';
 import klingMultiElementsContentEn from './content/kling-multi-elements.en.md?raw';
+import klingTtsContentZh from './content/kling-tts.md?raw';
+import klingTtsContentEn from './content/kling-tts.en.md?raw';
 import openaiTtsContentZh from './content/openai-tts.md?raw';
 import openaiTtsContentEn from './content/openai-tts.en.md?raw';
 import openaiTranscriptionsContentZh from './content/openai-transcriptions.md?raw';
@@ -316,6 +318,18 @@ export const documentationConfig = [
     content: {
       zh: klingMultiElementsContentZh,
       en: klingMultiElementsContentEn
+    }
+  },
+  {
+    key: 'kling-tts',
+    title: 'doc.klingTts.title',
+    description: 'doc.klingTts.desc',
+    icon: <IconSend />,
+    path: '/docs/kling-tts',
+    category: 'audio',
+    content: {
+      zh: klingTtsContentZh,
+      en: klingTtsContentEn
     }
   },
   {

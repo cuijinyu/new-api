@@ -42,6 +42,8 @@ func SetVideoRouter(router *gin.Engine) {
 		// 视频延长 (Video Extend) 端点
 		klingV1Router.POST("/videos/video-extend", controller.RelayTask)
 		klingV1Router.GET("/videos/video-extend/:task_id", controller.RelayTask)
+		// 语音合成 (TTS) 端点 - 同步接口，直接返回音频
+		klingV1Router.POST("/audio/tts", controller.RelayTask)
 		// 多模态视频编辑 (Multi-Elements) 端点
 		klingV1Router.POST("/videos/multi-elements/init-selection", controller.RelayTask)    // 初始化待编辑视频
 		klingV1Router.POST("/videos/multi-elements/add-selection", controller.RelayTask)     // 增加视频选区
@@ -51,6 +53,9 @@ func SetVideoRouter(router *gin.Engine) {
 		klingV1Router.POST("/videos/multi-elements", controller.RelayTask)                   // 创建多模态视频编辑任务
 		klingV1Router.POST("/videos/multi-elements/", controller.RelayTask)                  // 创建多模态视频编辑任务（带斜杠）
 		klingV1Router.GET("/videos/multi-elements/:task_id", controller.RelayTask)           // 查询多模态视频编辑任务
+		// 数字人 (Avatar) 端点
+		klingV1Router.POST("/videos/avatar/image2video", controller.RelayTask)    // 数字人图生视频
+		klingV1Router.GET("/videos/avatar/image2video/:task_id", controller.RelayTask) // 查询数字人任务
 	}
 
 	// Jimeng official API routes - direct mapping to official API format

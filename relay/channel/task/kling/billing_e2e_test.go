@@ -160,6 +160,9 @@ var OfficialVideoExtendPrice = map[string]map[string]float64{
 // OfficialLipSyncPrice 对口型价格（元/5秒）
 const OfficialLipSyncPricePerUnit = 0.5 // 每5秒0.5元
 
+// OfficialTTSPrice 语音合成价格（元/次）
+const OfficialTTSPricePerCall = 0.05 // 每次0.05元
+
 // ModelPriceMap 模型固定价格配置（内部计价单位，对应系统配置）
 var ModelPriceMap = map[string]float64{
 	"kling-video-o1":    0.084,
@@ -179,6 +182,7 @@ var SpecialModelPriceMap = map[string]float64{
 	"video_extend":   0.14,  // 视频延长: 使 PriceScale 直接等于官方价格
 	"lip_sync":       0.14,  // 对口型: 使 PriceScale 直接等于官方价格
 	"identify_face":  0.14,  // 人脸识别
+	"tts":            0.14,  // 语音合成: 使 PriceScale 直接等于官方价格
 }
 
 const testPriceRatio = 0.14
@@ -259,7 +263,8 @@ func runE2EBillingTest(t *testing.T, tc E2EBillingTestCase) BillingResult {
 	var finalAmount float64
 
 	if tc.Action == constant.TaskActionAdvancedLipSync ||
-		tc.Action == constant.TaskActionIdentifyFace {
+		tc.Action == constant.TaskActionIdentifyFace ||
+		tc.Action == constant.TaskActionTTS {
 		finalPriceScale = float64(preDeductScale)
 		finalAmount = preDeductAmount
 	} else {
@@ -573,6 +578,76 @@ func TestE2E_VideoExtend_V1_Pro(t *testing.T) {
 
 	t.Logf("正确扣费: %.4f, 还原官方价格: %.2f 元", correctFinalAmount, correctOfficialPrice)
 	assert.InDelta(t, 3.5, correctOfficialPrice, 0.1, "视频延长 V1 Pro 应为 3.5元")
+}
+
+// ============================================================================
+// 语音合成 (TTS) 场景测试
+// ============================================================================
+
+func TestE2E_TTS_SingleCall(t *testing.T) {
+	// 语音合成: 每次0.05元
+	// 计费逻辑: PriceScale = 0.05 / 0.14 ≈ 0.357
+	// 当 ModelPrice=0.14 时: 0.14 × 0.357 = 0.05 元
+	tc := E2EBillingTestCase{
+		Name:   "TTS_SingleCall",
+		Action: constant.TaskActionTTS,
+		Model:  "kling-v1-6",
+		Metadata: map[string]interface{}{
+			"text":     "你好，这是一段测试文本。",
+			"voice_id": "voice_001",
+			"speed":    1.0,
+			"volume":   1.0,
+		},
+
+		ExpectedPreDeductScale: 0.05 / 0.14, // 0.357
+	}
+
+	result := runE2EBillingTestWithoutPriceCheck(t, tc)
+
+	t.Logf("=== %s ===", tc.Name)
+	t.Logf("官方价格: 语音合成 每次0.05元")
+
+	// TTS 使用专用 ModelPrice=0.14，使得 ModelPrice × PriceScale = 官方价格
+	correctModelPrice := SpecialModelPriceMap["tts"]
+	correctFinalAmount := correctModelPrice * float64(result.PreDeductPriceScale)
+	// 对于 TTS，官方价格 = ModelPrice × PriceScale（不需要除以 testPriceRatio）
+	correctOfficialPrice := correctFinalAmount
+
+	t.Logf(">>> 需要配置 ModelPrice=%.3f <<<", correctModelPrice)
+	t.Logf("PriceScale: %.4f", result.PreDeductPriceScale)
+	t.Logf("正确扣费: %.4f, 还原官方价格: %.2f 元", correctFinalAmount, correctOfficialPrice)
+	assert.InDelta(t, 0.05, correctOfficialPrice, 0.01, "语音合成应为 0.05元/次")
+}
+
+func TestE2E_TTS_LongText(t *testing.T) {
+	// 语音合成长文本: 仍然是每次0.05元（按调用次数计费，不按字符数）
+	tc := E2EBillingTestCase{
+		Name:   "TTS_LongText",
+		Action: constant.TaskActionTTS,
+		Model:  "kling-v1-6",
+		Metadata: map[string]interface{}{
+			"text":     "这是一段很长的测试文本，用于验证语音合成的计费逻辑。无论文本长度如何，每次调用都是固定收费0.05元。这是可灵AI语音合成API的官方定价策略。",
+			"voice_id": "voice_002",
+			"speed":    1.2,
+			"volume":   0.8,
+		},
+
+		ExpectedPreDeductScale: 0.05 / 0.14, // 0.357
+	}
+
+	result := runE2EBillingTestWithoutPriceCheck(t, tc)
+
+	t.Logf("=== %s ===", tc.Name)
+	t.Logf("官方价格: 语音合成 每次0.05元（按次计费，与文本长度无关）")
+
+	// TTS 使用专用 ModelPrice=0.14
+	correctModelPrice := SpecialModelPriceMap["tts"]
+	correctFinalAmount := correctModelPrice * float64(result.PreDeductPriceScale)
+	correctOfficialPrice := correctFinalAmount
+
+	t.Logf("PriceScale: %.4f", result.PreDeductPriceScale)
+	t.Logf("正确扣费: %.4f, 还原官方价格: %.2f 元", correctFinalAmount, correctOfficialPrice)
+	assert.InDelta(t, 0.05, correctOfficialPrice, 0.01, "语音合成长文本仍应为 0.05元/次")
 }
 
 // ============================================================================
@@ -1131,6 +1206,7 @@ func TestE2E_BillingSummary(t *testing.T) {
 	t.Log("  视频延长: ModelPrice=0.14 (V1 Std=1元, V1.6 Std=2元, Pro=3.5元)")
 	t.Log("  对口型: ModelPrice=0.14 (每5秒0.5元)")
 	t.Log("  动作控制: ModelPrice=0.07 (Std 0.5元/秒, Pro 0.8元/秒)")
+	t.Log("  语音合成(TTS): ModelPrice=0.14 (每次0.05元)")
 	t.Log("")
 
 	t.Log("【免费辅助操作】")

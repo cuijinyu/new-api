@@ -1,13 +1,16 @@
 # Build stage
 FROM node:20-alpine AS builder
 
+# Install git for VitePress lastUpdated feature
+RUN apk add --no-cache git
+
 WORKDIR /app
 
 # Copy package files
-COPY package.json ./
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source files
 COPY . .

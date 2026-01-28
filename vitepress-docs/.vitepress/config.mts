@@ -62,6 +62,7 @@ const zhSidebar = [
       { text: '视频续写', link: '/kling/video-extend' },
       { text: '口型同步', link: '/kling/lip-sync' },
       { text: '多元素控制', link: '/kling/multi-elements' },
+      { text: '语音合成 (TTS)', link: '/kling/tts' },
     ]
   },
   {
@@ -137,6 +138,7 @@ const enSidebar = [
       { text: 'Video Extension', link: '/en/kling/video-extend' },
       { text: 'Lip Sync', link: '/en/kling/lip-sync' },
       { text: 'Multi-Elements', link: '/en/kling/multi-elements' },
+      { text: 'Text-to-Speech (TTS)', link: '/en/kling/tts' },
     ]
   },
   {
@@ -222,7 +224,7 @@ export default defineConfig({
     sidebar: zhSidebar,
     
     footer: {
-      message: '企业合作联系：jasonhu@ezmodel.cloud',
+      message: '企业合作联系：service@ezmodel.cloud',
       copyright: 'Copyright © 2025-present EZmodel'
     },
     
