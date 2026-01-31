@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
@@ -226,6 +227,20 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			modelRequest.Model = modelName
 		}
 		c.Set("relay_mode", relayMode)
+	} else if strings.Contains(c.Request.URL.Path, "/api/v3/context/") {
+		// BytePlus/Volcengine Context Cache API
+		req, err := getModelFromRequest(c)
+		if err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("Context Cache API: failed to get model from request: %v", err))
+			return nil, false, err
+		}
+		modelRequest.Model = req.Model
+		common.SysLog(fmt.Sprintf("Context Cache API: model=%s, path=%s", modelRequest.Model, c.Request.URL.Path))
+		if strings.HasSuffix(c.Request.URL.Path, "/create") {
+			c.Set("relay_mode", relayconstant.RelayModeContextCacheCreate)
+		} else if strings.HasSuffix(c.Request.URL.Path, "/chat/completions") {
+			c.Set("relay_mode", relayconstant.RelayModeContextCacheChat)
+		}
 	} else if !strings.HasPrefix(c.Request.URL.Path, "/v1/audio/transcriptions") && !strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
 		req, err := getModelFromRequest(c)
 		if err != nil {

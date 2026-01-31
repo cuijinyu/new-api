@@ -73,6 +73,7 @@ func RelayContextCacheCreate(c *gin.Context) {
 	// 获取渠道信息
 	channel, err := getChannelForContextCache(c, request.Model)
 	if err != nil {
+		logger.LogError(c, fmt.Sprintf("Failed to get channel for model %s: %v", request.Model, err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": types.NewOpenAIError(
 				errors.New(common.MessageWithRequestId(err.Error(), requestId)),
@@ -82,10 +83,11 @@ func RelayContextCacheCreate(c *gin.Context) {
 		})
 		return
 	}
+	logger.LogInfo(c, fmt.Sprintf("Got channel %d (%s) for model %s", channel.Id, channel.Name, request.Model))
 
 	// 构建 relay info
 	info := buildContextCacheRelayInfo(c, channel, request.Model, relayconstant.RelayModeContextCacheCreate)
-
+	
 	// 转发请求到上游
 	resp, apiErr := forwardContextCacheRequest(c, info, &request, "/api/v3/context/create")
 	if apiErr != nil {
@@ -281,6 +283,18 @@ func buildContextCacheRelayInfo(c *gin.Context, channel *model.Channel, modelNam
 
 // forwardContextCacheRequest 转发上下文缓存请求到上游
 func forwardContextCacheRequest(c *gin.Context, info *relaycommon.RelayInfo, request any, path string) (*http.Response, *types.NewAPIError) {
+	// 应用模型映射
+	if info.ChannelMeta.IsModelMapped {
+		switch req := request.(type) {
+		case *dto.ContextCacheCreateRequest:
+			logger.LogInfo(c, fmt.Sprintf("Applying model mapping: %s -> %s", req.Model, info.ChannelMeta.UpstreamModelName))
+			req.Model = info.ChannelMeta.UpstreamModelName
+		case *dto.ContextCacheChatRequest:
+			logger.LogInfo(c, fmt.Sprintf("Applying model mapping: %s -> %s", req.Model, info.ChannelMeta.UpstreamModelName))
+			req.Model = info.ChannelMeta.UpstreamModelName
+		}
+	}
+	
 	// 序列化请求体
 	jsonData, err := json.Marshal(request)
 	if err != nil {
