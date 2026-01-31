@@ -43,6 +43,7 @@ export default function ModelRatioSettings(props) {
     ModelPrice: '',
     ModelRatio: '',
     CacheRatio: '',
+    TieredPricing: '',
     CompletionRatio: '',
     ImageRatio: '',
     AudioRatio: '',
@@ -197,6 +198,28 @@ export default function ModelRatioSettings(props) {
                 },
               ]}
               onChange={(value) => setInputs({ ...inputs, CacheRatio: value })}
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('分段价格配置')}
+              extraText={t('按输入 Token 长度分段计价，优先级高于模型倍率和固定价格')}
+              placeholder={t(
+                '为一个 JSON 文本，键为模型名称，值为分段配置。示例：{"doubao-seed-1.6": {"enabled": true, "tiers": [{"min_tokens": 0, "max_tokens": 128, "input_price": 0.25, "output_price": 2.00, "cache_hit_price": 0.05}]}}'
+              )}
+              field={'TieredPricing'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: '不是合法的 JSON 字符串',
+                },
+              ]}
+              onChange={(value) => setInputs({ ...inputs, TieredPricing: value })}
             />
           </Col>
         </Row>

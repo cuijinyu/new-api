@@ -302,7 +302,42 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		dCacheRatio.String(),
 		dCacheTokens.Mul(dCacheRatio).String(),
 	))
-	if !relayInfo.PriceData.UsePrice {
+	// 分段价格计算
+	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
+		tieredData := relayInfo.PriceData.TieredPricingData
+
+		// 计算各部分费用 (价格单位是 USD/M tokens)
+		// 需要减去缓存 tokens
+		actualPromptTokens := promptTokens - cacheTokens
+		if actualPromptTokens < 0 {
+			actualPromptTokens = 0
+		}
+
+		dActualPromptTokens := decimal.NewFromInt(int64(actualPromptTokens))
+		dCacheTokens := decimal.NewFromInt(int64(cacheTokens))
+		dCompletionTokens := decimal.NewFromInt(int64(completionTokens))
+
+		dInputPrice := decimal.NewFromFloat(tieredData.InputPrice)
+		dOutputPrice := decimal.NewFromFloat(tieredData.OutputPrice)
+		dCacheHitPrice := decimal.NewFromFloat(tieredData.CacheHitPrice)
+
+		// 计算 quota = (inputTokens * inputPrice + outputTokens * outputPrice + cacheTokens * cacheHitPrice) / 1000000 * QuotaPerUnit * groupRatio
+		dMillion := decimal.NewFromInt(1000000)
+
+		inputQuota := dActualPromptTokens.Mul(dInputPrice).Div(dMillion)
+		outputQuota := dCompletionTokens.Mul(dOutputPrice).Div(dMillion)
+		cacheQuota := dCacheTokens.Mul(dCacheHitPrice).Div(dMillion)
+
+		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
+
+		// 添加其他费用（web search 等）
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
+
+	} else if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 		// 减去 cached tokens
 		// Anthropic API 的 input_tokens 已经不包含缓存 tokens，不需要减去
@@ -461,6 +496,13 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if !dImageGenerationCallQuota.IsZero() {
 		other["image_generation_call"] = true
 		other["image_generation_call_price"] = imageGenerationCallPrice
+	}
+	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
+		other["tiered_pricing"] = true
+		other["tiered_input_price"] = relayInfo.PriceData.TieredPricingData.InputPrice
+		other["tiered_output_price"] = relayInfo.PriceData.TieredPricingData.OutputPrice
+		other["tiered_cache_hit_price"] = relayInfo.PriceData.TieredPricingData.CacheHitPrice
+		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", relayInfo.PriceData.TieredPricingData.TierMinTokens, relayInfo.PriceData.TieredPricingData.TierMaxTokens)
 	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

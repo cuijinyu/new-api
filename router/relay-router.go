@@ -179,6 +179,28 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.Relay(c, types.RelayFormatGemini)
 		})
 	}
+
+	// BytePlus/Volcengine Context Cache API
+	// Reference: https://docs.byteplus.com/en/docs/ModelArk/1346559
+	contextCacheRouter := router.Group("/api/v3/context")
+	contextCacheRouter.Use(middleware.TokenAuth())
+	contextCacheRouter.Use(middleware.Distribute())
+	{
+		// 创建上下文缓存
+		contextCacheRouter.POST("/create", controller.RelayContextCacheCreate)
+		// 使用上下文缓存进行对话
+		contextCacheRouter.POST("/chat/completions", controller.RelayContextCacheChat)
+	}
+
+	// BytePlus/Volcengine Responses API
+	// Reference: https://docs.byteplus.com/en/docs/ModelArk/Create_model_request
+	byteplusResponsesRouter := router.Group("/api/v3")
+	byteplusResponsesRouter.Use(middleware.TokenAuth())
+	byteplusResponsesRouter.Use(middleware.Distribute())
+	{
+		// BytePlus Responses API (支持缓存)
+		byteplusResponsesRouter.POST("/responses", controller.RelayBytePlusResponses)
+	}
 }
 
 func registerMjRouterGroup(relayMjRouter *gin.RouterGroup) {

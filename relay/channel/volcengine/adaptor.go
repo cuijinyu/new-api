@@ -277,6 +277,11 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 				return "wss://openspeech.bytedance.com/api/v1/tts/ws_binary", nil
 			}
 			return fmt.Sprintf("%s/v1/audio/speech", baseUrl), nil
+		// Context Cache API (BytePlus/Volcengine)
+		case constant.RelayModeContextCacheCreate:
+			return fmt.Sprintf("%s/api/v3/context/create", baseUrl), nil
+		case constant.RelayModeContextCacheChat:
+			return fmt.Sprintf("%s/api/v3/context/chat/completions", baseUrl), nil
 		default:
 		}
 	}
