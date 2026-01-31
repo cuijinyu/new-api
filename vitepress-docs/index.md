@@ -7,7 +7,7 @@ hero:
   text: "AI 模型聚合平台"
   tagline: 兼容 OpenAI API 格式，一站式接入主流 AI 模型
   image:
-    src: /logo.jpg
+    src: /logo.png
     alt: EZmodel
   actions:
     - theme: brand

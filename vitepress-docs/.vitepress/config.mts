@@ -202,7 +202,7 @@ export default defineConfig({
   },
   
   themeConfig: {
-    logo: '/logo.jpg',
+    logo: '/logo.png',
     siteTitle: 'EZmodel API',
     
     nav: [
