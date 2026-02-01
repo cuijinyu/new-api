@@ -111,6 +111,7 @@ export const getPricingTableColumns = ({
   tokenUnit,
   displayPrice,
   showRatio,
+  isAdminUser = false,
 }) => {
   const isMobile = useIsMobile();
   const priceDataCache = new WeakMap();
@@ -217,9 +218,12 @@ export const getPricingTableColumns = ({
             {t('补全倍率')}：
             {record.quota_type === 0 ? completionRatio : t('无')}
           </div>
-          <div className='text-gray-700'>
-            {t('分组倍率')}：{priceData?.usedGroupRatio ?? '-'}
-          </div>
+          {/* 只有管理员才显示分组倍率 */}
+          {isAdminUser && (
+            <div className='text-gray-700'>
+              {t('分组倍率')}：{priceData?.usedGroupRatio ?? '-'}
+            </div>
+          )}
         </div>
       );
     },

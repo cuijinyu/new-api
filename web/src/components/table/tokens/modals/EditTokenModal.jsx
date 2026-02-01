@@ -27,6 +27,7 @@ import {
   renderQuotaWithPrompt,
   getModelCategories,
   selectFilter,
+  isAdmin,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import {
@@ -357,26 +358,29 @@ const EditTokenModal = (props) => {
                       showClear
                     />
                   </Col>
-                  <Col span={24}>
-                    {groups.length > 0 ? (
-                      <Form.Select
-                        field='group'
-                        label={t('令牌分组')}
-                        placeholder={t('令牌分组，默认为用户的分组')}
-                        optionList={groups}
-                        renderOptionItem={renderGroupOption}
-                        showClear
-                        style={{ width: '100%' }}
-                      />
-                    ) : (
-                      <Form.Select
-                        placeholder={t('管理员未设置用户可选分组')}
-                        disabled
-                        label={t('令牌分组')}
-                        style={{ width: '100%' }}
-                      />
-                    )}
-                  </Col>
+                  {/* 只有管理员才显示令牌分组选择 */}
+                  {isAdmin() && (
+                    <Col span={24}>
+                      {groups.length > 0 ? (
+                        <Form.Select
+                          field='group'
+                          label={t('令牌分组')}
+                          placeholder={t('令牌分组，默认为用户的分组')}
+                          optionList={groups}
+                          renderOptionItem={renderGroupOption}
+                          showClear
+                          style={{ width: '100%' }}
+                        />
+                      ) : (
+                        <Form.Select
+                          placeholder={t('管理员未设置用户可选分组')}
+                          disabled
+                          label={t('令牌分组')}
+                          style={{ width: '100%' }}
+                        />
+                      )}
+                    </Col>
+                  )}
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.DatePicker
                       field='expired_time'

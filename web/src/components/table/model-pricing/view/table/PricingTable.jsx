@@ -41,6 +41,7 @@ const PricingTable = ({
   displayPrice,
   searchValue,
   showRatio,
+  isAdminUser = false,
   compactMode = false,
   openModelDetail,
   t,
@@ -57,6 +58,7 @@ const PricingTable = ({
       tokenUnit,
       displayPrice,
       showRatio,
+      isAdminUser,
     });
   }, [
     t,
@@ -69,6 +71,7 @@ const PricingTable = ({
     tokenUnit,
     displayPrice,
     showRatio,
+    isAdminUser,
   ]);
 
   // 更新列定义中的 searchValue

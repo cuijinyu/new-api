@@ -33,8 +33,13 @@ const ModelPricingTable = ({
   showRatio,
   usableGroup,
   autoGroups = [],
+  isAdminUser = false,
   t,
 }) => {
+  // 非管理员用户不显示分组价格表
+  if (!isAdminUser) {
+    return null;
+  }
   const modelEnableGroups = Array.isArray(modelData?.enable_groups)
     ? modelData.enable_groups
     : [];

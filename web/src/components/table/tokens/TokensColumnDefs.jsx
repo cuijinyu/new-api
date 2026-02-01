@@ -434,8 +434,9 @@ export const getTokensColumns = ({
   setEditingToken,
   setShowEdit,
   refresh,
+  isAdminUser = false,
 }) => {
-  return [
+  const columns = [
     {
       title: t('名称'),
       dataIndex: 'name',
@@ -451,12 +452,19 @@ export const getTokensColumns = ({
       key: 'quota_usage',
       render: (text, record) => renderQuotaUsage(text, record, t),
     },
-    {
+  ];
+
+  // 只有管理员才显示分组列
+  if (isAdminUser) {
+    columns.push({
       title: t('分组'),
       dataIndex: 'group',
       key: 'group',
       render: (text) => renderGroupColumn(text, t),
-    },
+    });
+  }
+
+  columns.push(
     {
       title: t('密钥'),
       key: 'token_key',
@@ -507,5 +515,7 @@ export const getTokensColumns = ({
           t,
         ),
     },
-  ];
+  );
+
+  return columns;
 };
