@@ -1180,6 +1180,11 @@ export function renderModelPrice(
   audioInputPrice = 0,
   imageGenerationCall = false,
   imageGenerationCallPrice = 0,
+  tieredPricing = false,
+  tieredInputPrice = 0,
+  tieredOutputPrice = 0,
+  tieredCacheHitPrice = 0,
+  tieredTierRange = '',
 ) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
@@ -1189,6 +1194,99 @@ export function renderModelPrice(
 
   // 获取货币配置
   const { symbol, rate } = getCurrencyConfig();
+
+  // 分段计费显示
+  if (tieredPricing && tieredInputPrice > 0) {
+    // 计算实际输入 tokens（减去缓存）
+    const actualInputTokens = Math.max(0, inputTokens - cacheTokens);
+
+    // 计算各部分费用
+    const inputCost = (actualInputTokens / 1000000) * tieredInputPrice;
+    const outputCost = (completionTokens / 1000000) * tieredOutputPrice;
+    const cacheCost = (cacheTokens / 1000000) * tieredCacheHitPrice;
+    const totalBeforeGroup = inputCost + outputCost + cacheCost;
+    const totalAfterGroup = totalBeforeGroup * groupRatio;
+
+    return (
+      <>
+        <article>
+          <p>
+            {i18next.t('分段计费 (区间: {{tierRange}}K tokens)', {
+              tierRange: tieredTierRange,
+            })}
+          </p>
+          <p>
+            {i18next.t('输入价格：{{symbol}}{{price}} / 1M tokens', {
+              symbol: symbol,
+              price: (tieredInputPrice * rate).toFixed(6),
+            })}
+          </p>
+          <p>
+            {i18next.t('输出价格：{{symbol}}{{price}} / 1M tokens', {
+              symbol: symbol,
+              price: (tieredOutputPrice * rate).toFixed(6),
+            })}
+          </p>
+          {cacheTokens > 0 && (
+            <p>
+              {i18next.t('缓存价格：{{symbol}}{{price}} / 1M tokens', {
+                symbol: symbol,
+                price: (tieredCacheHitPrice * rate).toFixed(6),
+              })}
+            </p>
+          )}
+          <p>
+            {(() => {
+              let inputDesc = '';
+              if (cacheTokens > 0) {
+                inputDesc = i18next.t(
+                  '(输入 {{nonCacheInput}} tokens / 1M * {{symbol}}{{inputPrice}} + 缓存 {{cacheInput}} tokens / 1M * {{symbol}}{{cachePrice}}',
+                  {
+                    nonCacheInput: actualInputTokens,
+                    cacheInput: cacheTokens,
+                    symbol: symbol,
+                    inputPrice: (tieredInputPrice * rate).toFixed(6),
+                    cachePrice: (tieredCacheHitPrice * rate).toFixed(6),
+                  },
+                );
+              } else {
+                inputDesc = i18next.t(
+                  '(输入 {{input}} tokens / 1M * {{symbol}}{{price}}',
+                  {
+                    input: actualInputTokens,
+                    symbol: symbol,
+                    price: (tieredInputPrice * rate).toFixed(6),
+                  },
+                );
+              }
+
+              const outputDesc = i18next.t(
+                '输出 {{completion}} tokens / 1M * {{symbol}}{{price}}) * {{ratioType}} {{ratio}}',
+                {
+                  completion: completionTokens,
+                  symbol: symbol,
+                  price: (tieredOutputPrice * rate).toFixed(6),
+                  ratio: groupRatio,
+                  ratioType: ratioLabel,
+                },
+              );
+
+              return i18next.t(
+                '{{inputDesc}} + {{outputDesc}} = {{symbol}}{{total}}',
+                {
+                  inputDesc,
+                  outputDesc,
+                  symbol: symbol,
+                  total: (totalAfterGroup * rate).toFixed(6),
+                },
+              );
+            })()}
+          </p>
+          <p>{i18next.t('仅供参考，以实际扣费为准')}</p>
+        </article>
+      </>
+    );
+  }
 
   if (modelPrice !== -1) {
     const displayPrice = (modelPrice * rate).toFixed(6);
@@ -1439,6 +1537,10 @@ export function renderLogContent(
   webSearchCallCount = 0,
   fileSearch = false,
   fileSearchCallCount = 0,
+  tieredPricing = false,
+  tieredInputPrice = 0,
+  tieredOutputPrice = 0,
+  tieredTierRange = '',
 ) {
   const {
     ratio,
@@ -1448,6 +1550,21 @@ export function renderLogContent(
 
   // 获取货币配置
   const { symbol, rate } = getCurrencyConfig();
+
+  // 分段计费显示
+  if (tieredPricing && tieredInputPrice > 0) {
+    return i18next.t(
+      '分段计费 ({{tierRange}}K)，输入 {{symbol}}{{inputPrice}}/M，输出 {{symbol}}{{outputPrice}}/M，{{ratioType}} {{ratio}}',
+      {
+        tierRange: tieredTierRange,
+        symbol: symbol,
+        inputPrice: (tieredInputPrice * rate).toFixed(4),
+        outputPrice: (tieredOutputPrice * rate).toFixed(4),
+        ratioType: ratioLabel,
+        ratio,
+      },
+    );
+  }
 
   if (modelPrice !== -1) {
     return i18next.t('模型价格 {{symbol}}{{price}}，{{ratioType}} {{ratio}}', {

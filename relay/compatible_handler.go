@@ -330,6 +330,10 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
 
+		// 计算等效模型价格用于日志显示 (不含分组倍率)
+		// modelPrice = inputQuota + outputQuota + cacheQuota (单位: USD)
+		modelPrice = inputQuota.Add(outputQuota).Add(cacheQuota).InexactFloat64()
+
 		// 添加其他费用（web search 等）
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)

@@ -379,6 +379,10 @@ export const useLogsData = () => {
                 other.web_search_call_count || 0,
                 other.file_search || false,
                 other.file_search_call_count || 0,
+                other?.tiered_pricing || false,
+                other?.tiered_input_price || 0,
+                other?.tiered_output_price || 0,
+                other?.tiered_tier_range || '',
               ),
         });
         if (logs[i]?.content) {
@@ -463,6 +467,11 @@ export const useLogsData = () => {
             other?.audio_input_price || 0,
             other?.image_generation_call || false,
             other?.image_generation_call_price || 0,
+            other?.tiered_pricing || false,
+            other?.tiered_input_price || 0,
+            other?.tiered_output_price || 0,
+            other?.tiered_cache_hit_price || 0,
+            other?.tiered_tier_range || '',
           );
         }
         expandDataLocal.push({
