@@ -20,18 +20,157 @@ BytePlus Responses API 缓存功能测试脚本
 import os
 import json
 import time
-from openai import OpenAI
+import requests
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
 
 # 配置
 BASE_URL = os.getenv('NEW_API_BASE_URL', 'http://localhost:3000')
 API_KEY = os.getenv('NEW_API_KEY', 'sk-test')
 MODEL = os.getenv('BYTEPLUS_MODEL', 'seed-1-6-250915')
 
-# 初始化客户端
-client = OpenAI(
-    base_url=f'{BASE_URL}/v1',
-    api_key=API_KEY,
-)
+
+@dataclass
+class TokenDetails:
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
+
+@dataclass
+class Usage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_tokens_details: Optional[TokenDetails] = None
+    output_tokens_details: Optional[TokenDetails] = None
+
+@dataclass
+class Response:
+    id: str
+    status: str
+    output: List[Dict]
+    usage: Optional[Usage] = None
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Response':
+        usage = None
+        if 'usage' in data:
+            u = data['usage']
+            input_details = None
+            output_details = None
+            if 'input_tokens_details' in u:
+                input_details = TokenDetails(
+                    cached_tokens=u['input_tokens_details'].get('cached_tokens', 0)
+                )
+            if 'output_tokens_details' in u:
+                output_details = TokenDetails(
+                    reasoning_tokens=u['output_tokens_details'].get('reasoning_tokens', 0)
+                )
+            usage = Usage(
+                input_tokens=u.get('input_tokens', 0),
+                output_tokens=u.get('output_tokens', 0),
+                total_tokens=u.get('total_tokens', 0),
+                input_tokens_details=input_details,
+                output_tokens_details=output_details
+            )
+        return cls(
+            id=data.get('id', ''),
+            status=data.get('status', ''),
+            output=data.get('output', []),
+            usage=usage
+        )
+
+
+def responses_create(
+    model: str,
+    input_messages: List[Dict],
+    thinking: Optional[Dict] = None,
+    caching: Optional[Dict] = None,
+    previous_response_id: Optional[str] = None,
+    stream: bool = False,
+    timeout: int = 120
+) -> Optional[Response]:
+    """
+    调用 Responses API
+    """
+    url = f"{BASE_URL}/v1/responses"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model,
+        "input": input_messages,
+        "stream": stream
+    }
+    
+    if thinking:
+        payload["thinking"] = thinking
+    if caching:
+        payload["caching"] = caching
+    if previous_response_id:
+        payload["previous_response_id"] = previous_response_id
+    
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if resp.status_code == 200:
+            return Response.from_dict(resp.json())
+        else:
+            print(f"Error: {resp.status_code} - {resp.text[:500]}")
+            return None
+    except Exception as e:
+        print(f"Request error: {e}")
+        return None
+
+
+def responses_create_stream(
+    model: str,
+    input_messages: List[Dict],
+    thinking: Optional[Dict] = None,
+    caching: Optional[Dict] = None,
+    previous_response_id: Optional[str] = None,
+    timeout: int = 120
+):
+    """
+    调用 Responses API (流式)
+    """
+    url = f"{BASE_URL}/v1/responses"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": model,
+        "input": input_messages,
+        "stream": True
+    }
+    
+    if thinking:
+        payload["thinking"] = thinking
+    if caching:
+        payload["caching"] = caching
+    if previous_response_id:
+        payload["previous_response_id"] = previous_response_id
+    
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
+        if resp.status_code == 200:
+            for line in resp.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith('data: '):
+                        data_str = line_str[6:]
+                        if data_str.strip() == '[DONE]':
+                            break
+                        try:
+                            yield json.loads(data_str)
+                        except json.JSONDecodeError:
+                            pass
+        else:
+            print(f"Error: {resp.status_code} - {resp.text[:500]}")
+    except Exception as e:
+        print(f"Request error: {e}")
 
 def print_separator(title: str):
     """打印分隔线"""
@@ -39,49 +178,55 @@ def print_separator(title: str):
     print(f"  {title}")
     print(f"{'='*60}\n")
 
-def print_usage(usage):
+def print_usage(usage: Optional[Usage]):
     """打印 usage 信息"""
     if usage:
         print(f"  - Input Tokens: {usage.input_tokens}")
         print(f"  - Output Tokens: {usage.output_tokens}")
         print(f"  - Total Tokens: {usage.total_tokens}")
-        if hasattr(usage, 'input_tokens_details') and usage.input_tokens_details:
-            cached = getattr(usage.input_tokens_details, 'cached_tokens', 0)
-            print(f"  - Cached Tokens: {cached}")
+        if usage.input_tokens_details:
+            print(f"  - Cached Tokens: {usage.input_tokens_details.cached_tokens}")
+        if usage.output_tokens_details:
+            print(f"  - Reasoning Tokens: {usage.output_tokens_details.reasoning_tokens}")
+
+def get_output_text(response: Response) -> str:
+    """从响应中提取输出文本"""
+    if response.output:
+        for output in response.output:
+            if output.get('type') == 'message':
+                content_list = output.get('content', [])
+                for content in content_list:
+                    if content.get('type') == 'output_text':
+                        return content.get('text', '')
+    return ''
 
 def test_basic_responses():
     """测试基本的 Responses API 调用"""
     print_separator("Test 1: Basic Responses API")
     
-    try:
-        response = client.responses.create(
-            model=MODEL,
-            input=[
-                {"role": "user", "content": "Hello, what is 2+2?"}
-            ],
-            extra_body={
-                "thinking": {"type": "disabled"}
-            }
-        )
-        
-        print(f"Response ID: {response.id}")
-        print(f"Status: {response.status}")
-        if response.output:
-            for output in response.output:
-                if hasattr(output, 'content') and output.content:
-                    for content in output.content:
-                        if hasattr(content, 'text'):
-                            # 处理可能的编码问题
-                            text = content.text[:200].encode('utf-8', errors='replace').decode('utf-8')
-                            print(f"Output: {text}...")
-        
-        print("\nUsage:")
-        print_usage(response.usage)
-        
-        return response
-    except Exception as e:
-        print(f"Error: {e}")
+    response = responses_create(
+        model=MODEL,
+        input_messages=[
+            {"role": "user", "content": "Hello, what is 2+2?"}
+        ],
+        thinking={"type": "disabled"}
+    )
+    
+    if response is None:
+        print("Error: Failed to get response")
         return None
+    
+    print(f"Response ID: {response.id}")
+    print(f"Status: {response.status}")
+    
+    text = get_output_text(response)
+    if text:
+        print(f"Output: {text[:200]}...")
+    
+    print("\nUsage:")
+    print_usage(response.usage)
+    
+    return response
 
 def test_prefix_caching():
     """测试前缀缓存功能"""
@@ -129,145 +274,146 @@ bit near to being worthy of the honor of being owned by Jim.
 """
     
     print("Step 1: Creating initial response with prefix caching enabled...")
-    try:
-        # 第一次请求：启用前缀缓存
-        response1 = client.responses.create(
-            model=MODEL,
-            input=[
-                {"role": "system", "content": long_context},
-                {"role": "user", "content": "What is the main theme of this story?"}
-            ],
-            extra_body={
-                "caching": {"type": "enabled", "prefix": True},
-                "thinking": {"type": "disabled"}
-            }
-        )
-        
-        print(f"Response 1 ID: {response1.id}")
-        print("\nUsage (First Request):")
-        print_usage(response1.usage)
-        
-        if response1.output:
-            for output in response1.output:
-                if hasattr(output, 'content') and output.content:
-                    for content in output.content:
-                        if hasattr(content, 'text'):
-                            print(f"\nOutput: {content.text[:300]}...")
-        
-        # 等待缓存创建 - BytePlus 缓存需要较长时间来处理
-        print("\nWaiting for cache to be created (15 seconds)...")
-        time.sleep(15)
-        
-        # 第二次请求：使用 previous_response_id 利用缓存
-        print("\nStep 2: Using previous_response_id to leverage cache...")
-        response2 = client.responses.create(
-            model=MODEL,
-            previous_response_id=response1.id,
-            input=[
-                {"role": "user", "content": "Who are the main characters?"}
-            ],
-            extra_body={
-                "caching": {"type": "enabled"},
-                "thinking": {"type": "disabled"}
-            }
-        )
-        
-        print(f"Response 2 ID: {response2.id}")
-        print("\nUsage (Second Request - Should show cached tokens):")
-        print_usage(response2.usage)
-        
-        if response2.output:
-            for output in response2.output:
-                if hasattr(output, 'content') and output.content:
-                    for content in output.content:
-                        if hasattr(content, 'text'):
-                            print(f"\nOutput: {content.text[:300]}...")
-        
-        # 检查缓存命中
-        if response2.usage and hasattr(response2.usage, 'input_tokens_details'):
-            details = response2.usage.input_tokens_details
-            if details and hasattr(details, 'cached_tokens') and details.cached_tokens > 0:
-                print(f"\n[OK] Cache HIT! Cached tokens: {details.cached_tokens}")
-            else:
-                print("\n[WARN] No cache hit detected (cached_tokens = 0)")
-        
-        return response1, response2
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
+    
+    # 第一次请求：启用前缀缓存
+    response1 = responses_create(
+        model=MODEL,
+        input_messages=[
+            {"role": "system", "content": long_context},
+            {"role": "user", "content": "What is the main theme of this story?"}
+        ],
+        caching={"type": "enabled", "prefix": True},
+        thinking={"type": "disabled"}
+    )
+    
+    if response1 is None:
+        print("Error: Failed to create initial response")
         return None, None
+    
+    print(f"Response 1 ID: {response1.id}")
+    print("\nUsage (First Request):")
+    print_usage(response1.usage)
+    
+    text = get_output_text(response1)
+    if text:
+        print(f"\nOutput: {text[:300]}...")
+    
+    # 等待缓存创建 - BytePlus 缓存需要较长时间来处理
+    print("\nWaiting for cache to be created (15 seconds)...")
+    time.sleep(15)
+    
+    # 第二次请求：使用 previous_response_id 利用缓存
+    print("\nStep 2: Using previous_response_id to leverage cache...")
+    response2 = responses_create(
+        model=MODEL,
+        input_messages=[
+            {"role": "user", "content": "Who are the main characters?"}
+        ],
+        previous_response_id=response1.id,
+        caching={"type": "enabled"},
+        thinking={"type": "disabled"}
+    )
+    
+    if response2 is None:
+        print("Error: Failed to create second response")
+        return response1, None
+    
+    print(f"Response 2 ID: {response2.id}")
+    print("\nUsage (Second Request - Should show cached tokens):")
+    print_usage(response2.usage)
+    
+    text2 = get_output_text(response2)
+    if text2:
+        print(f"\nOutput: {text2[:300]}...")
+    
+    # 检查缓存命中
+    if response2.usage and response2.usage.input_tokens_details:
+        cached = response2.usage.input_tokens_details.cached_tokens
+        if cached > 0:
+            print(f"\n[OK] Cache HIT! Cached tokens: {cached}")
+        else:
+            print("\n[WARN] No cache hit detected (cached_tokens = 0)")
+    
+    return response1, response2
 
 def test_thinking_mode():
     """测试思考模式配置"""
     print_separator("Test 3: Thinking Mode Configuration")
     
     print("Testing with thinking disabled...")
-    try:
-        response = client.responses.create(
-            model=MODEL,
-            input=[
-                {"role": "user", "content": "What is the square root of 144?"}
-            ],
-            extra_body={
-                "thinking": {"type": "disabled"}
-            }
-        )
-        
-        print(f"Response ID: {response.id}")
-        print("\nUsage:")
-        print_usage(response.usage)
-        
-        if response.output:
-            for output in response.output:
-                if hasattr(output, 'content') and output.content:
-                    for content in output.content:
-                        if hasattr(content, 'text'):
-                            print(f"\nOutput: {content.text}")
-        
-        return response
-    except Exception as e:
-        print(f"Error: {e}")
+    
+    response = responses_create(
+        model=MODEL,
+        input_messages=[
+            {"role": "user", "content": "What is the square root of 144?"}
+        ],
+        thinking={"type": "disabled"}
+    )
+    
+    if response is None:
+        print("Error: Failed to get response")
         return None
+    
+    print(f"Response ID: {response.id}")
+    print("\nUsage:")
+    print_usage(response.usage)
+    
+    text = get_output_text(response)
+    if text:
+        print(f"\nOutput: {text}")
+    
+    return response
 
 def test_streaming():
     """测试流式响应"""
     print_separator("Test 4: Streaming Response")
     
     print("Testing streaming with caching...")
-    try:
-        stream = client.responses.create(
-            model=MODEL,
-            input=[
-                {"role": "user", "content": "Count from 1 to 5."}
-            ],
-            stream=True,
-            extra_body={
-                "thinking": {"type": "disabled"}
-            }
-        )
-        
-        print("Streaming output:")
-        full_text = ""
-        for event in stream:
-            if hasattr(event, 'type'):
-                if event.type == 'response.output_text.delta':
-                    if hasattr(event, 'delta'):
-                        print(event.delta, end='', flush=True)
-                        full_text += event.delta
-                elif event.type == 'response.completed':
-                    if hasattr(event, 'response') and event.response:
-                        print("\n\nFinal Usage:")
-                        print_usage(event.response.usage)
-        
-        print(f"\n\nFull text: {full_text}")
-        return True
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    
+    print("Streaming output:")
+    full_text = ""
+    final_usage = None
+    
+    for event in responses_create_stream(
+        model=MODEL,
+        input_messages=[
+            {"role": "user", "content": "Count from 1 to 5."}
+        ],
+        thinking={"type": "disabled"}
+    ):
+        event_type = event.get('type', '')
+        if event_type == 'response.output_text.delta':
+            delta = event.get('delta', '')
+            print(delta, end='', flush=True)
+            full_text += delta
+        elif event_type == 'response.completed':
+            resp_data = event.get('response', {})
+            if resp_data and 'usage' in resp_data:
+                u = resp_data['usage']
+                input_details = None
+                output_details = None
+                if 'input_tokens_details' in u:
+                    input_details = TokenDetails(
+                        cached_tokens=u['input_tokens_details'].get('cached_tokens', 0)
+                    )
+                if 'output_tokens_details' in u:
+                    output_details = TokenDetails(
+                        reasoning_tokens=u['output_tokens_details'].get('reasoning_tokens', 0)
+                    )
+                final_usage = Usage(
+                    input_tokens=u.get('input_tokens', 0),
+                    output_tokens=u.get('output_tokens', 0),
+                    total_tokens=u.get('total_tokens', 0),
+                    input_tokens_details=input_details,
+                    output_tokens_details=output_details
+                )
+    
+    if final_usage:
+        print("\n\nFinal Usage:")
+        print_usage(final_usage)
+    
+    print(f"\n\nFull text: {full_text}")
+    return len(full_text) > 0
 
 def main():
     """主测试函数"""
