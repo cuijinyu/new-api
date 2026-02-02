@@ -18,11 +18,19 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Card, Avatar, Typography, Table, Tag } from '@douyinfe/semi-ui';
-import { IconCoinMoneyStroked } from '@douyinfe/semi-icons';
+import { Card, Avatar, Typography, Table, Tag, Collapsible } from '@douyinfe/semi-ui';
+import { IconCoinMoneyStroked, IconChevronDown } from '@douyinfe/semi-icons';
 import { calculateModelPrice } from '../../../../../helpers';
 
 const { Text } = Typography;
+
+// 格式化分段区间显示
+const formatTierRange = (minTokens, maxTokens, t) => {
+  if (maxTokens === -1) {
+    return `≥${minTokens}K`;
+  }
+  return `${minTokens}K - ${maxTokens}K`;
+};
 
 const ModelPricingTable = ({
   modelData,
@@ -44,6 +52,112 @@ const ModelPricingTable = ({
     ? modelData.enable_groups
     : [];
   const autoChain = autoGroups.filter((g) => modelEnableGroups.includes(g));
+
+  // 检查是否启用分段计费
+  const isTieredPricing = modelData?.tiered_pricing_enabled && 
+    Array.isArray(modelData?.tiered_pricing) && 
+    modelData.tiered_pricing.length > 0;
+
+  // 渲染分段计费表格
+  const renderTieredPricingTable = () => {
+    if (!isTieredPricing) return null;
+
+    const priceData = calculateModelPrice({
+      record: modelData,
+      selectedGroup: 'all',
+      groupRatio,
+      tokenUnit,
+      displayPrice,
+      currency,
+    });
+
+    if (!priceData.tieredPrices) return null;
+
+    const tableData = priceData.tieredPrices.map((tier, index) => ({
+      key: index,
+      range: formatTierRange(tier.minTokens, tier.maxTokens, t),
+      inputPrice: tier.inputPrice,
+      outputPrice: tier.outputPrice,
+      cacheHitPrice: tier.cacheHitPrice,
+    }));
+
+    const columns = [
+      {
+        title: t('Token 区间'),
+        dataIndex: 'range',
+        render: (text) => (
+          <Tag color='blue' size='small' shape='circle'>
+            {text}
+          </Tag>
+        ),
+      },
+      {
+        title: t('输入价格'),
+        dataIndex: 'inputPrice',
+        render: (text) => (
+          <>
+            <div className='font-semibold text-orange-600'>{text}</div>
+            <div className='text-xs text-gray-500'>
+              / {tokenUnit === 'K' ? '1K' : '1M'} tokens
+            </div>
+          </>
+        ),
+      },
+      {
+        title: t('输出价格'),
+        dataIndex: 'outputPrice',
+        render: (text) => (
+          <>
+            <div className='font-semibold text-orange-600'>{text}</div>
+            <div className='text-xs text-gray-500'>
+              / {tokenUnit === 'K' ? '1K' : '1M'} tokens
+            </div>
+          </>
+        ),
+      },
+    ];
+
+    // 如果有缓存命中价格，添加该列
+    const hasCachePrice = tableData.some((row) => row.cacheHitPrice);
+    if (hasCachePrice) {
+      columns.push({
+        title: t('缓存命中'),
+        dataIndex: 'cacheHitPrice',
+        render: (text) => (
+          text ? (
+            <>
+              <div className='font-semibold text-green-600'>{text}</div>
+              <div className='text-xs text-gray-500'>
+                / {tokenUnit === 'K' ? '1K' : '1M'} tokens
+              </div>
+            </>
+          ) : '-'
+        ),
+      });
+    }
+
+    return (
+      <div className='mb-4'>
+        <div className='flex items-center gap-2 mb-2'>
+          <Tag color='cyan' size='small'>
+            {t('分段计费')}
+          </Tag>
+          <span className='text-xs text-gray-500'>
+            {t('根据输入 Token 长度分段计价')}
+          </span>
+        </div>
+        <Table
+          dataSource={tableData}
+          columns={columns}
+          pagination={false}
+          size='small'
+          bordered={false}
+          className='!rounded-lg'
+        />
+      </div>
+    );
+  };
+
   const renderGroupPriceTable = () => {
     // 仅展示模型可用的分组：模型 enable_groups 与用户可用分组的交集
 
@@ -69,22 +183,28 @@ const ModelPricingTable = ({
       const groupRatioValue =
         groupRatio && groupRatio[group] ? groupRatio[group] : 1;
 
+      // 确定计费类型显示
+      let billingType = '-';
+      if (isTieredPricing) {
+        billingType = t('分段计费');
+      } else if (modelData?.quota_type === 0) {
+        billingType = t('按量计费');
+      } else if (modelData?.quota_type === 1) {
+        billingType = t('按次计费');
+      }
+
       return {
         key: group,
         group: group,
         ratio: groupRatioValue,
-        billingType:
-          modelData?.quota_type === 0
-            ? t('按量计费')
-            : modelData?.quota_type === 1
-              ? t('按次计费')
-              : '-',
+        billingType,
         inputPrice: modelData?.quota_type === 0 ? priceData.inputPrice : '-',
         outputPrice:
           modelData?.quota_type === 0
             ? priceData.completionPrice || priceData.outputPrice
             : '-',
         fixedPrice: modelData?.quota_type === 1 ? priceData.price : '-',
+        isTieredPricing: priceData.isTieredPricing,
       };
     });
 
@@ -119,10 +239,11 @@ const ModelPricingTable = ({
     columns.push({
       title: t('计费类型'),
       dataIndex: 'billingType',
-      render: (text) => {
+      render: (text, record) => {
         let color = 'white';
         if (text === t('按量计费')) color = 'violet';
         else if (text === t('按次计费')) color = 'teal';
+        else if (text === t('分段计费')) color = 'cyan';
         return (
           <Tag color={color} size='small' shape='circle'>
             {text || '-'}
@@ -132,7 +253,18 @@ const ModelPricingTable = ({
     });
 
     // 根据计费类型添加价格列
-    if (modelData?.quota_type === 0) {
+    if (isTieredPricing) {
+      // 分段计费：显示提示查看上方分段表
+      columns.push({
+        title: t('价格'),
+        dataIndex: 'inputPrice',
+        render: (text, record) => (
+          <span className='text-xs text-gray-500'>
+            {t('详见上方分段价格表')}
+          </span>
+        ),
+      });
+    } else if (modelData?.quota_type === 0) {
       // 按量计费
       columns.push(
         {
@@ -214,6 +346,7 @@ const ModelPricingTable = ({
           ))}
         </div>
       )}
+      {renderTieredPricingTable()}
       {renderGroupPriceTable()}
     </Card>
   );

@@ -153,13 +153,24 @@ const PricingCardView = ({
 
   // 渲染标签
   const renderTags = (record) => {
+    // 检查是否启用分段计费
+    const isTieredPricing = record.tiered_pricing_enabled && 
+      Array.isArray(record.tiered_pricing) && 
+      record.tiered_pricing.length > 0;
+
     // 计费类型标签（左边）
     let billingTag = (
       <Tag key='billing' shape='circle' color='white' size='small'>
         -
       </Tag>
     );
-    if (record.quota_type === 1) {
+    if (isTieredPricing) {
+      billingTag = (
+        <Tag key='billing' shape='circle' color='cyan' size='small'>
+          {t('分段计费')}
+        </Tag>
+      );
+    } else if (record.quota_type === 1) {
       billingTag = (
         <Tag key='billing' shape='circle' color='teal' size='small'>
           {t('按次计费')}

@@ -32,7 +32,15 @@ import {
 } from '../../../../common/ui/RenderUtils';
 import { useIsMobile } from '../../../../../hooks/common/useIsMobile';
 
-function renderQuotaType(type, t) {
+function renderQuotaType(type, isTieredPricing, t) {
+  // 如果启用了分段计费，优先显示分段计费标签
+  if (isTieredPricing) {
+    return (
+      <Tag color='cyan' shape='circle'>
+        {t('分段计费')}
+      </Tag>
+    );
+  }
   switch (type) {
     case 1:
       return (
@@ -158,7 +166,10 @@ export const getPricingTableColumns = ({
     title: t('计费类型'),
     dataIndex: 'quota_type',
     render: (text, record, index) => {
-      return renderQuotaType(parseInt(text), t);
+      const isTieredPricing = record.tiered_pricing_enabled && 
+        Array.isArray(record.tiered_pricing) && 
+        record.tiered_pricing.length > 0;
+      return renderQuotaType(parseInt(text), isTieredPricing, t);
     },
     sorter: (a, b) => a.quota_type - b.quota_type,
   };
@@ -235,6 +246,25 @@ export const getPricingTableColumns = ({
     ...(isMobile ? {} : { fixed: 'right' }),
     render: (text, record, index) => {
       const priceData = getPriceData(record);
+
+      // 分段计费显示
+      if (priceData.isTieredPricing && priceData.tieredPrices) {
+        const firstTier = priceData.tieredPrices[0];
+        const tierCount = priceData.tieredPrices.length;
+        return (
+          <div className='space-y-1'>
+            <div className='text-gray-700'>
+              {t('输入')} {firstTier.inputPrice} / 1{priceData.unitLabel} tokens
+            </div>
+            <div className='text-gray-700'>
+              {t('输出')} {firstTier.outputPrice} / 1{priceData.unitLabel} tokens
+            </div>
+            <div className='text-xs text-cyan-600'>
+              {t('共 {{count}} 个价格区间', { count: tierCount })}
+            </div>
+          </div>
+        );
+      }
 
       if (priceData.isPerToken) {
         return (
