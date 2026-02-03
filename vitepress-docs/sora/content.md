@@ -1,14 +1,16 @@
-# Sora 获取视频内容
+# Sora 下载视频内容
 
-获取已完成视频任务的视频文件内容。
+获取已完成视频任务的视频文件。
 
-此接口会代理返回视频文件流,可直接下载或在浏览器中播放。
+此接口用于下载生成完成的视频文件。
 
 ## 接口详情
 
-**接口地址:** `GET /v1/videos/{task_id}/content`
+**接口地址:** `GET /v1/videos/{video_id}/content`
 
-**功能描述:** 获取指定视频任务生成的视频文件。返回视频文件的二进制流,适合下载保存或直接播放。
+**功能描述:** 获取指定视频任务生成的视频文件。返回视频文件的二进制流，适合下载保存或直接播放。
+
+**参考文档:** [Azure OpenAI Sora 2 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/video-generation)
 
 **认证方式:** Bearer Token
 ```http
@@ -23,7 +25,13 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 参数名 | 类型 | 必填 | 说明 | 示例 |
 |--------|------|------|------|------|
-| task_id | string | 是 | 视频任务 ID | `vid_abc123xyz456` |
+| video_id | string | 是 | 视频任务 ID | `video_68f10985d6c4819097007665bdcfba5f` |
+
+### Query 参数
+
+| 参数名 | 类型 | 必填 | 说明 | 示例 |
+|--------|------|------|------|------|
+| variant | string | 否 | 下载变体类型，默认 `video` | `video` |
 
 ---
 
@@ -53,28 +61,50 @@ Authorization: Bearer YOUR_API_TOKEN
 
 ```bash
 # 下载视频到本地文件
-curl -X GET "https://www.ezmodel.cloud/v1/videos/vid_abc123xyz456/content" \
+curl -X GET "https://www.ezmodel.cloud/v1/videos/video_68f10985d6c4819097007665bdcfba5f/content?variant=video" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -o video.mp4
 
 # 或者直接在终端查看响应头
-curl -I "https://www.ezmodel.cloud/v1/videos/vid_abc123xyz456/content" \
+curl -I "https://www.ezmodel.cloud/v1/videos/video_68f10985d6c4819097007665bdcfba5f/content" \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-### Python
+### Python (使用 OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://www.ezmodel.cloud/v1/",
+)
+
+video_id = "video_68f10985d6c4819097007665bdcfba5f"
+
+# 下载视频内容
+content = client.videos.download_content(video_id, variant="video")
+content.write_to_file("video.mp4")
+
+print("Saved video.mp4")
+```
+
+### Python (使用 requests)
 
 ```python
 import requests
 
-task_id = "vid_abc123xyz456"
-url = f"https://www.ezmodel.cloud/v1/videos/{task_id}/content"
+video_id = "video_68f10985d6c4819097007665bdcfba5f"
+url = f"https://www.ezmodel.cloud/v1/videos/{video_id}/content"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY"
 }
+params = {
+    "variant": "video"
+}
 
 # 下载视频
-response = requests.get(url, headers=headers, stream=True)
+response = requests.get(url, headers=headers, params=params, stream=True)
 
 if response.status_code == 200:
     # 保存到本地文件
@@ -95,8 +125,8 @@ else:
 const fs = require('fs');
 const https = require('https');
 
-const taskId = 'vid_abc123xyz456';
-const url = `https://www.ezmodel.cloud/v1/videos/${taskId}/content`;
+const videoId = 'video_68f10985d6c4819097007665bdcfba5f';
+const url = `https://www.ezmodel.cloud/v1/videos/${videoId}/content?variant=video`;
 
 const options = {
   headers: {
@@ -125,8 +155,8 @@ https.get(url, options, (response) => {
 ### JavaScript (Browser)
 
 ```javascript
-const taskId = 'vid_abc123xyz456';
-const url = `https://www.ezmodel.cloud/v1/videos/${taskId}/content`;
+const videoId = 'video_68f10985d6c4819097007665bdcfba5f';
+const url = `https://www.ezmodel.cloud/v1/videos/${videoId}/content?variant=video`;
 
 // 下载视频文件
 async function downloadVideo() {
@@ -158,12 +188,7 @@ async function downloadVideo() {
   }
 }
 
-// 或者在浏览器中直接播放
-function playVideo() {
-  const videoElement = document.getElementById('video-player');
-  videoElement.src = url;
-  videoElement.play();
-}
+downloadVideo();
 ```
 
 ### Go
@@ -179,8 +204,8 @@ import (
 )
 
 func main() {
-    taskID := "vid_abc123xyz456"
-    url := fmt.Sprintf("https://www.ezmodel.cloud/v1/videos/%s/content", taskID)
+    videoID := "video_68f10985d6c4819097007665bdcfba5f"
+    url := fmt.Sprintf("https://www.ezmodel.cloud/v1/videos/%s/content?variant=video", videoID)
     
     // 创建请求
     req, err := http.NewRequest("GET", url, nil)
@@ -230,8 +255,8 @@ import java.net.URI;
 
 public class SoraVideoContentExample {
     public static void main(String[] args) throws Exception {
-        String taskId = "vid_abc123xyz456";
-        String url = "https://www.ezmodel.cloud/v1/videos/" + taskId + "/content";
+        String videoId = "video_68f10985d6c4819097007665bdcfba5f";
+        String url = "https://www.ezmodel.cloud/v1/videos/" + videoId + "/content?variant=video";
         
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -274,8 +299,8 @@ class Program
     static async Task Main(string[] args)
     {
         var client = new HttpClient();
-        var taskId = "vid_abc123xyz456";
-        var url = $"https://www.ezmodel.cloud/v1/videos/{taskId}/content";
+        var videoId = "video_68f10985d6c4819097007665bdcfba5f";
+        var url = $"https://www.ezmodel.cloud/v1/videos/{videoId}/content?variant=video";
         
         client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY");
         
@@ -310,6 +335,50 @@ class Program
 
 ---
 
+## 完整流程示例
+
+### Python (创建、轮询、下载)
+
+```python
+import time
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://www.ezmodel.cloud/v1/",
+)
+
+# 1. 创建视频
+video = client.videos.create(
+    model="sora-2",
+    prompt="A video of a cat on a motorcycle",
+    size="1280x720",
+    seconds="8",
+)
+
+print(f"Video creation started. ID: {video.id}")
+print(f"Initial status: {video.status}")
+
+# 2. 轮询等待完成
+while video.status not in ["completed", "failed", "cancelled"]:
+    print(f"Status: {video.status}, Progress: {video.progress}%. Waiting 20 seconds...")
+    time.sleep(20)
+    video = client.videos.retrieve(video.id)
+
+# 3. 下载视频
+if video.status == "completed":
+    print("Video successfully completed! Downloading...")
+    content = client.videos.download_content(video.id, variant="video")
+    content.write_to_file("video.mp4")
+    print("Saved video.mp4")
+else:
+    print(f"Video creation ended with status: {video.status}")
+    if video.error:
+        print(f"Error: {video.error.message}")
+```
+
+---
+
 ## 响应示例
 
 ### 成功响应 (200)
@@ -337,126 +406,15 @@ Content-Disposition: attachment; filename="video.mp4"
 
 ---
 
-## 使用场景
-
-### 1. 直接下载保存
-
-```python
-import requests
-
-def download_video(task_id, output_path):
-    url = f"https://www.ezmodel.cloud/v1/videos/{task_id}/content"
-    headers = {"Authorization": "Bearer YOUR_API_KEY"}
-    
-    response = requests.get(url, headers=headers, stream=True)
-    
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        return True
-    return False
-
-# 使用
-if download_video("vid_abc123xyz456", "my_video.mp4"):
-    print("下载成功!")
-```
-
-### 2. 在网页中播放
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>视频播放</title>
-</head>
-<body>
-    <video id="videoPlayer" controls width="640" height="360">
-        您的浏览器不支持视频播放。
-    </video>
-    
-    <script>
-        const taskId = 'vid_abc123xyz456';
-        const apiKey = 'YOUR_API_KEY';
-        const url = `https://www.ezmodel.cloud/v1/videos/${taskId}/content`;
-        
-        // 方法1: 直接设置视频源(需要服务器支持CORS)
-        const video = document.getElementById('videoPlayer');
-        video.src = url;
-        
-        // 方法2: 通过fetch获取blob并播放
-        fetch(url, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`
-            }
-        })
-        .then(response => response.blob())
-        .then(blob => {
-            const blobUrl = URL.createObjectURL(blob);
-            video.src = blobUrl;
-        })
-        .catch(error => console.error('加载视频失败:', error));
-    </script>
-</body>
-</html>
-```
-
-### 3. 完整的下载流程(包含状态轮询)
-
-```python
-import requests
-import time
-
-def wait_and_download(task_id, output_path):
-    base_url = "https://www.ezmodel.cloud/v1/videos"
-    headers = {"Authorization": "Bearer YOUR_API_KEY"}
-    
-    # 轮询任务状态
-    while True:
-        status_response = requests.get(f"{base_url}/{task_id}", headers=headers)
-        result = status_response.json()
-        
-        if result['status'] == 'completed':
-            print("视频生成完成,开始下载...")
-            break
-        elif result['status'] == 'failed':
-            print(f"视频生成失败: {result.get('error', {}).get('message')}")
-            return False
-        
-        print(f"进度: {result['progress']}%")
-        time.sleep(5)
-    
-    # 下载视频
-    content_response = requests.get(
-        f"{base_url}/{task_id}/content",
-        headers=headers,
-        stream=True
-    )
-    
-    if content_response.status_code == 200:
-        with open(output_path, "wb") as f:
-            for chunk in content_response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print(f"视频已保存到: {output_path}")
-        return True
-    
-    return False
-
-# 使用
-wait_and_download("vid_abc123xyz456", "final_video.mp4")
-```
-
----
-
 ## 注意事项
 
 1. **任务状态**: 只有状态为 `completed` 的任务才能获取视频内容
-2. **文件大小**: 视频文件可能较大,建议使用流式下载(stream=True)
+2. **文件大小**: 视频文件可能较大，建议使用流式下载 (stream=True)
 3. **超时设置**: 下载大文件时建议增加请求超时时间
 4. **网络重试**: 建议实现下载失败重试机制
 5. **存储空间**: 下载前确保有足够的磁盘空间
-6. **Content-Type**: 响应的 Content-Type 通常为 `video/mp4`,也可能是其他视频格式
-7. **CORS 设置**: 在浏览器中直接播放需要服务器支持跨域访问
+6. **过期时间**: 视频在任务完成后 24 小时内有效，请及时下载
+7. **音频支持**: Sora 2 生成的视频包含音频
 
 ---
 
@@ -464,14 +422,15 @@ wait_and_download("vid_abc123xyz456", "final_video.mp4")
 
 | 错误码 | 说明 | 解决方案 |
 |--------|------|---------|
-| `video_not_found` | 视频任务不存在 | 检查 task_id 是否正确 |
+| `video_not_found` | 视频任务不存在 | 检查 video_id 是否正确 |
 | `video_not_ready` | 视频尚未生成完成 | 等待任务完成后再请求 |
-| `video_expired` | 视频已过期 | 视频已被删除,需要重新生成 |
+| `video_expired` | 视频已过期 | 视频已被删除，需要重新生成 |
 | `unauthorized` | 认证失败 | 检查 API Key 是否正确 |
 
 ---
 
 ## 相关接口
 
-- [创建视频生成任务](https://www.ezmodel.cloud/docs/sora-videos)
-- [查询视频任务状态](https://www.ezmodel.cloud/docs/sora-videos-status)
+- [创建视频生成任务](/sora/create)
+- [查询视频任务状态](/sora/status)
+- [Remix 视频混剪](/sora/remix)
