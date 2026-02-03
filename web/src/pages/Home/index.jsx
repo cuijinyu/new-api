@@ -279,7 +279,7 @@ const Home = () => {
                     size='large'
                     className='!rounded-full !px-6 !py-3'
                     icon={<IconGithubLogo />}
-                    onClick={() => window.open('https://github.com/QuantumNous/new-api', '_blank')}
+                    onClick={() => {}}
                   >
                     {statusState.status.version}
                   </Button>
