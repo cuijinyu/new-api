@@ -42,6 +42,10 @@ i18n
       vi: viTranslation,
     },
     fallbackLng: 'en',
+    detection: {
+      order: ['localStorage'], // Only check localStorage, ignore browser language
+      caches: ['localStorage'], // Cache user's language preference
+    },
     interpolation: {
       escapeValue: false,
     },
