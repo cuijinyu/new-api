@@ -46,6 +46,46 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
+	// 首先检查分段价格配置（优先级高于 ModelPrice 和 ModelRatio）
+	if tieredPricing, ok := ratio_setting.GetTieredPricing(info.OriginModelName); ok && tieredPricing.Enabled {
+		// 使用分段价格
+		inputTokensK := promptTokens / 1000 // 转换为千 tokens
+		if priceTier, found := ratio_setting.GetPriceTierForTokens(info.OriginModelName, inputTokensK); found {
+			groupRatioInfo := HandleGroupRatio(c, info)
+
+			// 计算预扣费（使用最高区间价格）
+			maxTier := tieredPricing.Tiers[len(tieredPricing.Tiers)-1]
+			preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
+			if meta.MaxTokens != 0 {
+				preConsumedTokens += meta.MaxTokens
+			}
+			// 预扣费使用最高价格区间
+			preConsumedQuota := int((float64(preConsumedTokens)*maxTier.InputPrice/1000000 +
+				float64(meta.MaxTokens)*maxTier.OutputPrice/1000000) * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+
+			priceData := types.PriceData{
+				UseTieredPricing: true,
+				TieredPricingData: &types.TieredPricingInfo{
+					InputPrice:      priceTier.InputPrice,
+					OutputPrice:     priceTier.OutputPrice,
+					CacheHitPrice:   priceTier.CacheHitPrice,
+					CacheStorePrice: priceTier.CacheStorePrice,
+					TierMinTokens:   priceTier.MinTokens,
+					TierMaxTokens:   priceTier.MaxTokens,
+				},
+				GroupRatioInfo:    groupRatioInfo,
+				QuotaToPreConsume: preConsumedQuota,
+			}
+
+			if common.DebugEnabled {
+				println(fmt.Sprintf("model_price_helper result (tiered): %s", priceData.ToSetting()))
+			}
+			info.PriceData = priceData
+			return priceData, nil
+		}
+	}
+
+	// 原有逻辑：使用 ModelPrice 或 ModelRatio
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)

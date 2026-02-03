@@ -50,6 +50,13 @@ const (
 	RelayModeRealtime
 
 	RelayModeGemini
+
+	// Context Cache modes (BytePlus/Volcengine)
+	RelayModeContextCacheCreate
+	RelayModeContextCacheChat
+
+	// BytePlus Responses API mode
+	RelayModeBytePlusResponses
 )
 
 func Path2RelayMode(path string) int {

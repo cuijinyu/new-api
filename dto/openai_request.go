@@ -813,6 +813,9 @@ type OpenAIResponsesRequest struct {
 	User                 string          `json:"user,omitempty"`
 	MaxToolCalls         uint            `json:"max_tool_calls,omitempty"`
 	Prompt               json.RawMessage `json:"prompt,omitempty"`
+	// BytePlus/字节跳动扩展参数 - OpenAI SDK 的 extra_body 会将内容合并到顶级
+	Caching  *ResponsesCaching  `json:"caching,omitempty"`  // 缓存配置
+	Thinking *ResponsesThinking `json:"thinking,omitempty"` // 思考模式配置
 }
 
 func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {

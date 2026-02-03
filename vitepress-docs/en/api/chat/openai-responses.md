@@ -35,11 +35,29 @@ Authorization: Bearer YOUR_API_TOKEN
 | Parameter | Type | Required | Default | Description |
 |--------|------|------|--------|------|
 | model | string | Yes | - | Model ID |
-| messages | array | Yes | - | Message list (Chat mode) |
-| prompt | string | No | - | Prompt (Completion mode) |
+| input | array | Yes | - | Input content, message list |
+| instructions | string | No | - | System instructions |
 | temperature | number | No | 1 | Sampling temperature |
-| max_tokens | integer | No | - | Max generation length |
+| max_output_tokens | integer | No | - | Max output tokens |
 | stream | boolean | No | false | Stream response |
+| previous_response_id | string | No | - | Previous response ID (for caching) |
+| extra_body | object | No | - | Vendor-specific parameters |
+
+#### extra_body Parameter (Vendor Extensions)
+
+The `extra_body` parameter is used to pass vendor-specific extension parameters. When using the OpenAI SDK to call models from different vendors, you can use this parameter to pass vendor-specific configurations.
+
+##### BytePlus/ByteDance Model Extensions
+
+When calling BytePlus/ByteDance models (such as Seed series), the following extension parameters are supported:
+
+| Parameter | Type | Description |
+|--------|------|------|
+| caching | object | Caching configuration |
+| caching.type | string | Cache type: `enabled` or `disabled` |
+| caching.prefix | boolean | Whether to enable prefix caching |
+| thinking | object | Thinking mode configuration |
+| thinking.type | string | Thinking mode: `enabled` or `disabled` |
 
 ---
 
@@ -157,3 +175,144 @@ curl -X POST https://ezmodel.cloud/v1/responses \
   }
 }
 ```
+
+---
+
+## Vendor-Specific Features
+
+### BytePlus/ByteDance Caching
+
+BytePlus Seed series models support caching through the `extra_body` parameter, which can significantly reduce token consumption and response latency for repeated contexts.
+
+#### Prefix Caching
+
+Prefix caching is suitable for scenarios with large amounts of identical prefix content, such as fixed system prompts. Input content must be at least 256 tokens to create a cache.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url='http://your-api-server/v1',
+    api_key='your-api-key',
+)
+
+# First request: Enable prefix caching
+response = client.responses.create(
+    model="seed-1-6-250915",
+    input=[
+        {
+            "role": "system",
+            "content": "You are a literary analysis assistant. Answer concisely and clearly. Here is an excerpt from The Gift of the Magi...(long text)"
+        }
+    ],
+    extra_body={
+        "caching": {"type": "enabled", "prefix": True},
+        "thinking": {"type": "disabled"}
+    }
+)
+
+print(f"Response ID: {response.id}")
+print(f"Usage: {response.usage.model_dump_json()}")
+```
+
+#### Session Caching
+
+Use the `previous_response_id` parameter to reuse context cache from previous conversations:
+
+```python
+# Second request: Use previous_response_id to leverage cache
+second_response = client.responses.create(
+    model="seed-1-6-250915",
+    previous_response_id=response.id,
+    input=[
+        {"role": "user", "content": "Briefly summarize the story in 5 bullet points."}
+    ],
+    extra_body={
+        "caching": {"type": "enabled"},
+        "thinking": {"type": "disabled"}
+    }
+)
+
+# Check cache hit
+if second_response.usage.input_tokens_details:
+    cached_tokens = second_response.usage.input_tokens_details.cached_tokens
+    print(f"Cached tokens: {cached_tokens}")
+```
+
+#### Thinking Mode
+
+Thinking mode allows the model to think more deeply before generating responses, suitable for complex reasoning tasks:
+
+```python
+# Enable thinking mode
+response = client.responses.create(
+    model="seed-1-6-250915",
+    input=[
+        {"role": "user", "content": "Please analyze the solution to this math problem..."}
+    ],
+    extra_body={
+        "thinking": {"type": "enabled"}
+    }
+)
+```
+
+#### cURL Examples
+
+```bash
+# Enable prefix caching
+curl -X POST http://your-api-server/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -d '{
+    "model": "seed-1-6-250915",
+    "input": [
+      {
+        "role": "system",
+        "content": "You are a literary analysis assistant..."
+      },
+      {
+        "role": "user",
+        "content": "Please analyze the theme of this text"
+      }
+    ],
+    "extra_body": {
+      "caching": {"type": "enabled", "prefix": true},
+      "thinking": {"type": "disabled"}
+    }
+  }'
+```
+
+```bash
+# Use session caching
+curl -X POST http://your-api-server/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -d '{
+    "model": "seed-1-6-250915",
+    "previous_response_id": "resp-abc123",
+    "input": [
+      {
+        "role": "user",
+        "content": "Continue the analysis above"
+      }
+    ],
+    "extra_body": {
+      "caching": {"type": "enabled"},
+      "thinking": {"type": "disabled"}
+    }
+  }'
+```
+
+### Caching Billing
+
+- Input tokens are billed at model pricing
+- Output tokens are billed at model pricing
+- Cached tokens (`cached_tokens`) are billed at cache pricing (typically 10% of normal price)
+- Thinking mode tokens (`reasoning_tokens`) are billed at output token pricing
+
+### Important Notes
+
+1. Prefix caching requires at least 256 input tokens
+2. `caching.prefix` is not supported when `max_output_tokens` is set
+3. When using `previous_response_id`, it's recommended to set `caching.type = "enabled"`
+4. Cache needs a short time to take effect after creation

@@ -70,6 +70,7 @@ const PricingCardView = ({
   tokenUnit,
   displayPrice,
   showRatio,
+  isAdminUser = false,
   t,
   selectedRowKeys = [],
   setSelectedRowKeys,
@@ -152,13 +153,24 @@ const PricingCardView = ({
 
   // 渲染标签
   const renderTags = (record) => {
+    // 检查是否启用分段计费
+    const isTieredPricing = record.tiered_pricing_enabled && 
+      Array.isArray(record.tiered_pricing) && 
+      record.tiered_pricing.length > 0;
+
     // 计费类型标签（左边）
     let billingTag = (
       <Tag key='billing' shape='circle' color='white' size='small'>
         -
       </Tag>
     );
-    if (record.quota_type === 1) {
+    if (isTieredPricing) {
+      billingTag = (
+        <Tag key='billing' shape='circle' color='cyan' size='small'>
+          {t('分段计费')}
+        </Tag>
+      );
+    } else if (record.quota_type === 1) {
       billingTag = (
         <Tag key='billing' shape='circle' color='teal' size='small'>
           {t('按次计费')}
@@ -332,7 +344,7 @@ const PricingCardView = ({
                           />
                         </Tooltip>
                       </div>
-                      <div className='grid grid-cols-3 gap-2 text-xs text-gray-600'>
+                      <div className={`grid ${isAdminUser ? 'grid-cols-3' : 'grid-cols-2'} gap-2 text-xs text-gray-600`}>
                         <div>
                           {t('模型')}:{' '}
                           {model.quota_type === 0 ? model.model_ratio : t('无')}
@@ -343,9 +355,12 @@ const PricingCardView = ({
                             ? parseFloat(model.completion_ratio.toFixed(3))
                             : t('无')}
                         </div>
-                        <div>
-                          {t('分组')}: {priceData?.usedGroupRatio ?? '-'}
-                        </div>
+                        {/* 只有管理员才显示分组倍率 */}
+                        {isAdminUser && (
+                          <div>
+                            {t('分组')}: {priceData?.usedGroupRatio ?? '-'}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

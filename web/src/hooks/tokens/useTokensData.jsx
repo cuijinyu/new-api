@@ -26,12 +26,14 @@ import {
   showError,
   showSuccess,
   encodeToBase64,
+  isAdmin,
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 
 export const useTokensData = (openFluentNotification) => {
   const { t } = useTranslation();
+  const isAdminUser = isAdmin();
 
   // Basic state
   const [tokens, setTokens] = useState([]);
@@ -386,6 +388,9 @@ export const useTokensData = (openFluentNotification) => {
     batchDeleteTokens,
     batchCopyTokens,
     syncPageData,
+
+    // User role
+    isAdminUser,
 
     // Translation
     t,

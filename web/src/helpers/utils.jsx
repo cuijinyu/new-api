@@ -628,15 +628,90 @@ export const calculateModelPrice = ({
     }
   }
 
-  // 2. 根据计费类型计算价格
+  // 获取货币符号
+  const getCurrencySymbol = () => {
+    if (currency === 'CNY') {
+      return '¥';
+    } else if (currency === 'CUSTOM') {
+      try {
+        const statusStr = localStorage.getItem('status');
+        if (statusStr) {
+          const s = JSON.parse(statusStr);
+          return s?.custom_currency_symbol || '¤';
+        }
+        return '¤';
+      } catch (e) {
+        return '¤';
+      }
+    }
+    return '$';
+  };
+
+  // 获取汇率
+  const getExchangeRate = () => {
+    try {
+      const statusStr = localStorage.getItem('status');
+      if (statusStr) {
+        const s = JSON.parse(statusStr);
+        if (currency === 'CNY') {
+          return s?.usd_exchange_rate || 1;
+        } else if (currency === 'CUSTOM') {
+          return s?.custom_currency_exchange_rate || 1;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 1;
+  };
+
+  const symbol = getCurrencySymbol();
+  const exchangeRate = getExchangeRate();
+  const unitDivisor = tokenUnit === 'K' ? 1000 : 1;
+  const unitLabel = tokenUnit === 'K' ? 'K' : 'M';
+
+  // 2. 检查是否启用分段计费
+  if (record.tiered_pricing_enabled && Array.isArray(record.tiered_pricing) && record.tiered_pricing.length > 0) {
+    // 分段计费：返回分段价格信息
+    const tieredPrices = record.tiered_pricing.map((tier) => {
+      const inputPriceConverted = (tier.input_price * exchangeRate) / unitDivisor;
+      const outputPriceConverted = (tier.output_price * exchangeRate) / unitDivisor;
+      const cacheHitPriceConverted = (tier.cache_hit_price * exchangeRate) / unitDivisor;
+
+      return {
+        minTokens: tier.min_tokens,
+        maxTokens: tier.max_tokens,
+        inputPrice: `${symbol}${inputPriceConverted.toFixed(precision)}`,
+        outputPrice: `${symbol}${outputPriceConverted.toFixed(precision)}`,
+        cacheHitPrice: tier.cache_hit_price > 0 ? `${symbol}${cacheHitPriceConverted.toFixed(precision)}` : null,
+        // 原始数值用于计算
+        inputPriceRaw: tier.input_price,
+        outputPriceRaw: tier.output_price,
+        cacheHitPriceRaw: tier.cache_hit_price,
+      };
+    });
+
+    // 返回第一个分段的价格作为默认显示（通常是最低区间）
+    const firstTier = tieredPrices[0];
+    return {
+      inputPrice: firstTier.inputPrice,
+      completionPrice: firstTier.outputPrice,
+      unitLabel,
+      isPerToken: true,
+      usedGroup,
+      usedGroupRatio,
+      // 分段计费特有字段
+      isTieredPricing: true,
+      tieredPrices,
+    };
+  }
+
+  // 3. 根据计费类型计算价格（非分段计费）
   if (record.quota_type === 0) {
     // 按量计费
     const inputRatioPriceUSD = record.model_ratio * 2 * usedGroupRatio;
     const completionRatioPriceUSD =
       record.model_ratio * record.completion_ratio * 2 * usedGroupRatio;
-
-    const unitDivisor = tokenUnit === 'K' ? 1000 : 1;
-    const unitLabel = tokenUnit === 'K' ? 'K' : 'M';
 
     const rawDisplayInput = displayPrice(inputRatioPriceUSD);
     const rawDisplayCompletion = displayPrice(completionRatioPriceUSD);
@@ -646,22 +721,6 @@ export const calculateModelPrice = ({
     const numCompletion =
       parseFloat(rawDisplayCompletion.replace(/[^0-9.]/g, '')) / unitDivisor;
 
-    let symbol = '$';
-    if (currency === 'CNY') {
-      symbol = '¥';
-    } else if (currency === 'CUSTOM') {
-      try {
-        const statusStr = localStorage.getItem('status');
-        if (statusStr) {
-          const s = JSON.parse(statusStr);
-          symbol = s?.custom_currency_symbol || '¤';
-        } else {
-          symbol = '¤';
-        }
-      } catch (e) {
-        symbol = '¤';
-      }
-    }
     return {
       inputPrice: `${symbol}${numInput.toFixed(precision)}`,
       completionPrice: `${symbol}${numCompletion.toFixed(precision)}`,
@@ -669,6 +728,7 @@ export const calculateModelPrice = ({
       isPerToken: true,
       usedGroup,
       usedGroupRatio,
+      isTieredPricing: false,
     };
   }
 
@@ -682,6 +742,7 @@ export const calculateModelPrice = ({
       isPerToken: false,
       usedGroup,
       usedGroupRatio,
+      isTieredPricing: false,
     };
   }
 
@@ -691,11 +752,27 @@ export const calculateModelPrice = ({
     isPerToken: false,
     usedGroup,
     usedGroupRatio,
+    isTieredPricing: false,
   };
 };
 
 // 格式化价格信息（用于卡片视图）
 export const formatPriceInfo = (priceData, t) => {
+  // 分段计费显示
+  if (priceData.isTieredPricing && priceData.tieredPrices) {
+    const firstTier = priceData.tieredPrices[0];
+    return (
+      <>
+        <span style={{ color: 'var(--semi-color-text-1)' }}>
+          {t('输入')} {firstTier.inputPrice}/{priceData.unitLabel}
+        </span>
+        <span style={{ color: 'var(--semi-color-text-1)' }}>
+          {t('输出')} {firstTier.outputPrice}/{priceData.unitLabel}
+        </span>
+      </>
+    );
+  }
+
   if (priceData.isPerToken) {
     return (
       <>

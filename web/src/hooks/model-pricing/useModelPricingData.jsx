@@ -19,13 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { API, copy, showError, showInfo, showSuccess } from '../../helpers';
+import { API, copy, showError, showInfo, showSuccess, isAdmin } from '../../helpers';
 import { Modal } from '@douyinfe/semi-ui';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
 
 export const useModelPricingData = () => {
   const { t } = useTranslation();
+  const isAdminUser = isAdmin();
   const [searchValue, setSearchValue] = useState('');
   const compositionRef = useRef({ isComposition: false });
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -396,5 +397,8 @@ export const useModelPricingData = () => {
 
     // 国际化
     t,
+
+    // 用户角色
+    isAdminUser,
   };
 };

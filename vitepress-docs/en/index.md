@@ -6,7 +6,7 @@ hero:
   text: "AI Model Aggregation Platform"
   tagline: OpenAI API Compatible, One-stop Access to Mainstream AI Models
   image:
-    src: /logo.jpg
+    src: /logo.png
     alt: EZmodel
   actions:
     - theme: brand

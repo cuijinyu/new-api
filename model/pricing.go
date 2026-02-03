@@ -14,6 +14,16 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+// PricingTier 前端展示用的分段价格信息
+type PricingTier struct {
+	MinTokens       int     `json:"min_tokens"`        // 区间最小值（千 tokens）
+	MaxTokens       int     `json:"max_tokens"`        // 区间最大值（千 tokens），-1 表示无上限
+	InputPrice      float64 `json:"input_price"`       // 输入价格 USD/M tokens
+	OutputPrice     float64 `json:"output_price"`      // 输出价格 USD/M tokens
+	CacheHitPrice   float64 `json:"cache_hit_price"`   // 缓存命中价格 USD/M tokens
+	CacheStorePrice float64 `json:"cache_store_price"` // 缓存存储价格 USD/M tokens/hour
+}
+
 type Pricing struct {
 	ModelName              string                  `json:"model_name"`
 	Description            string                  `json:"description,omitempty"`
@@ -27,6 +37,9 @@ type Pricing struct {
 	CompletionRatio        float64                 `json:"completion_ratio"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
+	// 分段计费相关字段
+	TieredPricingEnabled bool          `json:"tiered_pricing_enabled,omitempty"` // 是否启用分段计费
+	TieredPricing        []PricingTier `json:"tiered_pricing,omitempty"`         // 分段价格配置
 }
 
 type PricingVendor struct {
@@ -291,6 +304,23 @@ func updatePricing() {
 			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
 			pricing.QuotaType = 0
 		}
+
+		// 填充分段计费信息
+		if tieredPricing, ok := ratio_setting.GetTieredPricing(model); ok && tieredPricing.Enabled {
+			pricing.TieredPricingEnabled = true
+			pricing.TieredPricing = make([]PricingTier, len(tieredPricing.Tiers))
+			for i, tier := range tieredPricing.Tiers {
+				pricing.TieredPricing[i] = PricingTier{
+					MinTokens:       tier.MinTokens,
+					MaxTokens:       tier.MaxTokens,
+					InputPrice:      tier.InputPrice,
+					OutputPrice:     tier.OutputPrice,
+					CacheHitPrice:   tier.CacheHitPrice,
+					CacheStorePrice: tier.CacheStorePrice,
+				}
+			}
+		}
+
 		pricingMap = append(pricingMap, pricing)
 	}
 

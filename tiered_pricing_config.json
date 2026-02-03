@@ -1,0 +1,44 @@
+{
+  "seed-1-8-251228": {
+    "enabled": true,
+    "tiers": [
+      {
+        "min_tokens": 0,
+        "max_tokens": 128,
+        "input_price": 0.25,
+        "output_price": 2,
+        "cache_hit_price": 0.05,
+        "cache_store_price": 0.0083
+      },
+      {
+        "min_tokens": 128,
+        "max_tokens": -1,
+        "input_price": 0.5,
+        "output_price": 4,
+        "cache_hit_price": 0.05,
+        "cache_store_price": 0.0083
+      }
+    ]
+  },
+  "ep-20260131174442-stlj2": {
+    "enabled": true,
+    "tiers": [
+      {
+        "min_tokens": 0,
+        "max_tokens": 128,
+        "input_price": 0.25,
+        "output_price": 2,
+        "cache_hit_price": 0.05,
+        "cache_store_price": 0.0083
+      },
+      {
+        "min_tokens": 128,
+        "max_tokens": -1,
+        "input_price": 0.5,
+        "output_price": 4,
+        "cache_hit_price": 0.05,
+        "cache_store_price": 0.0083
+      }
+    ]
+  }
+}

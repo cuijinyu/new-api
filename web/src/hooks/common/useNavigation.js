@@ -54,7 +54,8 @@ export const useNavigation = (t, headerNavModules) => {
             {
               text: t('文档'),
               itemKey: 'docs',
-              to: '/docs',
+              isExternal: true,
+              externalLink: 'https://doc.ezmodel.cloud/guide/getting-started.html',
             },
           ]
         : []),

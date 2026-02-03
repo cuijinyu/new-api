@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New-API 计费框架架构图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        
+        .architecture {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        
+        .layer {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .layer:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .layer-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .layer-title .icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            color: white;
+            font-size: 1.2em;
+        }
+        
+        .request-layer .layer-title { color: #e74c3c; border-color: #e74c3c; }
+        .request-layer .icon { background: #e74c3c; }
+        
+        .pricing-layer .layer-title { color: #3498db; border-color: #3498db; }
+        .pricing-layer .icon { background: #3498db; }
+        
+        .calculation-layer .layer-title { color: #2ecc71; border-color: #2ecc71; }
+        .calculation-layer .icon { background: #2ecc71; }
+        
+        .storage-layer .layer-title { color: #f39c12; border-color: #f39c12; }
+        .storage-layer .icon { background: #f39c12; }
+        
+        .components {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .component {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            border-left: 4px solid;
+        }
+        
+        .component:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        
+        .request-layer .component { border-color: #e74c3c; }
+        .pricing-layer .component { border-color: #3498db; }
+        .calculation-layer .component { border-color: #2ecc71; }
+        .storage-layer .component { border-color: #f39c12; }
+        
+        .component-title {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .component-desc {
+            color: #7f8c8d;
+            font-size: 0.95em;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+        
+        .component-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        
+        .component-details ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .component-details li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .component-details li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        .flow-diagram {
+            margin-top: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+        }
+        
+        .flow-title {
+            text-align: center;
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .flow-steps {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .flow-step {
+            flex: 1;
+            min-width: 200px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        .flow-step:not(:last-child):after {
+            content: "→";
+            position: absolute;
+            right: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 2em;
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        .step-number {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        
+        .step-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        
+        .step-desc {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        
+        .legend {
+            margin-top: 40px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 15px;
+        }
+        
+        .legend-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .legend-color {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+        }
+        
+        .legend-text {
+            color: #555;
+            font-size: 0.95em;
+        }
+        
+        @media (max-width: 768px) {
+            .components {
+                grid-template-columns: 1fr;
+            }
+            
+            .flow-steps {
+                flex-direction: column;
+            }
+            
+            .flow-step:not(:last-child):after {
+                content: "↓";
+                right: auto;
+                top: auto;
+                bottom: -30px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+        }
+        
+        .banana-image {
+            max-width: 100%;
+            border-radius: 15px;
+            margin: 20px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .image-section {
+            margin-top: 40px;
+            text-align: center;
+        }
+        
+        .image-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 New-API 计费框架架构图</h1>
+        <p class="subtitle">灵活的多层次计费系统 - 支持分段定价、倍率计费和按次计费</p>
+        
+        <div class="architecture">
+            <!-- 请求层 -->
+            <div class="layer request-layer">
+                <div class="layer-title">
+                    <span class="icon">📥</span>
+                    请求处理层 (Request Handler Layer)
+                </div>
+                <div class="components">
+                    <div class="component">
+                        <div class="component-title">Compatible Handler</div>
+                        <div class="component-desc">处理兼容性请求，统一不同API格式</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>接收用户API请求</li>
+                                <li>解析请求参数</li>
+                                <li>提取模型名称和token信息</li>
+                                <li>调用价格计算助手</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">Relay Info</div>
+                        <div class="component-desc">中继信息管理，存储请求上下文</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>OriginModelName: 原始模型名</li>
+                                <li>UserGroup: 用户组</li>
+                                <li>UsingGroup: 使用的渠道组</li>
+                                <li>PriceData: 价格数据</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">Token Count Meta</div>
+                        <div class="component-desc">Token计数元数据</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>PromptTokens: 输入token数</li>
+                                <li>MaxTokens: 最大输出token数</li>
+                                <li>ImagePriceRatio: 图片价格倍率</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 定价策略层 -->
+            <div class="layer pricing-layer">
+                <div class="layer-title">
+                    <span class="icon">💰</span>
+                    定价策略层 (Pricing Strategy Layer)
+                </div>
+                <div class="components">
+                    <div class="component">
+                        <div class="component-title">分段定价 (Tiered Pricing)</div>
+                        <div class="component-desc">基于输入token量的阶梯定价，优先级最高</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>PriceTier: 价格区间配置</li>
+                                <li>MinTokens/MaxTokens: 区间范围</li>
+                                <li>InputPrice: 输入价格 (USD/M tokens)</li>
+                                <li>OutputPrice: 输出价格</li>
+                                <li>CacheHitPrice: 缓存命中价格</li>
+                                <li>CacheStorePrice: 缓存存储价格</li>
+                                <li>支持通配符匹配 (如 doubao-seed-*)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">固定价格 (Model Price)</div>
+                        <div class="component-desc">按固定价格计费，适用于按次计费模型</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>直接设定模型单价</li>
+                                <li>适用于MJ、Task等按次计费</li>
+                                <li>支持图片价格倍率调整</li>
+                                <li>优先级低于分段定价</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">倍率计费 (Model Ratio)</div>
+                        <div class="component-desc">基于token数量的倍率计费</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>ModelRatio: 基础倍率</li>
+                                <li>CompletionRatio: 输出倍率</li>
+                                <li>CacheRatio: 缓存倍率</li>
+                                <li>CacheCreationRatio: 缓存创建倍率</li>
+                                <li>ImageRatio: 图片倍率</li>
+                                <li>AudioRatio: 音频倍率</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 计算层 -->
+            <div class="layer calculation-layer">
+                <div class="layer-title">
+                    <span class="icon">🧮</span>
+                    费用计算层 (Calculation Layer)
+                </div>
+                <div class="components">
+                    <div class="component">
+                        <div class="component-title">ModelPriceHelper</div>
+                        <div class="component-desc">主要价格计算助手</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>1. 检查分段定价配置</li>
+                                <li>2. 根据输入token数匹配价格区间</li>
+                                <li>3. 应用组倍率 (GroupRatio)</li>
+                                <li>4. 计算预扣费额度</li>
+                                <li>5. 回退到ModelPrice或ModelRatio</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">Group Ratio Handler</div>
+                        <div class="component-desc">组倍率处理</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>检查用户组特殊倍率</li>
+                                <li>应用渠道组倍率</li>
+                                <li>处理自动分组 (auto_group)</li>
+                                <li>返回GroupRatioInfo</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">预扣费计算</div>
+                        <div class="component-desc">请求前预扣费用</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>分段定价: 使用最高区间价格</li>
+                                <li>固定价格: ModelPrice × GroupRatio</li>
+                                <li>倍率计费: Tokens × Ratio × GroupRatio</li>
+                                <li>免费模型可选不预扣</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 存储层 -->
+            <div class="layer storage-layer">
+                <div class="layer-title">
+                    <span class="icon">💾</span>
+                    配置存储层 (Configuration Storage Layer)
+                </div>
+                <div class="components">
+                    <div class="component">
+                        <div class="component-title">TieredPricing Map</div>
+                        <div class="component-desc">分段定价配置存储</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>内存缓存: tieredPricingMap</li>
+                                <li>读写锁保护并发访问</li>
+                                <li>支持JSON序列化/反序列化</li>
+                                <li>自动排序价格区间</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">Option Database</div>
+                        <div class="component-desc">数据库持久化</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>Key-Value存储结构</li>
+                                <li>TieredPricing: 分段定价配置</li>
+                                <li>ModelPrice: 固定价格配置</li>
+                                <li>ModelRatio: 倍率配置</li>
+                                <li>GroupRatio: 组倍率配置</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="component">
+                        <div class="component-title">Exposed Cache</div>
+                        <div class="component-desc">对外暴露的缓存数据</div>
+                        <div class="component-details">
+                            <ul>
+                                <li>前端展示用的价格数据</li>
+                                <li>配置更新时自动失效</li>
+                                <li>减少重复计算</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 流程图 -->
+        <div class="flow-diagram">
+            <div class="flow-title">💡 计费流程</div>
+            <div class="flow-steps">
+                <div class="flow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-title">接收请求</div>
+                    <div class="step-desc">解析模型名称和token数</div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-title">选择策略</div>
+                    <div class="step-desc">分段定价 > 固定价格 > 倍率</div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-title">计算价格</div>
+                    <div class="step-desc">应用组倍率和特殊倍率</div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">4</div>
+                    <div class="step-title">预扣费</div>
+                    <div class="step-desc">根据预估使用量扣费</div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">5</div>
+                    <div class="step-title">执行请求</div>
+                    <div class="step-desc">调用上游API</div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">6</div>
+                    <div class="step-title">结算差额</div>
+                    <div class="step-desc">根据实际使用量补扣或退费</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 图例说明 -->
+        <div class="legend">
+            <div class="legend-title">📊 架构层级说明</div>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e74c3c;"></div>
+                    <div class="legend-text"><strong>请求处理层:</strong> 接收和解析API请求</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3498db;"></div>
+                    <div class="legend-text"><strong>定价策略层:</strong> 三种定价模式可选</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2ecc71;"></div>
+                    <div class="legend-text"><strong>费用计算层:</strong> 执行价格计算逻辑</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f39c12;"></div>
+                    <div class="legend-text"><strong>配置存储层:</strong> 持久化和缓存配置</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Banana生成的架构图 -->
+        <div class="image-section">
+            <div class="image-title">🎨 系统架构可视化图</div>
+            <img id="architectureImage" class="banana-image" alt="计费系统架构图" />
+            <p style="color: #7f8c8d; margin-top: 10px;">使用 Banana 生成的系统架构示意图</p>
+        </div>
+    </div>
+    
+    <script>
+        // 这里可以集成 Banana 图片生成
+        // 由于 Banana 需要实际的 API 调用，这里提供占位符
+        document.getElementById('architectureImage').src = 'data:image/svg+xml;base64,' + btoa(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+                <defs>
+                    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+                    </linearGradient>
+                    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                
+                <!-- 背景 -->
+                <rect width="1200" height="800" fill="#f8f9fa"/>
+                
+                <!-- 标题 -->
+                <text x="600" y="50" font-size="32" font-weight="bold" text-anchor="middle" fill="url(#grad1)">
+                    New-API 计费框架架构
+                </text>
+                
+                <!-- 请求层 -->
+                <rect x="50" y="100" width="1100" height="120" rx="10" fill="#ffe5e5" stroke="#e74c3c" stroke-width="3"/>
+                <text x="100" y="130" font-size="20" font-weight="bold" fill="#e74c3c">📥 请求处理层</text>
+                <text x="100" y="160" font-size="14" fill="#555">Compatible Handler → Relay Info → Token Meta</text>
+                <text x="100" y="185" font-size="12" fill="#777">接收请求 | 解析参数 | 提取模型信息</text>
+                
+                <!-- 箭头 -->
+                <path d="M 600 220 L 600 260" stroke="#3498db" stroke-width="3" marker-end="url(#arrowblue)"/>
+                <defs>
+                    <marker id="arrowblue" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                        <polygon points="0,0 10,5 0,10" fill="#3498db"/>
+                    </marker>
+                </defs>
+                
+                <!-- 定价层 -->
+                <rect x="50" y="260" width="1100" height="140" rx="10" fill="#e3f2fd" stroke="#3498db" stroke-width="3"/>
+                <text x="100" y="290" font-size="20" font-weight="bold" fill="#3498db">💰 定价策略层</text>
+                
+                <rect x="100" y="310" width="300" height="70" rx="8" fill="white" stroke="#3498db" stroke-width="2"/>
+                <text x="120" y="335" font-size="14" font-weight="bold" fill="#2c3e50">分段定价 (优先级1)</text>
+                <text x="120" y="355" font-size="11" fill="#666">基于Token量阶梯定价</text>
+                <text x="120" y="370" font-size="11" fill="#666">支持缓存价格配置</text>
+                
+                <rect x="450" y="310" width="300" height="70" rx="8" fill="white" stroke="#3498db" stroke-width="2"/>
+                <text x="470" y="335" font-size="14" font-weight="bold" fill="#2c3e50">固定价格 (优先级2)</text>
+                <text x="470" y="355" font-size="11" fill="#666">按次计费模型</text>
+                <text x="470" y="370" font-size="11" fill="#666">MJ、Task等</text>
+                
+                <rect x="800" y="310" width="300" height="70" rx="8" fill="white" stroke="#3498db" stroke-width="2"/>
+                <text x="820" y="335" font-size="14" font-weight="bold" fill="#2c3e50">倍率计费 (优先级3)</text>
+                <text x="820" y="355" font-size="11" fill="#666">Token数×倍率</text>
+                <text x="820" y="370" font-size="11" fill="#666">支持多种倍率类型</text>
+                
+                <!-- 箭头 -->
+                <path d="M 600 400 L 600 440" stroke="#2ecc71" stroke-width="3" marker-end="url(#arrowgreen)"/>
+                <defs>
+                    <marker id="arrowgreen" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                        <polygon points="0,0 10,5 0,10" fill="#2ecc71"/>
+                    </marker>
+                </defs>
+                
+                <!-- 计算层 -->
+                <rect x="50" y="440" width="1100" height="120" rx="10" fill="#e8f5e9" stroke="#2ecc71" stroke-width="3"/>
+                <text x="100" y="470" font-size="20" font-weight="bold" fill="#2ecc71">🧮 费用计算层</text>
+                <text x="100" y="500" font-size="14" fill="#555">ModelPriceHelper → GroupRatio → 预扣费计算</text>
+                <text x="100" y="525" font-size="12" fill="#777">选择策略 | 应用组倍率 | 计算预扣费额度</text>
+                
+                <!-- 箭头 -->
+                <path d="M 600 560 L 600 600" stroke="#f39c12" stroke-width="3" marker-end="url(#arroworange)"/>
+                <defs>
+                    <marker id="arroworange" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                        <polygon points="0,0 10,5 0,10" fill="#f39c12"/>
+                    </marker>
+                </defs>
+                
+                <!-- 存储层 -->
+                <rect x="50" y="600" width="1100" height="120" rx="10" fill="#fff3e0" stroke="#f39c12" stroke-width="3"/>
+                <text x="100" y="630" font-size="20" font-weight="bold" fill="#f39c12">💾 配置存储层</text>
+                <text x="100" y="660" font-size="14" fill="#555">TieredPricing Map ↔ Option Database ↔ Exposed Cache</text>
+                <text x="100" y="685" font-size="12" fill="#777">内存缓存 | 数据库持久化 | 前端展示缓存</text>
+                
+                <!-- 数据流标注 -->
+                <text x="650" y="190" font-size="12" fill="#e74c3c" font-weight="bold">请求数据 ↓</text>
+                <text x="650" y="430" font-size="12" fill="#3498db" font-weight="bold">定价策略 ↓</text>
+                <text x="650" y="590" font-size="12" fill="#2ecc71" font-weight="bold">计算结果 ↓</text>
+                
+                <!-- 装饰元素 -->
+                <circle cx="1150" cy="50" r="30" fill="url(#grad2)" opacity="0.3"/>
+                <circle cx="50" cy="750" r="40" fill="url(#grad1)" opacity="0.2"/>
+                
+                <!-- 版本信息 -->
+                <text x="600" y="770" font-size="12" text-anchor="middle" fill="#999">
+                    New-API Billing Architecture v1.0 | Powered by Banana
+                </text>
+            </svg>
+        `);
+    </script>
+</body>
+</html>

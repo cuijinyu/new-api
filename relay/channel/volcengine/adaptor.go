@@ -277,6 +277,14 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 				return "wss://openspeech.bytedance.com/api/v1/tts/ws_binary", nil
 			}
 			return fmt.Sprintf("%s/v1/audio/speech", baseUrl), nil
+		// Context Cache API (BytePlus/Volcengine)
+		case constant.RelayModeContextCacheCreate:
+			return fmt.Sprintf("%s/api/v3/context/create", baseUrl), nil
+		case constant.RelayModeContextCacheChat:
+			return fmt.Sprintf("%s/api/v3/context/chat/completions", baseUrl), nil
+		// BytePlus Responses API
+		case constant.RelayModeResponses:
+			return fmt.Sprintf("%s/api/v3/responses", baseUrl), nil
 		default:
 		}
 	}
@@ -325,7 +333,42 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	return nil, errors.New("not implemented")
+	// 将 OpenAI Responses API 请求转换为 BytePlus Responses API 格式
+	bytePlusRequest := &dto.BytePlusResponsesRequest{
+		Model:              request.Model,
+		Input:              request.Input,
+		MaxOutputTokens:    int(request.MaxOutputTokens),
+		Temperature:        request.Temperature,
+		TopP:               request.TopP,
+		Stream:             request.Stream,
+		PreviousResponseID: request.PreviousResponseID,
+		Store:              nil,
+		Tools:              request.Tools,
+		ToolChoice:         request.ToolChoice,
+		Metadata:           request.Metadata,
+		// BytePlus 特有参数 - OpenAI SDK 的 extra_body 会将内容合并到请求顶级
+		Caching:  request.Caching,
+		Thinking: request.Thinking,
+	}
+
+	// 处理 Instructions - BytePlus 不支持 instructions 与 caching 同时使用
+	// 需要将 instructions 转换为 input 中的 system message
+	if len(request.Instructions) > 0 {
+		var instructionsStr string
+		if err := json.Unmarshal(request.Instructions, &instructionsStr); err == nil {
+			bytePlusRequest.Instructions = instructionsStr
+		}
+	}
+
+	// 处理 Store 字段
+	if len(request.Store) > 0 {
+		var storeVal bool
+		if err := json.Unmarshal(request.Store, &storeVal); err == nil {
+			bytePlusRequest.Store = &storeVal
+		}
+	}
+
+	return bytePlusRequest, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
