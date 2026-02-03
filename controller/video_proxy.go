@@ -118,10 +118,13 @@ func VideoProxy(c *gin.Context) {
 		}
 		req.Header.Set("x-goog-api-key", apiKey)
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora, constant.ChannelTypeAzure:
-		videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.TaskID)
 		if channel.Type == constant.ChannelTypeAzure {
+			// Azure OpenAI 格式: {baseUrl}/openai/v1/videos/{taskId}/content?api-version={version}
+			videoURL = fmt.Sprintf("%s/openai/v1/videos/%s/content?api-version=%s", baseURL, task.TaskID, constant.AzureDefaultAPIVersion)
 			req.Header.Set("api-key", channel.Key)
 		} else {
+			// 标准 OpenAI 格式: {baseUrl}/v1/videos/{taskId}/content
+			videoURL = fmt.Sprintf("%s/v1/videos/%s/content", baseURL, task.TaskID)
 			req.Header.Set("Authorization", "Bearer "+channel.Key)
 		}
 	default:
