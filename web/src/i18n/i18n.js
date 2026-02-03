@@ -28,6 +28,9 @@ import ruTranslation from './locales/ru.json';
 import jaTranslation from './locales/ja.json';
 import viTranslation from './locales/vi.json';
 
+// Check if user has a saved language preference
+const savedLanguage = localStorage.getItem('i18nextLng');
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -41,10 +44,11 @@ i18n
       ja: jaTranslation,
       vi: viTranslation,
     },
+    lng: savedLanguage || 'en', // Use saved language or default to English
     fallbackLng: 'en',
     detection: {
-      order: ['localStorage'], // Only check localStorage, ignore browser language
-      caches: ['localStorage'], // Cache user's language preference
+      order: ['localStorage'],
+      caches: ['localStorage'],
     },
     interpolation: {
       escapeValue: false,
