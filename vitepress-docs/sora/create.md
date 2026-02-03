@@ -1,14 +1,14 @@
 # Sora 创建视频
 
-OpenAI 兼容的视频生成接口,支持使用 Sora 模型生成高质量视频。
+OpenAI 兼容的视频生成接口，支持使用 Sora 2 模型生成高质量视频。
 
 ## 接口详情
 
 **接口地址:** `POST /v1/videos`
 
-**功能描述:** 使用 Sora 模型创建视频生成任务。支持文生视频和图生视频,可控制视频时长、尺寸、帧率等参数。
+**功能描述:** 使用 Sora 2 模型创建视频生成任务。支持文生视频、图生视频，可控制视频时长和尺寸。
 
-**参考文档:** [OpenAI Videos API](https://platform.openai.com/docs/api-reference/videos/create)
+**参考文档:** [Azure OpenAI Sora 2 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/concepts/video-generation)
 
 **认证方式:** Bearer Token
 ```http
@@ -19,22 +19,19 @@ Authorization: Bearer YOUR_API_TOKEN
 
 ## 请求参数
 
-### Body 参数 (multipart/form-data)
+### Body 参数
+
+**文生视频**: 使用 `application/json` 格式
+
+**图生视频**: 使用 `multipart/form-data` 格式
 
 | 参数名 | 类型 | 必填 | 说明 | 示例 |
 |--------|------|------|------|------|
-| model | string | 否 | 模型/风格 ID | `sora-1.0`, `sora-turbo` |
-| prompt | string | 否 | 文本描述提示词 | `一只金毛犬在海边奔跑` |
-| image | string | 否 | 图片输入 (URL 或 Base64),用于图生视频 | `https://example.com/image.jpg` |
-| duration | number | 否 | 视频时长(秒) | `5.0`, `10.0` |
-| width | integer | 否 | 视频宽度 | `1920`, `1280` |
-| height | integer | 否 | 视频高度 | `1080`, `720` |
-| fps | integer | 否 | 视频帧率 | `24`, `30`, `60` |
-| seed | integer | 否 | 随机种子,用于生成可复现的结果 | `12345` |
-| n | integer | 否 | 生成视频数量 | `1`, `2` |
-| response_format | string | 否 | 响应格式 | `url`, `b64_json` |
-| user | string | 否 | 用户标识 | `user-123` |
-| metadata | object | 否 | 扩展参数 (如 negative_prompt, style, quality_level 等) | `{"style": "cinematic"}` |
+| model | string | 否 | 模型名称 | `sora-2` |
+| prompt | string | 是 | 文本描述提示词，建议包含镜头类型、主体、动作、场景、光线和镜头运动 | `A video of a cool cat on a motorcycle in the night` |
+| size | string | 否 | 视频尺寸 (宽x高)，支持 `720x1280` (竖屏) 或 `1280x720` (横屏)，默认 `720x1280` | `1280x720` |
+| seconds | string | 否 | 视频时长 (秒)，支持 `4`、`8`、`12`，默认 `4` | `8` |
+| input_reference | file | 否 | 参考图片，用于图生视频。支持 JPEG、PNG、WebP 格式，**分辨率必须与 size 参数完全匹配** | 图片文件 |
 
 ---
 
@@ -44,20 +41,20 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 参数名 | 类型 | 说明 |
 |--------|------|------|
-| id | string | 视频任务 ID |
-| object | string | 对象类型,固定为 `video` |
+| id | string | 视频任务 ID，格式为 `video_xxx` |
+| object | string | 对象类型，固定为 `video` |
 | model | string | 使用的模型名称 |
-| status | string | 任务状态: `pending`, `processing`, `completed`, `failed` |
+| status | string | 任务状态: `queued`, `in_progress`, `completed`, `failed`, `cancelled` |
 | progress | integer | 进度百分比 (0-100) |
 | created_at | integer | 创建时间戳 (Unix timestamp) |
+| completed_at | integer | 完成时间戳 (任务完成后可用) |
+| expires_at | integer | 过期时间戳 (任务完成后可用，24小时后过期) |
 | seconds | string | 视频时长 |
-| completed_at | integer | 完成时间戳 (可选) |
-| expires_at | integer | 过期时间戳 (可选) |
-| size | string | 视频尺寸,格式: `{width}x{height}` |
-| error | object | 错误信息 (可选) |
+| size | string | 视频尺寸，格式: `{width}x{height}` |
+| remixed_from_video_id | string | 如果是 Remix 生成的，显示源视频 ID |
+| error | object | 错误信息 (任务失败时可用) |
 | error.message | string | 错误描述 |
 | error.code | string | 错误代码 |
-| metadata | object | 额外元数据 |
 
 ### 错误响应 (400)
 
@@ -74,45 +71,154 @@ Authorization: Bearer YOUR_API_TOKEN
 ### cURL
 
 ```bash
+# 文生视频 (JSON 格式)
 curl -X POST "https://www.ezmodel.cloud/v1/videos" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "sora-1.0",
-    "prompt": "一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发",
-    "duration": 10,
-    "width": 1920,
-    "height": 1080,
-    "fps": 30,
-    "n": 1
+    "model": "sora-2",
+    "prompt": "A video of a cool cat on a motorcycle in the night",
+    "size": "1280x720",
+    "seconds": "8"
   }'
+
+# 图生视频 (multipart/form-data 格式)
+curl -X POST "https://www.ezmodel.cloud/v1/videos" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "model=sora-2" \
+  -F "prompt=The cat starts walking slowly towards the camera" \
+  -F "size=1280x720" \
+  -F "seconds=8" \
+  -F "input_reference=@reference_image.jpg"
 ```
 
 ### Python
 
 ```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://www.ezmodel.cloud/v1/",
+)
+
+# 文生视频
+video = client.videos.create(
+    model="sora-2",
+    prompt="A video of a cool cat on a motorcycle in the night",
+    size="1280x720",
+    seconds="8",
+)
+
+print("Video generation started:", video)
+print(f"Video ID: {video.id}")
+print(f"Status: {video.status}")
+```
+
+### Python (图生视频 - 使用 OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://www.ezmodel.cloud/v1/",
+)
+
+# 使用本地图片作为参考
+video = client.videos.create(
+    model="sora-2",
+    prompt="The cat starts walking slowly towards the camera",
+    size="1280x720",
+    seconds="8",
+    input_reference=open("reference_image.png", "rb"),
+)
+
+print("Video generation started:", video)
+```
+
+### Python (图生视频 - 使用 requests + 图片尺寸调整)
+
+```python
 import requests
-import json
+from PIL import Image
+import io
 
 url = "https://www.ezmodel.cloud/v1/videos"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY",
-    "Content-Type": "application/json"
 }
 
+# 检查图片并调整尺寸
+image_path = "test_local.jpg"
+with Image.open(image_path) as img:
+    original_width, original_height = img.size
+    print(f"原始图片尺寸: {original_width}x{original_height}")
+
+    # 根据图片比例选择目标尺寸 (只支持这两种)
+    if original_height > original_width:
+        # 竖屏，调整到720x1280
+        target_size = (720, 1280)
+        size_param = "720x1280"
+    else:
+        # 横屏或正方形，调整到1280x720
+        target_size = (1280, 720)
+        size_param = "1280x720"
+
+    print(f"目标尺寸: {target_size[0]}x{target_size[1]}")
+
+    # 调整图片尺寸
+    img_resized = img.resize(target_size, Image.LANCZOS)
+
+    # 保存到内存
+    img_buffer = io.BytesIO()
+    img_resized.save(img_buffer, format='JPEG', quality=95)
+    img_buffer.seek(0)
+
+# 准备表单数据
 data = {
-    "model": "sora-1.0",
-    "prompt": "一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发",
-    "duration": 10,
-    "width": 1920,
-    "height": 1080,
-    "fps": 30,
-    "n": 1
+    "model": "sora-2",
+    "prompt": "角马吃甜甜圈",
+    "size": size_param,
+    "seconds": "4"
 }
 
-response = requests.post(url, headers=headers, json=data)
+# 发送请求 (multipart/form-data)
+files = {"input_reference": ("image.jpg", img_buffer, "image/jpeg")}
+response = requests.post(url, headers=headers, data=data, files=files)
+
 result = response.json()
-print(json.dumps(result, indent=2))
+print(f"状态码: {response.status_code}")
+print(f"响应: {result}")
+```
+
+### Python (URL 图片作为参考)
+
+```python
+from openai import OpenAI
+import requests
+from io import BytesIO
+
+client = OpenAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://www.ezmodel.cloud/v1/",
+)
+
+# 从 URL 获取图片
+image_url = "https://example.com/image.jpg"
+response = requests.get(image_url)
+image_data = BytesIO(response.content)
+image_data.name = "image.jpg"
+
+video = client.videos.create(
+    model="sora-2",
+    prompt="The scene comes to life with gentle movement",
+    size="1280x720",
+    seconds="8",
+    input_reference=image_data,
+)
+
+print("Video generation started:", video)
 ```
 
 ### JavaScript
@@ -125,18 +231,16 @@ const response = await fetch('https://www.ezmodel.cloud/v1/videos', {
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
-    model: 'sora-1.0',
-    prompt: '一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发',
-    duration: 10,
-    width: 1920,
-    height: 1080,
-    fps: 30,
-    n: 1
+    model: 'sora-2',
+    prompt: 'A video of a cool cat on a motorcycle in the night',
+    size: '1280x720',
+    seconds: '8'
   })
 });
 
 const result = await response.json();
-console.log(result);
+console.log('Video ID:', result.id);
+console.log('Status:', result.status);
 ```
 
 ### Go
@@ -156,13 +260,10 @@ func main() {
     url := "https://www.ezmodel.cloud/v1/videos"
     
     payload := map[string]interface{}{
-        "model":    "sora-1.0",
-        "prompt":   "一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发",
-        "duration": 10,
-        "width":    1920,
-        "height":   1080,
-        "fps":      30,
-        "n":        1,
+        "model":   "sora-2",
+        "prompt":  "A video of a cool cat on a motorcycle in the night",
+        "size":    "1280x720",
+        "seconds": "8",
     }
     
     jsonData, _ := json.Marshal(payload)
@@ -195,13 +296,10 @@ public class SoraVideoExample {
         String url = "https://www.ezmodel.cloud/v1/videos";
         String json = """
         {
-            "model": "sora-1.0",
-            "prompt": "一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发",
-            "duration": 10,
-            "width": 1920,
-            "height": 1080,
-            "fps": 30,
-            "n": 1
+            "model": "sora-2",
+            "prompt": "A video of a cool cat on a motorcycle in the night",
+            "size": "1280x720",
+            "seconds": "8"
         }
         """;
         
@@ -238,13 +336,10 @@ class Program
         client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY");
         
         var json = @"{
-            ""model"": ""sora-1.0"",
-            ""prompt"": ""一只可爱的橘猫在阳光下打瞌睡,微风吹动它的毛发"",
-            ""duration"": 10,
-            ""width"": 1920,
-            ""height"": 1080,
-            ""fps"": 30,
-            ""n"": 1
+            ""model"": ""sora-2"",
+            ""prompt"": ""A video of a cool cat on a motorcycle in the night"",
+            ""size"": ""1280x720"",
+            ""seconds"": ""8""
         }";
         
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -264,21 +359,18 @@ class Program
 
 ```json
 {
-  "id": "vid_abc123xyz456",
+  "id": "video_68f10985d6c4819097007665bdcfba5f",
   "object": "video",
-  "model": "sora-1.0",
-  "status": "processing",
+  "model": "sora-2",
+  "status": "queued",
   "progress": 0,
-  "created_at": 1705334400,
-  "seconds": "10.0",
+  "created_at": 1760627077,
   "completed_at": null,
-  "expires_at": 1705420800,
-  "size": "1920x1080",
-  "error": null,
-  "metadata": {
-    "fps": 30,
-    "seed": 12345
-  }
+  "expires_at": null,
+  "seconds": "8",
+  "size": "1280x720",
+  "remixed_from_video_id": null,
+  "error": null
 }
 ```
 
@@ -287,7 +379,7 @@ class Program
 ```json
 {
   "error": {
-    "message": "Invalid parameter: duration must be between 1 and 60 seconds",
+    "message": "Invalid parameter: size must be 720x1280 or 1280x720",
     "code": "invalid_parameter"
   }
 }
@@ -295,17 +387,53 @@ class Program
 
 ---
 
+## 提示词最佳实践
+
+为获得最佳视频生成效果，建议在提示词中包含以下元素：
+
+1. **镜头类型**: 特写、中景、远景等
+2. **主体描述**: 人物、动物、物体等
+3. **动作描述**: 具体的动作和行为
+4. **场景设置**: 环境、背景
+5. **光线效果**: 日光、夜晚、逆光等
+6. **镜头运动**: 推拉、摇移、跟随等
+
+**示例提示词:**
+```
+A close-up shot of a golden retriever running on the beach at sunset, 
+with waves crashing in the background, warm golden light, 
+camera slowly tracking the dog's movement
+```
+
+---
+
+## 内容限制
+
+Sora 2 API 有以下内容限制：
+
+- 仅生成适合 18 岁以下观众的内容
+- 不支持生成版权角色和版权音乐
+- 不支持生成真实人物（包括公众人物）
+- 输入图片中不能包含人脸
+
+请确保提示词和参考图片遵守这些规则，以避免生成失败。
+
+---
+
 ## 注意事项
 
-1. **异步处理**: 视频生成是异步过程,提交后需要通过查询接口获取生成结果
-2. **参数限制**: 不同模型对视频时长、尺寸、帧率等参数有不同的限制
-3. **计费说明**: 视频生成按时长和分辨率计费,具体费率请参考定价页面
-4. **过期时间**: 生成的视频会在一定时间后过期,建议及时下载保存
-5. **并发限制**: 每个账户可能有并发任务数量限制
+1. **异步处理**: 视频生成是异步过程，提交后需要通过查询接口获取生成结果
+2. **分辨率限制**: 仅支持 `720x1280` (竖屏) 和 `1280x720` (横屏) 两种分辨率
+3. **时长限制**: 仅支持 4、8、12 秒三种时长
+4. **图片匹配**: 使用 `input_reference` 时，图片分辨率必须与 `size` 参数匹配
+5. **并发限制**: 同时最多可有 2 个视频生成任务运行
+6. **过期时间**: 生成的视频在 24 小时后过期，请及时下载保存
+7. **音频支持**: Sora 2 支持在输出视频中生成音频
 
 ---
 
 ## 相关接口
 
-- [查询视频任务状态](https://www.ezmodel.cloud/docs/sora-videos-status)
-- [获取视频内容](https://www.ezmodel.cloud/docs/sora-videos-content)
+- [查询视频任务状态](/sora/status)
+- [获取视频内容](/sora/content)
+- [Remix 视频混剪](/sora/remix)

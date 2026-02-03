@@ -20,18 +20,13 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useEffect, useState } from 'react';
 import { API, showError } from '../../helpers';
 import { marked } from 'marked';
-import { Empty } from '@douyinfe/semi-ui';
-import {
-  IllustrationConstruction,
-  IllustrationConstructionDark,
-} from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import AboutContent from './AboutContent';
 
 const About = () => {
   const { t } = useTranslation();
   const [about, setAbout] = useState('');
   const [aboutLoaded, setAboutLoaded] = useState(false);
-  const currentYear = new Date().getFullYear();
 
   const displayAbout = async () => {
     setAbout(localStorage.getItem('about') || '');
@@ -55,35 +50,10 @@ const About = () => {
     displayAbout().then();
   }, []);
 
-  const emptyStyle = {
-    padding: '24px',
-  };
-
-  const customDescription = (
-    <div style={{ textAlign: 'center' }}>
-      <p>{t('可在设置页面设置关于内容，支持 HTML & Markdown')}</p>
-    </div>
-  );
-
   return (
-    <div className='mt-[60px] px-2'>
+    <div className='mt-[60px]'>
       {aboutLoaded && about === '' ? (
-        <div className='flex justify-center items-center h-screen p-8'>
-          <Empty
-            image={
-              <IllustrationConstruction style={{ width: 150, height: 150 }} />
-            }
-            darkModeImage={
-              <IllustrationConstructionDark
-                style={{ width: 150, height: 150 }}
-              />
-            }
-            description={t('管理员暂时未设置任何关于内容')}
-            style={emptyStyle}
-          >
-            {customDescription}
-          </Empty>
-        </div>
+        <AboutContent />
       ) : (
         <>
           {about.startsWith('https://') ? (
@@ -93,6 +63,7 @@ const About = () => {
             />
           ) : (
             <div
+              className='px-2'
               style={{ fontSize: 'larger' }}
               dangerouslySetInnerHTML={{ __html: about }}
             ></div>
