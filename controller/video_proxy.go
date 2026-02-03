@@ -121,6 +121,7 @@ func VideoProxy(c *gin.Context) {
 		if channel.Type == constant.ChannelTypeAzure {
 			// Azure OpenAI 格式: {baseUrl}/openai/v1/videos/{taskId}/content?api-version={version}
 			videoURL = fmt.Sprintf("%s/openai/v1/videos/%s/content?api-version=%s", baseURL, task.TaskID, constant.AzureDefaultAPIVersion)
+			logger.LogInfo(c.Request.Context(), fmt.Sprintf("Azure video URL: %s, baseURL: %s, taskID: %s", videoURL, baseURL, task.TaskID))
 			req.Header.Set("api-key", channel.Key)
 		} else {
 			// 标准 OpenAI 格式: {baseUrl}/v1/videos/{taskId}/content
@@ -158,10 +159,11 @@ func VideoProxy(c *gin.Context) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, videoURL))
+		body, _ := io.ReadAll(resp.Body)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s, body: %s", resp.StatusCode, videoURL, string(body)))
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Upstream service returned status %d", resp.StatusCode),
+				"message": fmt.Sprintf("Upstream service returned status %d, body: %s", resp.StatusCode, string(body)),
 				"type":    "server_error",
 			},
 		})
