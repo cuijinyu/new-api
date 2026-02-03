@@ -251,11 +251,11 @@ type OpenAIVideoResponse struct {
 }
 
 type InputTokenDetails struct {
-	CachedTokens         int `json:"cached_tokens"`
-	CachedCreationTokens int `json:"-"`
-	TextTokens           int `json:"text_tokens"`
-	AudioTokens          int `json:"audio_tokens"`
-	ImageTokens          int `json:"image_tokens"`
+	CachedTokens             int `json:"cached_tokens"`
+	CachedCreationTokens     int `json:"cache_creation_input_tokens"` // 缓存写入 token 数量 (BytePlus/Volcengine)
+	TextTokens               int `json:"text_tokens"`
+	AudioTokens              int `json:"audio_tokens"`
+	ImageTokens              int `json:"image_tokens"`
 }
 
 type OutputTokenDetails struct {

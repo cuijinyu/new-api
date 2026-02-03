@@ -78,7 +78,8 @@ type BytePlusResponsesUsage struct {
 
 // BytePlusInputTokensDetails 输入 token 详情
 type BytePlusInputTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens             int `json:"cached_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"` // 缓存写入 token 数量
 }
 
 // BytePlusOutputTokensDetails 输出 token 详情
@@ -119,6 +120,7 @@ func (u *BytePlusResponsesUsage) ToUsage() *Usage {
 	}
 	if u.InputTokensDetails != nil {
 		usage.PromptTokensDetails.CachedTokens = u.InputTokensDetails.CachedTokens
+		usage.PromptTokensDetails.CachedCreationTokens = u.InputTokensDetails.CacheCreationInputTokens
 	}
 	return usage
 }
