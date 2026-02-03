@@ -120,7 +120,8 @@ func VideoProxy(c *gin.Context) {
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeSora, constant.ChannelTypeAzure:
 		if channel.Type == constant.ChannelTypeAzure {
 			// Azure OpenAI 格式: {baseUrl}/openai/v1/videos/{taskId}/content?api-version={version}
-			videoURL = fmt.Sprintf("%s/openai/v1/videos/%s/content?api-version=%s", baseURL, task.TaskID, constant.AzureDefaultAPIVersion)
+			apiVersion := "2024-12-01-preview" // Sora 视频 API 支持的版本
+			videoURL = fmt.Sprintf("%s/openai/v1/videos/%s/content?api-version=%s", baseURL, task.TaskID, apiVersion)
 			logger.LogInfo(c.Request.Context(), fmt.Sprintf("Azure video URL: %s, baseURL: %s, taskID: %s", videoURL, baseURL, task.TaskID))
 			req.Header.Set("api-key", channel.Key)
 		} else {
