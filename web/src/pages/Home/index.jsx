@@ -403,76 +403,99 @@ const Home = () => {
             </div>
           </section>
 
-          {/* ========== 为什么选择 ========== */}
+          {/* ========== 为什么选择我们 ========== */}
           <section className='py-20 px-4 bg-semi-color-bg-1'>
             <div className='max-w-6xl mx-auto'>
-              <div className='grid md:grid-cols-2 gap-16 items-center'>
-                <div>
-                  <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-8'>
-                    {t('为什么选择 EZmodel')}
-                  </h2>
-                  
-                  <div className='space-y-6'>
-                    <div className='flex gap-4'>
-                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center'>
-                        <IconBolt size='extra-large' className='text-blue-500' />
-                      </div>
-                      <div>
-                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('简单易用')}</h4>
-                        <p className='text-semi-color-text-2'>{t('与 OpenAI SDK 完全兼容，零学习成本')}</p>
-                      </div>
-                    </div>
-                    
-                    <div className='flex gap-4'>
-                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center'>
-                        <IconPriceTag size='extra-large' className='text-emerald-500' />
-                      </div>
-                      <div>
-                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('按量付费')}</h4>
-                        <p className='text-semi-color-text-2'>{t('用多少付多少，无最低消费')}</p>
-                      </div>
-                    </div>
-                    
-                    <div className='flex gap-4'>
-                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center'>
-                        <IconRefresh size='extra-large' className='text-orange-500' />
-                      </div>
-                      <div>
-                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('智能切换')}</h4>
-                        <p className='text-semi-color-text-2'>{t('自动负载均衡，故障无感切换')}</p>
-                      </div>
-                    </div>
-                    
-                    <div className='flex gap-4'>
-                      <div className='flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center'>
-                        <IconLineChartStroked size='extra-large' className='text-sky-500' />
-                      </div>
-                      <div>
-                        <h4 className='text-lg font-semibold text-semi-color-text-0 mb-1'>{t('透明账单')}</h4>
-                        <p className='text-semi-color-text-2'>{t('详细的用量统计与成本分析')}</p>
-                      </div>
-                    </div>
+              {/* 标题区域 */}
+              <div className='text-center mb-16'>
+                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
+                  {t('为什么选择我们?')}
+                </h2>
+                <p className='text-semi-color-text-2 text-lg'>
+                  Why EZmodel
+                </p>
+              </div>
+
+              {/* 特性列表 - 图标统一在左侧 */}
+              <div className='space-y-12 max-w-3xl mx-auto'>
+                <div className='flex gap-6'>
+                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center'>
+                    <IconBolt size='extra-large' className='text-blue-500' />
+                  </div>
+                  <div>
+                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('先行者优势：首发模型，即刻触达')}</h4>
+                    <p className='text-semi-color-text-2 leading-relaxed'>{t('我们与全球顶级模型厂商深度合作，确保新模型上线即首发。在 EZmodel，你永远是第一批体验下一代 AI 能力的开发者，无需等待，无需排队。')}</p>
                   </div>
                 </div>
+                
+                <div className='flex gap-6'>
+                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center'>
+                    <svg className='w-8 h-8 text-emerald-500' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+                      <path d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4' />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('统一密钥方案：单一 API Key，调度全网智能')}</h4>
+                    <p className='text-semi-color-text-2 leading-relaxed'>{t('告别维护数十个平台密钥的烦恼。只需一个 EZmodel API Key，即可在所有顶级模型间无缝切换，彻底简化你的鉴权逻辑与账单管理。')}</p>
+                  </div>
+                </div>
+                
+                <div className='flex gap-6'>
+                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center'>
+                    <IconRefresh size='extra-large' className='text-orange-500' />
+                  </div>
+                  <div>
+                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('智能切换')}</h4>
+                    <p className='text-semi-color-text-2 leading-relaxed'>{t('自动负载均衡，故障无感切换')}</p>
+                  </div>
+                </div>
+                
+                <div className='flex gap-6'>
+                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center'>
+                    <IconLineChartStroked size='extra-large' className='text-sky-500' />
+                  </div>
+                  <div>
+                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('透明账单')}</h4>
+                    <p className='text-semi-color-text-2 leading-relaxed'>{t('详细的用量统计与成本分析')}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
-                <div className='relative'>
-                  <div className='ez-feature-card p-8 rounded-3xl'>
-                    <div className='text-center'>
-                      <div className='text-5xl md:text-6xl font-bold ez-brand-text mb-2'>{t('低至官方')}</div>
-                      <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>{t('5折')}</div>
-                      <div className='text-semi-color-text-2 mb-8'>{t('同等质量，更优价格')}</div>
-                      
-                      <div className='grid grid-cols-2 gap-4 text-left'>
-                        <div className='p-4 rounded-xl bg-semi-color-bg-0'>
-                          <div className='text-2xl font-bold text-semi-color-text-0'>{t('零')}</div>
-                          <div className='text-sm text-semi-color-text-2'>{t('最低消费')}</div>
-                        </div>
-                        <div className='p-4 rounded-xl bg-semi-color-bg-0'>
-                          <div className='text-2xl font-bold text-semi-color-text-0'>{t('实时')}</div>
-                          <div className='text-sm text-semi-color-text-2'>{t('用量结算')}</div>
-                        </div>
-                      </div>
-                    </div>
+          {/* ========== 技术承诺 ========== */}
+          <section className='py-20 px-4 bg-semi-color-bg-0'>
+            <div className='max-w-6xl mx-auto'>
+              <div className='text-center mb-16'>
+                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
+                  {t('技术承诺')}
+                </h2>
+                <p className='text-semi-color-text-2 text-lg'>
+                  Our Commitment
+                </p>
+              </div>
+
+              <div className='grid md:grid-cols-2 gap-8 max-w-4xl mx-auto'>
+                <div className='ez-feature-card p-8 rounded-3xl'>
+                  <div className='text-center'>
+                    <div className='text-5xl md:text-6xl font-bold ez-brand-text mb-2'>{t('低至官方')}</div>
+                    <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>{t('5折')}</div>
+                    <div className='text-semi-color-text-2'>{t('同等质量，更优价格')}</div>
+                  </div>
+                </div>
+                
+                <div className='grid grid-cols-2 gap-4'>
+                  <div className='p-6 rounded-xl bg-semi-color-bg-1'>
+                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>{t('零')}</div>
+                    <div className='text-sm text-semi-color-text-2'>{t('最低消费')}</div>
+                  </div>
+                  <div className='p-6 rounded-xl bg-semi-color-bg-1'>
+                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>{t('实时')}</div>
+                    <div className='text-sm text-semi-color-text-2'>{t('用量结算')}</div>
+                  </div>
+                  <div className='p-6 rounded-xl bg-semi-color-bg-1 col-span-2'>
+                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>99.9%</div>
+                    <div className='text-sm text-semi-color-text-2'>{t('服务可用性')}</div>
                   </div>
                 </div>
               </div>
