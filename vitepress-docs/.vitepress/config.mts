@@ -35,6 +35,7 @@ const zhSidebar = [
     items: [
       { text: '创建视频', link: '/api/video/video-generations' },
       { text: '查询状态', link: '/api/video/video-generations-status' },
+      { text: 'Vidu 视频', link: '/api/video/vidu' },
     ]
   },
   {
@@ -111,6 +112,7 @@ const enSidebar = [
     items: [
       { text: 'Create Video', link: '/en/api/video/video-generations' },
       { text: 'Query Status', link: '/en/api/video/video-generations-status' },
+      { text: 'Vidu Video', link: '/en/api/video/vidu' },
     ]
   },
   {

@@ -419,28 +419,6 @@ const Home = () => {
               {/* 特性列表 - 图标统一在左侧 */}
               <div className='space-y-12 max-w-3xl mx-auto'>
                 <div className='flex gap-6'>
-                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center'>
-                    <IconBolt size='extra-large' className='text-blue-500' />
-                  </div>
-                  <div>
-                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('先行者优势：首发模型，即刻触达')}</h4>
-                    <p className='text-semi-color-text-2 leading-relaxed'>{t('我们与全球顶级模型厂商深度合作，确保新模型上线即首发。在 EZmodel，你永远是第一批体验下一代 AI 能力的开发者，无需等待，无需排队。')}</p>
-                  </div>
-                </div>
-                
-                <div className='flex gap-6'>
-                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center'>
-                    <svg className='w-8 h-8 text-emerald-500' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
-                      <path d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4' />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('统一密钥方案：单一 API Key，调度全网智能')}</h4>
-                    <p className='text-semi-color-text-2 leading-relaxed'>{t('告别维护数十个平台密钥的烦恼。只需一个 EZmodel API Key，即可在所有顶级模型间无缝切换，彻底简化你的鉴权逻辑与账单管理。')}</p>
-                  </div>
-                </div>
-                
-                <div className='flex gap-6'>
                   <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center'>
                     <IconRefresh size='extra-large' className='text-orange-500' />
                   </div>

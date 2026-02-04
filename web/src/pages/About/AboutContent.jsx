@@ -142,7 +142,7 @@ const AboutContent = () => {
               icon={<IconKey size='extra-large' className='text-emerald-500' />}
               title='统一密钥方案：单一 API Key，调度全网智能'
               description='告别维护数十个平台密钥的烦恼。只需一个 EZmodel API Key，即可在所有顶级模型间无缝切换，彻底简化你的鉴权逻辑与账单管理。'
-              isLeft={false}
+              isLeft={true}
             />
           </div>
         </div>
