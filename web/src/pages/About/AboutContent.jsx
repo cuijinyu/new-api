@@ -86,9 +86,7 @@ const AboutContent = () => {
           </div>
           <div className='p-8 rounded-3xl bg-semi-color-bg-0 shadow-lg'>
             <Paragraph className='text-lg text-semi-color-text-1 leading-relaxed'>
-              EZmodel 是一个领先的 <Text strong>MaaS (Model-as-a-Service)</Text> 聚合平台。
-              我们通过统一的 OpenAI 标准协议，无缝接入全球主流大语言模型，
-              帮助企业与开发者降低 <Text strong className='ez-brand-text'>90% 以上</Text> 的集成与维护成本。
+              EZmodel is a premier <Text strong>Model-as-a-Service (MaaS)</Text> aggregation layer. By delivering a consolidated interface via OpenAI-standard protocols, we enable seamless orchestration of global LLMs. Our infrastructure reduces integration overhead and maintenance complexity by over <Text strong className='ez-brand-text'>90%</Text> for enterprises and developers alike.
             </Paragraph>
           </div>
         </div>
@@ -107,9 +105,6 @@ const AboutContent = () => {
             <div className='absolute top-4 left-4 text-6xl text-semi-color-text-3 opacity-20'>"</div>
             <div className='text-center'>
               <p className='text-2xl md:text-3xl font-medium text-semi-color-text-0 mb-4 leading-relaxed'>
-                消除智能鸿沟，让每一颗创造的心不被技术阻隔。
-              </p>
-              <p className='text-lg text-semi-color-text-2 italic'>
                 Bridging the AI gap, empowering every creative mind.
               </p>
             </div>
@@ -132,16 +127,16 @@ const AboutContent = () => {
             {/* Left Feature */}
             <FeatureCard
               icon={<IconBolt size='extra-large' className='text-blue-500' />}
-              title='先行者优势：首发模型，即刻触达'
-              description='我们与全球顶级模型厂商深度合作，确保新模型上线即首发。在 EZmodel，你永远是第一批体验下一代 AI 能力的开发者，无需等待，无需排队。'
+              title='First-to-Market Advantage: Zero-Day Deployment'
+              description='Through deep strategic partnerships with global model providers, we guarantee Day 0 availability for SOTA (State-of-the-Art) models. With EZmodel, you gain immediate access to next-generation AI capabilities—no waitlists, no latency in adoption.'
               isLeft={true}
             />
             
             {/* Right Feature */}
             <FeatureCard
               icon={<IconKey size='extra-large' className='text-emerald-500' />}
-              title='统一密钥方案：单一 API Key，调度全网智能'
-              description='告别维护数十个平台密钥的烦恼。只需一个 EZmodel API Key，即可在所有顶级模型间无缝切换，彻底简化你的鉴权逻辑与账单管理。'
+              title='Unified Credentialing: Single API Key, Universal Intelligence'
+              description='Eliminate the friction of managing fragmented credentials across multiple providers. A single EZmodel API Key grants you the power to switch between top-tier models instantaneously, radically simplifying your authentication logic and billing management.'
               isLeft={true}
             />
           </div>
@@ -161,18 +156,18 @@ const AboutContent = () => {
           <div className='grid md:grid-cols-3 gap-6'>
             <CommitmentCard
               icon={<IconRefresh size='large' className='text-blue-500' />}
-              title='极速上线'
-              description='厂商级首发合作，同步最新 AI 浪潮。'
+              title='Agile Integration'
+              description='Partner-level early access ensuring your tech stack evolves in sync with the global AI frontier.'
             />
             <CommitmentCard
               icon={<IconCheckCircleStroked size='large' className='text-emerald-500' />}
-              title='极致统一'
-              description='标准 OpenAI 协议，无感知平滑切换。'
+              title='Unified Architecture'
+              description='100% OpenAI-standard compatibility for transparent, zero-refactor model switching.'
             />
             <CommitmentCard
               icon={<IconPriceTag size='large' className='text-orange-500' />}
-              title='极简计费'
-              description='场景化订阅模式，成本透明，预算可控。'
+              title='Optimized Billing'
+              description='Scenario-based subscription plans designed for transparent cost-tracking and granular budget control.'
             />
           </div>
         </div>
