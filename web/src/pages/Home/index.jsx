@@ -396,7 +396,7 @@ const Home = () => {
                     size='large'
                     className='!rounded-full !px-10 !py-3 ez-cta-btn'
                   >
-                    {t('免费开始')}
+                    {t('即刻开始使用')}
                   </Button>
                 </Link>
               </div>
@@ -441,44 +441,6 @@ const Home = () => {
             </div>
           </section>
 
-          {/* ========== 技术承诺 ========== */}
-          <section className='py-20 px-4 bg-semi-color-bg-0'>
-            <div className='max-w-6xl mx-auto'>
-              <div className='text-center mb-16'>
-                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-                  {t('技术承诺')}
-                </h2>
-                <p className='text-semi-color-text-2 text-lg'>
-                  Our Commitment
-                </p>
-              </div>
-
-              <div className='grid md:grid-cols-2 gap-8 max-w-4xl mx-auto'>
-                <div className='ez-feature-card p-8 rounded-3xl'>
-                  <div className='text-center'>
-                    <div className='text-5xl md:text-6xl font-bold ez-brand-text mb-2'>{t('低至官方')}</div>
-                    <div className='text-4xl md:text-5xl font-bold text-semi-color-text-0 mb-2'>{t('5折')}</div>
-                    <div className='text-semi-color-text-2'>{t('同等质量，更优价格')}</div>
-                  </div>
-                </div>
-                
-                <div className='grid grid-cols-2 gap-4'>
-                  <div className='p-6 rounded-xl bg-semi-color-bg-1'>
-                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>{t('零')}</div>
-                    <div className='text-sm text-semi-color-text-2'>{t('最低消费')}</div>
-                  </div>
-                  <div className='p-6 rounded-xl bg-semi-color-bg-1'>
-                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>{t('实时')}</div>
-                    <div className='text-sm text-semi-color-text-2'>{t('用量结算')}</div>
-                  </div>
-                  <div className='p-6 rounded-xl bg-semi-color-bg-1 col-span-2'>
-                    <div className='text-3xl font-bold text-semi-color-text-0 mb-1'>99.9%</div>
-                    <div className='text-sm text-semi-color-text-2'>{t('服务可用性')}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
 
           {/* ========== CTA Section ========== */}
           <section className='py-24 px-4 ez-cta-section'>

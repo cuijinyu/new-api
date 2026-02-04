@@ -2317,6 +2317,7 @@
     "请至少添加一个价格区间": "Please add at least one price tier",
     "最小 Token 数不能为负": "Min tokens cannot be negative",
     "最大 Token 数必须大于最小值，或设为 -1 表示无上限": "Max tokens must be greater than min, or set to -1 for unlimited",
-    "Token 范围 (千)": "Token Range (K)"
+    "Token 范围 (千)": "Token Range (K)",
+    "即刻开始使用": "Start Now"
   }
 }

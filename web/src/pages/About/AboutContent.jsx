@@ -80,9 +80,8 @@ const AboutContent = () => {
         <div className='max-w-4xl mx-auto'>
           <div className='text-center mb-12'>
             <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-              我们在做什么？
+              What We Do
             </h2>
-            <p className='text-lg text-semi-color-text-2'>What We Do</p>
           </div>
           <div className='p-8 rounded-3xl bg-semi-color-bg-0 shadow-lg'>
             <Paragraph className='text-lg text-semi-color-text-1 leading-relaxed'>
@@ -97,9 +96,8 @@ const AboutContent = () => {
         <div className='max-w-4xl mx-auto'>
           <div className='text-center mb-12'>
             <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-              核心愿景
+              The Vision
             </h2>
-            <p className='text-lg text-semi-color-text-2'>The Vision</p>
           </div>
           <div className='relative p-10 rounded-3xl bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-cyan-500/10 border border-semi-color-border'>
             <div className='absolute top-4 left-4 text-6xl text-semi-color-text-3 opacity-20'>"</div>
@@ -118,9 +116,8 @@ const AboutContent = () => {
         <div className='max-w-5xl mx-auto'>
           <div className='text-center mb-16'>
             <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-              为什么选择我们？
+              Why EZmodel
             </h2>
-            <p className='text-lg text-semi-color-text-2'>Why EZmodel</p>
           </div>
           
           <div className='grid md:grid-cols-2 gap-12 items-center'>
@@ -148,9 +145,8 @@ const AboutContent = () => {
         <div className='max-w-5xl mx-auto'>
           <div className='text-center mb-16'>
             <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-              技术承诺
+              Our Commitment
             </h2>
-            <p className='text-lg text-semi-color-text-2'>Our Commitment</p>
           </div>
           
           <div className='grid md:grid-cols-3 gap-6'>
@@ -177,16 +173,16 @@ const AboutContent = () => {
       <section className='py-20 px-4 ez-cta-section'>
         <div className='max-w-4xl mx-auto text-center'>
           <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-6'>
-            准备好开始了吗？
+            Ready to get started?
           </h2>
           <p className='text-lg text-semi-color-text-2 mb-8'>
-            立即注册，开启您的 AI 之旅
+            Register now to start your AI journey
           </p>
           <a
             href='/register'
             className='inline-block px-10 py-4 rounded-full text-lg font-semibold text-white ez-cta-btn transition-all duration-300 hover:scale-105'
           >
-            免费开始使用
+            Start Now
           </a>
         </div>
       </section>
