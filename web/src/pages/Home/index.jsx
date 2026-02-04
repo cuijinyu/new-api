@@ -403,43 +403,6 @@ const Home = () => {
             </div>
           </section>
 
-          {/* ========== 为什么选择我们 ========== */}
-          <section className='py-20 px-4 bg-semi-color-bg-1'>
-            <div className='max-w-6xl mx-auto'>
-              {/* 标题区域 */}
-              <div className='text-center mb-16'>
-                <h2 className='text-3xl md:text-4xl font-bold text-semi-color-text-0 mb-4'>
-                  {t('为什么选择我们?')}
-                </h2>
-                <p className='text-semi-color-text-2 text-lg'>
-                  Why EZmodel
-                </p>
-              </div>
-
-              {/* 特性列表 - 图标统一在左侧 */}
-              <div className='space-y-12 max-w-3xl mx-auto'>
-                <div className='flex gap-6'>
-                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center'>
-                    <IconRefresh size='extra-large' className='text-orange-500' />
-                  </div>
-                  <div>
-                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('智能切换')}</h4>
-                    <p className='text-semi-color-text-2 leading-relaxed'>{t('自动负载均衡，故障无感切换')}</p>
-                  </div>
-                </div>
-                
-                <div className='flex gap-6'>
-                  <div className='flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 flex items-center justify-center'>
-                    <IconLineChartStroked size='extra-large' className='text-sky-500' />
-                  </div>
-                  <div>
-                    <h4 className='text-xl font-semibold text-semi-color-text-0 mb-2'>{t('透明账单')}</h4>
-                    <p className='text-semi-color-text-2 leading-relaxed'>{t('详细的用量统计与成本分析')}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
 
 
           {/* ========== CTA Section ========== */}
