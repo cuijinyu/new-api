@@ -128,7 +128,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
-		preConsumedQuota = int(float64(preConsumedTokens) * ratio)
+		// Claude 200K 预扣费：使用高倍率预扣以避免预扣不足
+		claudeInputMult, _ := ratio_setting.GetClaude200KMultipliers(info.OriginModelName, promptTokens)
+		preConsumedQuota = int(float64(preConsumedTokens) * ratio * claudeInputMult)
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio

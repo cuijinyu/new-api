@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/shopspring/decimal"
@@ -297,6 +298,10 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	var audioInputQuota decimal.Decimal
 	var audioInputPrice float64
+
+	// Claude 200K 分段计费变量
+	var claudeInputMult, claudeOutputMult float64 = 1.0, 1.0
+	var totalInputForClaude int
 	logger.LogInfo(ctx, fmt.Sprintf("dCacheTokens: %s, dCacheRatio: %s, cachedTokensWithRatio: %s",
 		dCacheTokens.String(),
 		dCacheRatio.String(),
@@ -384,7 +389,20 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
 
-		quotaCalculateDecimal = promptQuota.Add(completionQuota).Mul(ratio)
+		// Claude 200K token 分段计费：当总输入 tokens 超过 200K 时，输入倍率 x2，输出倍率 x1.5
+		// 对于 Anthropic 频道：input_tokens 不包含缓存，总输入 = promptTokens + cacheTokens
+		// 对于其他频道（如 OpenRouter 转发 Claude）：promptTokens 已包含缓存
+		totalInputForClaude = promptTokens + cacheTokens
+		claudeInputMult, claudeOutputMult = ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
+		if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
+			dInputMult := decimal.NewFromFloat(claudeInputMult)
+			dOutputMult := decimal.NewFromFloat(claudeOutputMult)
+			quotaCalculateDecimal = promptQuota.Mul(ratio).Mul(dInputMult).
+				Add(completionQuota.Mul(ratio).Mul(dOutputMult))
+			extraContent += fmt.Sprintf("Claude >200K 倍率：输入 x%.1f，输出 x%.1f", claudeInputMult, claudeOutputMult)
+		} else {
+			quotaCalculateDecimal = promptQuota.Add(completionQuota).Mul(ratio)
+		}
 
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
@@ -500,6 +518,12 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if !dImageGenerationCallQuota.IsZero() {
 		other["image_generation_call"] = true
 		other["image_generation_call_price"] = imageGenerationCallPrice
+	}
+	if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
+		other["claude_200k"] = true
+		other["claude_200k_input_multiplier"] = claudeInputMult
+		other["claude_200k_output_multiplier"] = claudeOutputMult
+		other["claude_200k_total_input_tokens"] = totalInputForClaude
 	}
 	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
 		other["tiered_pricing"] = true

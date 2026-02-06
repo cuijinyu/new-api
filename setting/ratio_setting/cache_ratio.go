@@ -57,6 +57,8 @@ var defaultCacheRatio = map[string]float64{
 	"claude-sonnet-4-5-20250929-thinking": 0.1,
 	"claude-opus-4-5-20251101":            0.1,
 	"claude-opus-4-5-20251101-thinking":   0.1,
+	"claude-opus-4-6-20260120":            0.1,
+	"claude-opus-4-6-20260120-thinking":   0.1,
 	"grok-2-1212":                         0.25,
 	"grok-2-vision-1212":                  0.25,
 	"grok-2":                              0.25,
@@ -91,6 +93,8 @@ var defaultCreateCacheRatio = map[string]float64{
 	"claude-sonnet-4-5-20250929-thinking": 1.25,
 	"claude-opus-4-5-20251101":            1.25,
 	"claude-opus-4-5-20251101-thinking":   1.25,
+	"claude-opus-4-6-20260120":            1.25,
+	"claude-opus-4-6-20260120-thinking":   1.25,
 }
 
 //var defaultCreateCacheRatio = map[string]float64{}

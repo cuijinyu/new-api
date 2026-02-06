@@ -144,6 +144,7 @@ var defaultModelRatio = map[string]float64{
 	"claude-sonnet-4-20250514":                  1.5,
 	"claude-sonnet-4-5-20250929":                1.5,
 	"claude-opus-4-5-20251101":                  2.5,
+	"claude-opus-4-6-20260120":                  2.5,  // $5 / 1M tokens (≤200K), $10 / 1M tokens (>200K) - uses tiered pricing
 	"claude-3-opus-20240229":                    7.5, // $15 / 1M tokens
 	"claude-opus-4-20250514":                    7.5,
 	"claude-opus-4-1-20250805":                  7.5,
@@ -849,4 +850,28 @@ func GetModelRatioOrPrice(model string) (float64, bool, bool) { // price or rati
 		return modelRatio, false, true
 	}
 	return 37.5, false, false
+}
+
+// Claude 200K token 分段计费
+// 当 Claude 模型的 input tokens 超过 200K 时，输入价格翻倍，输出价格 1.5 倍
+// https://docs.anthropic.com/en/docs/about-claude/models
+const (
+	Claude200KThreshold        = 200000 // 200K tokens
+	Claude200KInputMultiplier  = 2.0    // input price x2 when >200K
+	Claude200KOutputMultiplier = 1.5    // output price x1.5 when >200K
+)
+
+// IsClaudeModel 判断是否为 Claude 模型
+func IsClaudeModel(name string) bool {
+	return strings.Contains(strings.ToLower(name), "claude")
+}
+
+// GetClaude200KMultipliers 获取 Claude 模型在超过 200K tokens 时的输入/输出倍率
+// totalInputTokens: 总输入 tokens（包括 cache tokens）
+// 返回: inputMultiplier, outputMultiplier（如果不需要特殊倍率则都返回 1.0）
+func GetClaude200KMultipliers(modelName string, totalInputTokens int) (inputMultiplier float64, outputMultiplier float64) {
+	if !IsClaudeModel(modelName) || totalInputTokens <= Claude200KThreshold {
+		return 1.0, 1.0
+	}
+	return Claude200KInputMultiplier, Claude200KOutputMultiplier
 }
