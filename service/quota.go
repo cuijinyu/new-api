@@ -269,18 +269,30 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		promptTokens -= cacheCreationTokens
 	}
 
+	// Claude 200K token 分段计费：当总输入 tokens 超过 200K 时，输入倍率 x2，输出倍率 x1.5
+	// Claude 原生 API 的 input_tokens 不包含 cache_read 和 cache_creation，
+	// 因此总输入 = promptTokens + cacheTokens + cacheCreationTokens
+	totalInputForClaude := promptTokens + cacheTokens + cacheCreationTokens
+	claudeInputMult, claudeOutputMult := ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
+
 	calculateQuota := 0.0
 	if !relayInfo.PriceData.UsePrice {
-		calculateQuota = float64(promptTokens)
-		calculateQuota += float64(cacheTokens) * cacheRatio
-		calculateQuota += float64(cacheCreationTokens5m) * cacheCreationRatio5m
-		calculateQuota += float64(cacheCreationTokens1h) * cacheCreationRatio1h
+		promptQuota := float64(promptTokens)
+		promptQuota += float64(cacheTokens) * cacheRatio
+		promptQuota += float64(cacheCreationTokens5m) * cacheCreationRatio5m
+		promptQuota += float64(cacheCreationTokens1h) * cacheCreationRatio1h
 		remainingCacheCreationTokens := cacheCreationTokens - cacheCreationTokens5m - cacheCreationTokens1h
 		if remainingCacheCreationTokens > 0 {
-			calculateQuota += float64(remainingCacheCreationTokens) * cacheCreationRatio
+			promptQuota += float64(remainingCacheCreationTokens) * cacheCreationRatio
 		}
-		calculateQuota += float64(completionTokens) * completionRatio
-		calculateQuota = calculateQuota * groupRatio * modelRatio
+		completionQuota := float64(completionTokens) * completionRatio
+
+		if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
+			calculateQuota = promptQuota*modelRatio*groupRatio*claudeInputMult +
+				completionQuota*modelRatio*groupRatio*claudeOutputMult
+		} else {
+			calculateQuota = (promptQuota + completionQuota) * groupRatio * modelRatio
+		}
 	} else {
 		calculateQuota = modelPrice * common.QuotaPerUnit * groupRatio
 	}
@@ -336,6 +348,12 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		cacheCreationTokens5m, cacheCreationRatio5m,
 		cacheCreationTokens1h, cacheCreationRatio1h,
 		modelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
+	if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
+		other["claude_200k"] = true
+		other["claude_200k_input_multiplier"] = claudeInputMult
+		other["claude_200k_output_multiplier"] = claudeOutputMult
+		other["claude_200k_total_input_tokens"] = totalInputForClaude
+	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     promptTokens,

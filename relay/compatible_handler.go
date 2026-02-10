@@ -390,9 +390,11 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
 
 		// Claude 200K token 分段计费：当总输入 tokens 超过 200K 时，输入倍率 x2，输出倍率 x1.5
-		// 对于 Anthropic 频道：input_tokens 不包含缓存，总输入 = promptTokens + cacheTokens
-		// 对于其他频道（如 OpenRouter 转发 Claude）：promptTokens 已包含缓存
-		totalInputForClaude = promptTokens + cacheTokens
+		// 对于 Anthropic 频道：input_tokens 不包含 cache_read 和 cache_creation，
+		//   总输入 = promptTokens + cacheTokens + cachedCreationTokens
+		// 对于其他频道（如 OpenRouter 转发 Claude）：promptTokens 已包含缓存，
+		//   但 cachedCreationTokens 仍需额外加上
+		totalInputForClaude = promptTokens + cacheTokens + cachedCreationTokens
 		claudeInputMult, claudeOutputMult = ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
 		if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
 			dInputMult := decimal.NewFromFloat(claudeInputMult)
