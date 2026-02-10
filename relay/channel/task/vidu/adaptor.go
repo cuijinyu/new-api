@@ -37,6 +37,7 @@ type requestPayload struct {
 	Bgm               bool     `json:"bgm,omitempty"`
 	Payload           string   `json:"payload,omitempty"`
 	CallbackUrl       string   `json:"callback_url,omitempty"`
+	Moderation        string   `json:"moderation,omitempty"`
 }
 
 type responsePayload struct {
