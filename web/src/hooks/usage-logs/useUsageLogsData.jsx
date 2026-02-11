@@ -441,6 +441,10 @@ export const useLogsData = () => {
             other.cache_creation_ratio_5m || other.cache_creation_ratio || 1.0,
             other.cache_creation_tokens_1h || 0,
             other.cache_creation_ratio_1h || other.cache_creation_ratio || 1.0,
+            other.claude_200k || false,
+            other.claude_200k_input_multiplier || 1.0,
+            other.claude_200k_output_multiplier || 1.0,
+            other.claude_200k_total_input_tokens || 0,
           );
         } else {
           content = renderModelPrice(
