@@ -95,6 +95,8 @@ var defaultCreateCacheRatio = map[string]float64{
 	"claude-opus-4-5-20251101-thinking":   1.25,
 	"claude-opus-4-6-20260120":            1.25,
 	"claude-opus-4-6-20260120-thinking":   1.25,
+	"MiniMax-M2.5":                        1.25,
+	"MiniMax-M2.5-lightning":              1.25,
 }
 
 //var defaultCreateCacheRatio = map[string]float64{}
