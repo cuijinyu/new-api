@@ -24,7 +24,7 @@ jobs:
       - name: Generate image tag
         id: tag
         run: |
-          TAG=$(date +%Y%m%d%H%M%S)
+          TAG=$(TZ='Asia/Shanghai' date +%Y%m%d%H%M%S)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
