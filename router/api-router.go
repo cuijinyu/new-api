@@ -232,6 +232,16 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 
+		invoiceRoute := apiRouter.Group("/invoice")
+		invoiceRoute.Use(middleware.AdminAuth())
+		{
+			invoiceRoute.POST("/generate", controller.GenerateInvoice)
+			invoiceRoute.GET("/", controller.GetAllInvoices)
+			invoiceRoute.GET("/:id", controller.GetInvoice)
+			invoiceRoute.DELETE("/:id", controller.DeleteInvoice)
+			invoiceRoute.GET("/:id/export", controller.ExportInvoiceCSV)
+		}
+
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())
 		{
