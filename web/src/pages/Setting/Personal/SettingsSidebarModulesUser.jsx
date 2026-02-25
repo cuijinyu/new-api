@@ -106,6 +106,7 @@ export default function SettingsSidebarModulesUser() {
         models: isSidebarModuleAllowed('admin', 'models'),
         redemption: isSidebarModuleAllowed('admin', 'redemption'),
         user: isSidebarModuleAllowed('admin', 'user'),
+        invoice: isSidebarModuleAllowed('admin', 'invoice'),
         setting: isSidebarModuleAllowed('admin', 'setting'),
       };
     }
@@ -328,6 +329,11 @@ export default function SettingsSidebarModulesUser() {
           description: t('兑换码生成管理'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
+        {
+          key: 'invoice',
+          title: t('账单管理'),
+          description: t('用户账单生成管理'),
+        },
         {
           key: 'setting',
           title: t('系统设置'),
