@@ -26,7 +26,6 @@ import { ITEMS_PER_PAGE } from '../../constants';
 import { DATE_RANGE_PRESETS } from '../../constants/console.constants';
 
 const { Text } = Typography;
-
 const InvoicePage = () => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
