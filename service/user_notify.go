@@ -15,6 +15,14 @@ import (
 )
 
 func NotifyRootUser(t string, subject string, content string) {
+	user := model.GetRootUser().ToBaseUser()
+	err := NotifyUser(user.Id, user.Email, user.GetSetting(), dto.NewNotify(t, subject, content, nil))
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to notify admin user: %s", err.Error()))
+	}
+}
+
+func NotifyAdminUsers(t string, subject string, content string) {
 	users := model.GetAdminUser()
 	for _, user := range users {
 		baesUser := user.ToBaseUser()
