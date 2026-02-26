@@ -179,7 +179,7 @@ const FooterBar = () => {
         <div className='flex flex-col md:flex-row items-center justify-between w-full max-w-[1110px] gap-6'>
           <div className='flex flex-wrap items-center gap-2'>
             <Typography.Text className='text-sm !text-semi-color-text-1'>
-              © {currentYear} {systemName}. {t('版权所有')}
+              © {currentYear} SILICON SPARK TECHNOLOGY LIMITED. {t('版权所有')}
             </Typography.Text>
           </div>
         </div>
