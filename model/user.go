@@ -834,6 +834,11 @@ func GetRootUser() (user *User) {
 	return user
 }
 
+func GetAdminUser() (user []*User) {
+	DB.Where("role = ?", common.RoleAdminUser).First(&user)
+	return user
+}
+
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
 	if common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
