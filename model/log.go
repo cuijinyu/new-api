@@ -102,7 +102,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	username := c.GetString("username")
 	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
-	needRecordIp := false
+	needRecordIp := true
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
 		if settingMap.RecordIpLog {
 			needRecordIp = true
@@ -161,7 +161,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	username := c.GetString("username")
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
-	needRecordIp := false
+	needRecordIp := true
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
 		if settingMap.RecordIpLog {
 			needRecordIp = true
