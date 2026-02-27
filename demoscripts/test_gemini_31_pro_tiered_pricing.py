@@ -4,6 +4,7 @@ Gemini 3.1 Pro 分段计费（Tiered Pricing）测试脚本
 验证目标：
 - 验证 gemini-3.1-pro 模型的分段计费配置是否正确加载
 - 验证不同 token 区间是否应用正确的价格
+- 验证缓存 token（cachedContentTokenCount）是否正确返回并按 cache_hit_price 计价
 - 通过日志验证实际计费是否正确
 
 分段计费配置（参考官方定价）：
@@ -39,6 +40,9 @@ Gemini 3.1 Pro 分段计费（Tiered Pricing）测试脚本
 
     完整测试（包括长上下文）：
     python test_gemini_31_pro_tiered_pricing.py --url http://localhost:3000 --key sk-xxx --full
+
+    仅测试缓存 token 计费：
+    python test_gemini_31_pro_tiered_pricing.py --url http://localhost:3000 --key sk-xxx --cache
 
 注意事项：
 1. 确保在系统设置中已配置 gemini-3.1-pro 的分段计费
@@ -124,6 +128,7 @@ class TierConfig:
     max_tokens_k: int  # 最大 token 数（千），-1 表示无上限
     input_price: float  # 输入价格 USD/M tokens
     output_price: float  # 输出价格 USD/M tokens
+    cache_hit_price: float = 0.0  # 缓存命中价格 USD/M tokens
 
     def __str__(self):
         max_str = "unlimited" if self.max_tokens_k == -1 else f"{self.max_tokens_k}K"
@@ -133,8 +138,8 @@ class TierConfig:
 # Gemini 3.1 Pro 的分段计费配置（参考官方定价）
 TIERED_CONFIG = {
     "gemini-3.1-pro": [
-        TierConfig(0, 200, 2.0, 12.0),
-        TierConfig(200, -1, 4.0, 18.0),
+        TierConfig(0, 200, 2.0, 12.0, cache_hit_price=0.5),
+        TierConfig(200, -1, 4.0, 18.0, cache_hit_price=1.0),
     ]
 }
 
@@ -155,14 +160,20 @@ def get_expected_tier(model: str, input_tokens_k: float) -> Optional[TierConfig]
 def calculate_expected_cost(
     input_tokens: int,
     output_tokens: int,
-    tier: TierConfig
+    tier: TierConfig,
+    cache_tokens: int = 0
 ) -> float:
-    """计算预期费用（USD）"""
-    # 计算费用（价格单位是 USD/M tokens）
-    input_cost = (input_tokens / 1_000_000) * tier.input_price
-    output_cost = (output_tokens / 1_000_000) * tier.output_price
+    """计算预期费用（USD）
 
-    return input_cost + output_cost
+    input_tokens 应为实际输入 tokens（已减去 cache_tokens）。
+    cache_tokens 按 cache_hit_price 单独计价。
+    """
+    actual_input = max(input_tokens - cache_tokens, 0)
+    input_cost = (actual_input / 1_000_000) * tier.input_price
+    output_cost = (output_tokens / 1_000_000) * tier.output_price
+    cache_cost = (cache_tokens / 1_000_000) * tier.cache_hit_price
+
+    return input_cost + output_cost + cache_cost
 
 
 def gemini_chat_completion(
@@ -174,17 +185,15 @@ def gemini_chat_completion(
     timeout: int = 120
 ) -> Optional[Dict[str, Any]]:
     """
-    发送 Gemini chat completion 请求
+    发送 Gemini chat completion 流式请求，聚合结果后返回与非流式相同的结构。
 
-    Args:
-        base_url: API 基础 URL
-        api_key: API 密钥
-        model: 模型名称
-        contents: Gemini 格式的 contents
-        generation_config: 生成配置
-        timeout: 超时时间
+    返回格式与非流式一致：
+    {
+        "candidates": [{"content": {"parts": [{"text": "..."}]}}],
+        "usageMetadata": { ... }
+    }
     """
-    url = f"{base_url}/v1beta/models/{model}:generateContent"
+    url = f"{base_url}/v1beta/models/{model}:streamGenerateContent?alt=sse"
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -199,14 +208,48 @@ def gemini_chat_completion(
         payload["generationConfig"] = generation_config
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        response = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
+        if response.status_code != 200:
             print_fail(f"Request failed: {response.status_code}")
             print(f"Response: {response.text[:500]}")
             return None
+
+        collected_text = ""
+        usage_metadata = {}
+        chunk_count = 0
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if not line.startswith("data: "):
+                continue
+            data_str = line[len("data: "):]
+            if data_str.strip() == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_str)
+                chunk_count += 1
+            except json.JSONDecodeError:
+                continue
+
+            # 拼接文本
+            for candidate in chunk.get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    if "text" in part:
+                        collected_text += part["text"]
+
+            # usageMetadata 通常在最后一个 chunk 中包含完整信息
+            if "usageMetadata" in chunk:
+                usage_metadata = chunk["usageMetadata"]
+
+        print_info(f"流式响应共收到 {chunk_count} 个 chunk")
+
+        return {
+            "candidates": [{"content": {"parts": [{"text": collected_text}]}}],
+            "usageMetadata": usage_metadata,
+        }
+
     except requests.exceptions.Timeout:
         print_fail(f"Request timeout after {timeout}s")
         return None
@@ -317,10 +360,12 @@ def test_short_context(base_url: str, api_key: str, model: str) -> bool:
         prompt_tokens = usage_metadata.get('promptTokenCount', 0)
         candidates_tokens = usage_metadata.get('candidatesTokenCount', 0)
         total_tokens = usage_metadata.get('totalTokenCount', 0)
+        cached_tokens = usage_metadata.get('cachedContentTokenCount', 0)
 
         print_success(f"请求成功！")
         print_info(f"输入 tokens: {prompt_tokens}")
         print_info(f"输出 tokens: {candidates_tokens}")
+        print_info(f"缓存 tokens: {cached_tokens}")
         print_info(f"总计 tokens: {total_tokens}")
 
         # 验证使用的价格区间
@@ -331,9 +376,11 @@ def test_short_context(base_url: str, api_key: str, model: str) -> bool:
             print_success(f"预期价格区间: {expected_tier}")
             print_info(f"输入价格: ${expected_tier.input_price}/M tokens")
             print_info(f"输出价格: ${expected_tier.output_price}/M tokens")
+            print_info(f"缓存命中价格: ${expected_tier.cache_hit_price}/M tokens")
 
             expected_cost = calculate_expected_cost(
-                prompt_tokens, candidates_tokens, expected_tier
+                prompt_tokens, candidates_tokens, expected_tier,
+                cache_tokens=cached_tokens
             )
             print_info(f"预期费用: ${expected_cost:.6f} USD")
 
@@ -388,10 +435,12 @@ def test_long_context(base_url: str, api_key: str, model: str) -> bool:
         prompt_tokens = usage_metadata.get('promptTokenCount', 0)
         candidates_tokens = usage_metadata.get('candidatesTokenCount', 0)
         total_tokens = usage_metadata.get('totalTokenCount', 0)
+        cached_tokens = usage_metadata.get('cachedContentTokenCount', 0)
 
         print_success(f"请求成功！")
         print_info(f"输入 tokens: {prompt_tokens}")
         print_info(f"输出 tokens: {candidates_tokens}")
+        print_info(f"缓存 tokens: {cached_tokens}")
         print_info(f"总计 tokens: {total_tokens}")
 
         # 验证使用的价格区间
@@ -402,9 +451,11 @@ def test_long_context(base_url: str, api_key: str, model: str) -> bool:
             print_success(f"预期价格区间: {expected_tier}")
             print_info(f"输入价格: ${expected_tier.input_price}/M tokens")
             print_info(f"输出价格: ${expected_tier.output_price}/M tokens")
+            print_info(f"缓存命中价格: ${expected_tier.cache_hit_price}/M tokens")
 
             expected_cost = calculate_expected_cost(
-                prompt_tokens, candidates_tokens, expected_tier
+                prompt_tokens, candidates_tokens, expected_tier,
+                cache_tokens=cached_tokens
             )
             print_info(f"预期费用: ${expected_cost:.6f} USD")
 
@@ -458,10 +509,12 @@ def test_boundary_case(base_url: str, api_key: str, model: str) -> bool:
         prompt_tokens = usage_metadata.get('promptTokenCount', 0)
         candidates_tokens = usage_metadata.get('candidatesTokenCount', 0)
         total_tokens = usage_metadata.get('totalTokenCount', 0)
+        cached_tokens = usage_metadata.get('cachedContentTokenCount', 0)
 
         print_success(f"请求成功！")
         print_info(f"输入 tokens: {prompt_tokens} ({prompt_tokens/1000:.1f}K)")
         print_info(f"输出 tokens: {candidates_tokens}")
+        print_info(f"缓存 tokens: {cached_tokens}")
         print_info(f"总计 tokens: {total_tokens}")
 
         # 验证使用的价格区间
@@ -473,9 +526,11 @@ def test_boundary_case(base_url: str, api_key: str, model: str) -> bool:
             print_success(f"预期价格区间: {expected_tier} ({tier_range})")
             print_info(f"输入价格: ${expected_tier.input_price}/M tokens")
             print_info(f"输出价格: ${expected_tier.output_price}/M tokens")
+            print_info(f"缓存命中价格: ${expected_tier.cache_hit_price}/M tokens")
 
             expected_cost = calculate_expected_cost(
-                prompt_tokens, candidates_tokens, expected_tier
+                prompt_tokens, candidates_tokens, expected_tier,
+                cache_tokens=cached_tokens
             )
             print_info(f"预期费用: ${expected_cost:.6f} USD")
 
@@ -490,6 +545,114 @@ def test_boundary_case(base_url: str, api_key: str, model: str) -> bool:
         return False
 
 
+def test_cache_tokens(base_url: str, api_key: str, model: str) -> bool:
+    """测试缓存 token 计费
+
+    通过发送两轮相同的上下文来触发 Gemini 的隐式缓存（implicit caching），
+    验证第二次请求的 cachedContentTokenCount 是否正确返回，
+    以及缓存 token 是否按 cache_hit_price 单独计价。
+    """
+    print_section("测试缓存 token 计费（Cache Tokens）")
+
+    # 使用足够长的文本触发隐式缓存（Gemini 隐式缓存要求 ≥ 32K tokens）
+    input_text = generate_long_text(40000)
+    base_contents = [
+        {
+            "role": "user",
+            "parts": [{"text": f"请仔细阅读以下内容：\n\n{input_text}"}]
+        },
+        {
+            "role": "model",
+            "parts": [{"text": "好的，我已经仔细阅读了以上全部内容。请问您有什么问题？"}]
+        },
+    ]
+
+    generation_config = {
+        "maxOutputTokens": 200,
+        "temperature": 0.7
+    }
+
+    # --- 第一轮请求：建立缓存 ---
+    print_info("第一轮请求：建立缓存...")
+    contents_round1 = base_contents + [
+        {"role": "user", "parts": [{"text": "请用一句话总结上面的内容。"}]}
+    ]
+
+    resp1 = gemini_chat_completion(
+        base_url, api_key, model, contents_round1, generation_config
+    )
+    if not resp1:
+        print_fail("第一轮请求失败")
+        return False
+
+    usage1 = resp1.get('usageMetadata', {})
+    prompt1 = usage1.get('promptTokenCount', 0)
+    cached1 = usage1.get('cachedContentTokenCount', 0)
+    candidates1 = usage1.get('candidatesTokenCount', 0)
+    print_success("第一轮请求成功")
+    print_info(f"  输入 tokens: {prompt1}, 缓存 tokens: {cached1}, 输出 tokens: {candidates1}")
+
+    # --- 等待缓存生效 ---
+    print_info("等待 3 秒让缓存生效...")
+    time.sleep(3)
+
+    # --- 第二轮请求：应命中缓存 ---
+    print_info("第二轮请求：验证缓存命中...")
+    contents_round2 = base_contents + [
+        {"role": "user", "parts": [{"text": "请列出上面内容中提到的关键数字。"}]}
+    ]
+
+    resp2 = gemini_chat_completion(
+        base_url, api_key, model, contents_round2, generation_config
+    )
+    if not resp2:
+        print_fail("第二轮请求失败")
+        return False
+
+    usage2 = resp2.get('usageMetadata', {})
+    prompt2 = usage2.get('promptTokenCount', 0)
+    cached2 = usage2.get('cachedContentTokenCount', 0)
+    candidates2 = usage2.get('candidatesTokenCount', 0)
+    total2 = usage2.get('totalTokenCount', 0)
+    print_success("第二轮请求成功")
+    print_info(f"  输入 tokens: {prompt2}, 缓存 tokens: {cached2}, 输出 tokens: {candidates2}, 总计: {total2}")
+
+    # --- 验证缓存命中 ---
+    passed = True
+    if cached2 > 0:
+        print_success(f"缓存命中！cachedContentTokenCount = {cached2}")
+        actual_input = prompt2 - cached2
+        print_info(f"  实际计费输入 tokens: {actual_input} (prompt {prompt2} - cache {cached2})")
+
+        input_tokens_k = prompt2 / 1000
+        expected_tier = get_expected_tier(model, input_tokens_k)
+        if expected_tier:
+            expected_cost = calculate_expected_cost(
+                prompt2, candidates2, expected_tier, cache_tokens=cached2
+            )
+            cost_no_cache = calculate_expected_cost(
+                prompt2, candidates2, expected_tier, cache_tokens=0
+            )
+            savings = cost_no_cache - expected_cost
+            print_info(f"  预期费用（含缓存优惠）: ${expected_cost:.6f} USD")
+            print_info(f"  无缓存费用: ${cost_no_cache:.6f} USD")
+            print_info(f"  缓存节省: ${savings:.6f} USD ({savings/cost_no_cache*100:.1f}%)" if cost_no_cache > 0 else "")
+    else:
+        print_warning("第二轮请求未命中缓存（cachedContentTokenCount = 0）")
+        print_warning("这可能是因为：隐式缓存需要更大的上下文、或模型/服务端未启用缓存")
+        passed = False
+
+    # 打印响应内容片段
+    if 'candidates' in resp2 and len(resp2['candidates']) > 0:
+        content = resp2['candidates'][0].get('content', {})
+        if 'parts' in content and len(content['parts']) > 0:
+            text = content['parts'][0].get('text', '')
+            print(f"\n{Colors.CYAN}第二轮响应内容（前200字符）:{Colors.ENDC}")
+            print(f"{text[:200]}...")
+
+    return passed
+
+
 def print_pricing_summary(model: str):
     """打印定价概要"""
     print_header(f"{model} 分段计费概要")
@@ -501,15 +664,15 @@ def print_pricing_summary(model: str):
     tiers = TIERED_CONFIG[model]
 
     # 打印定价表格
-    columns = ["区间 (K tokens)", "输入价格 ($/M)", "输出价格 ($/M)"]
-    widths = [20, 18, 18]
+    columns = ["区间 (K tokens)", "输入价格 ($/M)", "输出价格 ($/M)", "缓存价格 ($/M)"]
+    widths = [20, 18, 18, 18]
     print_table_header(columns, widths)
 
     for tier in tiers:
         max_str = "∞" if tier.max_tokens_k == -1 else f"{tier.max_tokens_k}K"
         range_str = f"{tier.min_tokens_k}K - {max_str}"
         print_table_row(
-            [range_str, f"${tier.input_price}", f"${tier.output_price}"],
+            [range_str, f"${tier.input_price}", f"${tier.output_price}", f"${tier.cache_hit_price}"],
             widths
         )
     print("|" + "-" * (sum(widths) + len(widths) * 3 + 2) + "|")
@@ -535,9 +698,10 @@ def main():
     )
     parser.add_argument('--url', required=True, help='API 基础 URL (例如: http://localhost:3000)')
     parser.add_argument('--key', required=True, help='API 密钥')
-    parser.add_argument('--model', default='gemini-3.1-pro', help='模型名称 (默认: gemini-3.1-pro)')
+    parser.add_argument('--model', default='gemini-3.1-pro-preview', help='模型名称 (默认: gemini-3.1-pro)')
     parser.add_argument('--full', action='store_true', help='运行完整测试（包括长上下文测试）')
     parser.add_argument('--boundary', action='store_true', help='仅测试边界情况')
+    parser.add_argument('--cache', action='store_true', help='仅测试缓存 token 计费')
 
     args = parser.parse_args()
 
@@ -552,12 +716,18 @@ def main():
     # 运行测试
     results = []
 
-    if args.boundary:
+    if args.cache:
+        # 仅测试缓存
+        results.append(("缓存 token 测试", test_cache_tokens(args.url, args.key, args.model)))
+    elif args.boundary:
         # 仅测试边界
         results.append(("边界测试", test_boundary_case(args.url, args.key, args.model)))
     else:
         # 短上下文测试
         results.append(("短上下文测试", test_short_context(args.url, args.key, args.model)))
+
+        # 缓存 token 测试
+        results.append(("缓存 token 测试", test_cache_tokens(args.url, args.key, args.model)))
 
         # 边界测试
         results.append(("边界测试", test_boundary_case(args.url, args.key, args.model)))
