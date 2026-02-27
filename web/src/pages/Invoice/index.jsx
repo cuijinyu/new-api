@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Table,
@@ -45,6 +45,39 @@ const InvoicePage = () => {
   const [detailInvoice, setDetailInvoice] = useState(null);
   const [detailItems, setDetailItems] = useState([]);
 
+  const [userOptions, setUserOptions] = useState([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const searchTimerRef = useRef(null);
+
+  const handleUserSearch = useCallback(async (keyword) => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    if (!keyword) {
+      setUserOptions([]);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      setUserSearchLoading(true);
+      try {
+        const res = await API.get(`/api/user/search?keyword=${encodeURIComponent(keyword)}&p=1&page_size=20`);
+        const { success, data } = res.data;
+        if (success && data.items) {
+          setUserOptions(
+            data.items.map((user) => ({
+              value: user.id,
+              label: `${user.username} (ID: ${user.id})`,
+            }))
+          );
+        }
+      } catch {
+        setUserOptions([]);
+      } finally {
+        setUserSearchLoading(false);
+      }
+    }, 300);
+  }, []);
+
   const loadInvoices = useCallback(async () => {
     setLoading(true);
     try {
@@ -89,7 +122,7 @@ const InvoicePage = () => {
 
   const handleGenerate = async (values) => {
     if (!values.user_id) {
-      showError(t('请输入用户 ID'));
+      showError(t('请选择用户'));
       return;
     }
     if (!values.dateRange || values.dateRange.length !== 2) {
@@ -100,7 +133,7 @@ const InvoicePage = () => {
     setGenerating(true);
     try {
       const res = await API.post('/api/invoice/generate', {
-        user_id: parseInt(values.user_id),
+        user_id: values.user_id,
         start_timestamp: Math.floor(new Date(values.dateRange[0]).getTime() / 1000),
         end_timestamp: Math.floor(new Date(values.dateRange[1]).getTime() / 1000),
         note: values.note || '',
@@ -109,6 +142,7 @@ const InvoicePage = () => {
       if (success) {
         showSuccess(t('账单生成成功'));
         setGenerateModalVisible(false);
+        setUserOptions([]);
         loadInvoices();
       } else {
         showError(message);
@@ -367,16 +401,26 @@ const InvoicePage = () => {
       <Modal
         title={t('生成账单')}
         visible={generateModalVisible}
-        onCancel={() => setGenerateModalVisible(false)}
+        onCancel={() => {
+          setGenerateModalVisible(false);
+          setUserOptions([]);
+        }}
         footer={null}
         width={520}
       >
         <Form onSubmit={handleGenerate} labelPosition='left' labelWidth={100}>
-          <Form.Input
+          <Form.Select
             field='user_id'
-            label={t('用户 ID')}
-            placeholder={t('输入用户 ID')}
-            rules={[{ required: true, message: t('请输入用户 ID') }]}
+            label={t('用户')}
+            placeholder={t('输入用户名或 ID 搜索')}
+            style={{ width: '100%' }}
+            filter
+            remote
+            onSearch={handleUserSearch}
+            optionList={userOptions}
+            loading={userSearchLoading}
+            showClear
+            rules={[{ required: true, message: t('请选择用户') }]}
           />
           <Form.DatePicker
             field='dateRange'
