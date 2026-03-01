@@ -29,13 +29,14 @@
 | `kling-v2-5-turbo` | Kling V2.5 Turbo | text2video / image2video |
 | `kling-v2-6` | Kling V2.6 | text2video / image2video |
 | `kling-video-o1` | Kling Omni V1 | omni-video |
-| `kling-v3-0` | Kling V3.0（最新） | omni-video |
+| `kling-v3` | Kling V3.0 文生/图生视频 | text2video / image2video |
+| `kling-v3-omni` | Kling V3.0 全能视频（最新） | omni-video |
 | `kling-v2-1-master` | Kling V2.1 Master | text2video / image2video |
 | `kling-v2-master` | Kling V2 Master | text2video / image2video |
 
 ### Kling V3 新特性
 
-`kling-v3-0` 通过 [Omni 全能视频](/kling/omni-video) 端点提供以下新能力：
+`kling-v3-omni` 通过 [Omni 全能视频](/kling/omni-video) 端点提供以下新能力：
 
 - **扩展时长**：3-15 秒（O1 为 3-10 秒）
 - **多镜头叙事 (Multi-shot)**：单次请求生成多个连续镜头
