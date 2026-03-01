@@ -8,7 +8,7 @@ import openai
 # Initialize client
 client = openai.OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 # Basic chat
@@ -40,7 +40,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1',
+  baseURL: 'https://www.ezmodel.cloud/v1',
   dangerouslyAllowBrowser: true
 });
 

@@ -112,7 +112,7 @@ x-api-key: YOUR_API_TOKEN
 ::: code-group
 
 ```bash [cURL]
-curl -X POST https://ezmodel.cloud/v1/messages \
+curl -X POST https://www.ezmodel.cloud/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -H "x-api-key: YOUR_API_TOKEN" \
@@ -192,7 +192,7 @@ console.log(message.content[0].text);
 ### 带系统提示词
 
 ```bash
-curl -X POST https://ezmodel.cloud/v1/messages \
+curl -X POST https://www.ezmodel.cloud/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -H "x-api-key: YOUR_API_TOKEN" \
@@ -228,7 +228,7 @@ with client.messages.stream(
 ### 工具调用
 
 ```bash
-curl -X POST https://ezmodel.cloud/v1/messages \
+curl -X POST https://www.ezmodel.cloud/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
   -H "x-api-key: YOUR_API_TOKEN" \

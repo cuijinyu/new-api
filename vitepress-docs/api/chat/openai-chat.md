@@ -117,7 +117,7 @@ data: [DONE]
 ::: code-group
 
 ```bash [cURL]
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -142,7 +142,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.chat.completions.create(
@@ -163,7 +163,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1'
+  baseURL: 'https://www.ezmodel.cloud/v1'
 });
 
 const response = await openai.chat.completions.create({
@@ -212,7 +212,7 @@ console.log(response.choices[0].message.content);
 ::: code-group
 
 ```bash [cURL]
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -228,7 +228,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 stream = client.chat.completions.create(
@@ -248,7 +248,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1'
+  baseURL: 'https://www.ezmodel.cloud/v1'
 });
 
 const stream = await openai.chat.completions.create({
@@ -270,7 +270,7 @@ for await (const chunk of stream) {
 ::: code-group
 
 ```bash [cURL]
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -304,7 +304,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 tools = [
@@ -378,7 +378,7 @@ print(response.choices[0].message)
 ### JSON 格式响应
 
 ```bash
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{

@@ -61,7 +61,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### 文本生成
 
 ```bash
-curl -X POST "https://ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateContent" \
+curl -X POST "https://www.ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateContent" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -80,7 +80,7 @@ curl -X POST "https://ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateC
 ### 图像生成
 
 ```bash
-curl -X POST "https://ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateContent" \
+curl -X POST "https://www.ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateContent" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

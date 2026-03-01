@@ -53,7 +53,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_KEY",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.images.edit(
@@ -71,7 +71,7 @@ print(response.data[0].url)
 ### cURL
 
 ```bash
-curl https://ezmodel.cloud/v1/images/edits \
+curl https://www.ezmodel.cloud/v1/images/edits \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -F image="@original.png" \
   -F mask="@mask.png" \

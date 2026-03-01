@@ -136,7 +136,7 @@ When `stream=true`, returns streaming data chunks.
 ### Request Example
 
 ```bash
-curl -X POST https://ezmodel.cloud/v1/responses \
+curl -X POST https://www.ezmodel.cloud/v1/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{

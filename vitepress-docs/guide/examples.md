@@ -18,7 +18,7 @@ from openai import OpenAI
 # 初始化客户端
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 # 基础聊天
@@ -39,7 +39,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 stream = client.chat.completions.create(
@@ -60,7 +60,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.images.generate(
@@ -82,7 +82,7 @@ import json
 
 client = OpenAI(
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 tools = [
@@ -130,7 +130,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1',
+  baseURL: 'https://www.ezmodel.cloud/v1',
 });
 
 async function chat() {
@@ -152,7 +152,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1',
+  baseURL: 'https://www.ezmodel.cloud/v1',
 });
 
 async function streamingChat() {
@@ -177,7 +177,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_TOKEN',
-  baseURL: 'https://ezmodel.cloud/v1',
+  baseURL: 'https://www.ezmodel.cloud/v1',
   dangerouslyAllowBrowser: true // 仅用于开发环境
 });
 
@@ -198,7 +198,7 @@ console.log(completion.choices[0].message.content);
 ### 基础聊天
 
 ```bash
-curl https://ezmodel.cloud/v1/chat/completions \
+curl https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -212,7 +212,7 @@ curl https://ezmodel.cloud/v1/chat/completions \
 ### 流式响应
 
 ```bash
-curl https://ezmodel.cloud/v1/chat/completions \
+curl https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -225,7 +225,7 @@ curl https://ezmodel.cloud/v1/chat/completions \
 ### 图像生成
 
 ```bash
-curl https://ezmodel.cloud/v1/images/generations \
+curl https://www.ezmodel.cloud/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -246,7 +246,7 @@ from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     model="gpt-4",
     api_key="YOUR_API_TOKEN",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = llm.invoke("Hello!")
@@ -262,7 +262,7 @@ const model = new ChatOpenAI({
   modelName: "gpt-4",
   openAIApiKey: "YOUR_API_TOKEN",
   configuration: {
-    baseURL: "https://ezmodel.cloud/v1"
+    baseURL: "https://www.ezmodel.cloud/v1"
   }
 });
 

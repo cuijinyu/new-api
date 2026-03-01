@@ -140,7 +140,7 @@ data: [DONE]
 
 #### Request
 ```bash
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -189,7 +189,7 @@ curl -X POST https://ezmodel.cloud/v1/chat/completions \
 
 #### Request
 ```bash
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -222,7 +222,7 @@ data: [DONE]
 
 #### Request
 ```bash
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -295,7 +295,7 @@ curl -X POST https://ezmodel.cloud/v1/chat/completions \
 
 #### Request
 ```bash
-curl -X POST https://ezmodel.cloud/v1/chat/completions \
+curl -X POST https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{

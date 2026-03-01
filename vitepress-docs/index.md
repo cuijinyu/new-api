@@ -88,7 +88,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_KEY",
-    base_url="https://ezmodel.cloud/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.chat.completions.create(
@@ -106,7 +106,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: 'YOUR_API_KEY',
-  baseURL: 'https://ezmodel.cloud/v1'
+  baseURL: 'https://www.ezmodel.cloud/v1'
 });
 
 const response = await openai.chat.completions.create({
@@ -118,7 +118,7 @@ console.log(response.choices[0].message.content);
 ```
 
 ```bash [cURL]
-curl https://ezmodel.cloud/v1/chat/completions \
+curl https://www.ezmodel.cloud/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
