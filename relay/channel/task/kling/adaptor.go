@@ -1343,6 +1343,11 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 		return nil, err
 	}
 
+	// V3 multi_prompt 模式下，上游要求顶层 prompt 不能为空
+	if len(body.MultiPrompt) > 0 && body.Prompt == "" {
+		body.Prompt = body.MultiPrompt[0].Prompt
+	}
+
 	// 只有在非 Omni 端点时，才判断是否为文生视频
 	if currentAction != constant.TaskActionOmniVideo {
 		// 兼容旧版和新版字段，判断是否为文生视频

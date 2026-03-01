@@ -38,7 +38,7 @@ def submit_task(payload, label=""):
     return task_id
 
 
-def poll_task(task_id, timeout=300, interval=10):
+def poll_task(task_id, timeout=600, interval=10):
     """轮询任务状态，返回视频 URL 或 None"""
     url = f"{STATUS_URL}/{task_id}"
     start = time.time()
