@@ -32,7 +32,21 @@ func GenerateVerificationCode(length int) string {
 	return code[:length]
 }
 
+// redisVerifyKey 构造 Redis Key
+func redisVerifyKey(key, purpose string) string {
+	return "verify:" + purpose + ":" + key
+}
+
 func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
+	if RedisEnabled {
+		expiration := time.Duration(VerificationValidMinutes) * time.Minute
+		err := RedisSet(redisVerifyKey(key, purpose), code, expiration)
+		if err != nil {
+			SysError("RegisterVerificationCodeWithKey redis error: " + err.Error())
+		}
+		return
+	}
+	// 降级：内存存储
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap[purpose+key] = verificationValue{
@@ -45,6 +59,15 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 }
 
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
+	if RedisEnabled {
+		val, err := RedisGet(redisVerifyKey(key, purpose))
+		if err != nil {
+			// redis.Nil 表示 key 不存在或已过期
+			return false
+		}
+		return val == code
+	}
+	// 降级：内存校验
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	value, okay := verificationMap[purpose+key]
@@ -56,6 +79,14 @@ func VerifyCodeWithKey(key string, code string, purpose string) bool {
 }
 
 func DeleteKey(key string, purpose string) {
+	if RedisEnabled {
+		err := RedisDel(redisVerifyKey(key, purpose))
+		if err != nil {
+			SysError("DeleteKey redis error: " + err.Error())
+		}
+		return
+	}
+	// 降级：内存删除
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	delete(verificationMap, purpose+key)

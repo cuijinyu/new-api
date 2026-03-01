@@ -37,6 +37,7 @@ type Pricing struct {
 	CompletionRatio        float64                 `json:"completion_ratio"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
+	CreatedTime            int64                   `json:"created_time"`
 	// 分段计费相关字段
 	TieredPricingEnabled bool          `json:"tiered_pricing_enabled,omitempty"` // 是否启用分段计费
 	TieredPricing        []PricingTier `json:"tiered_pricing,omitempty"`         // 分段价格配置
@@ -293,6 +294,7 @@ func updatePricing() {
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
+			pricing.CreatedTime = meta.CreatedTime
 		}
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
@@ -318,6 +320,33 @@ func updatePricing() {
 					CacheHitPrice:   tier.CacheHitPrice,
 					CacheStorePrice: tier.CacheStorePrice,
 				}
+			}
+		} else if ratio_setting.IsClaudeModel(model) && pricing.QuotaType == 0 {
+			// Claude 模型 >200K tokens 时有分段计费，自动生成展示信息
+			baseInputPrice := pricing.ModelRatio * 2   // USD/M tokens
+			baseOutputPrice := baseInputPrice * pricing.CompletionRatio
+			cacheHitPrice := baseInputPrice * 0.1 // Claude 缓存命中为输入价格的 10%
+
+			highInputPrice := baseInputPrice * ratio_setting.Claude200KInputMultiplier
+			highOutputPrice := baseOutputPrice * ratio_setting.Claude200KOutputMultiplier
+			highCacheHitPrice := highInputPrice * 0.1
+
+			pricing.TieredPricingEnabled = true
+			pricing.TieredPricing = []PricingTier{
+				{
+					MinTokens:  0,
+					MaxTokens:  ratio_setting.Claude200KThreshold / 1000, // 转换为千 tokens
+					InputPrice:  baseInputPrice,
+					OutputPrice: baseOutputPrice,
+					CacheHitPrice: cacheHitPrice,
+				},
+				{
+					MinTokens:  ratio_setting.Claude200KThreshold / 1000,
+					MaxTokens:  -1,
+					InputPrice:  highInputPrice,
+					OutputPrice: highOutputPrice,
+					CacheHitPrice: highCacheHitPrice,
+				},
 			}
 		}
 

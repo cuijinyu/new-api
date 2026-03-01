@@ -73,6 +73,7 @@ import {
   Settings,
   CircleUser,
   Package,
+  FileText,
 } from 'lucide-react';
 
 // 获取侧边栏Lucide图标组件
@@ -116,6 +117,8 @@ export function getLucideIcon(key, selected = false) {
       return <Package {...commonProps} color={iconColor} />;
     case 'setting':
       return <Settings {...commonProps} color={iconColor} />;
+    case 'invoice':
+      return <FileText {...commonProps} color={iconColor} />;
     default:
       return <CircleUser {...commonProps} color={iconColor} />;
   }
@@ -1865,6 +1868,10 @@ export function renderClaudeModelPrice(
   cacheCreationRatio5m = 1.0,
   cacheCreationTokens1h = 0,
   cacheCreationRatio1h = 1.0,
+  claude200k = false,
+  claude200kInputMult = 1.0,
+  claude200kOutputMult = 1.0,
+  claude200kTotalInput = 0,
 ) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
@@ -1923,8 +1930,8 @@ export function renderClaudeModelPrice(
       cacheCreationTokens1h * cacheCreationRatio1h;
 
     let price =
-      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
-      (completionTokens / 1000000) * completionRatioPrice * groupRatio;
+      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio * claude200kInputMult +
+      (completionTokens / 1000000) * completionRatioPrice * groupRatio * claude200kOutputMult;
 
     const inputUnitPrice = inputRatioPrice * rate;
     const completionUnitPrice = completionRatioPrice * rate;
@@ -2101,18 +2108,43 @@ export function renderClaudeModelPrice(
               )}
             </p>
           )}
+          {claude200k && (
+            <p>
+              {i18next.t(
+                '超过 200K tokens（总输入: {{totalInput}}），输入价格 x{{inputMult}}，输出价格 x{{outputMult}}',
+                {
+                  totalInput: claude200kTotalInput,
+                  inputMult: claude200kInputMult,
+                  outputMult: claude200kOutputMult,
+                },
+              )}
+            </p>
+          )}
           <p></p>
           <p>
-            {i18next.t(
-              '{{breakdown}} * {{ratioType}} {{ratio}} = {{symbol}}{{total}}',
-              {
-                breakdown: breakdownText,
-                ratioType: ratioLabel,
-                ratio: groupRatio,
-                symbol: symbol,
-                total: (price * rate).toFixed(6),
-              },
-            )}
+            {claude200k
+              ? i18next.t(
+                  '({{breakdown}}) * {{ratioType}} {{ratio}} * 输入x{{inputMult}}/输出x{{outputMult}} = {{symbol}}{{total}}',
+                  {
+                    breakdown: breakdownText,
+                    ratioType: ratioLabel,
+                    ratio: groupRatio,
+                    inputMult: claude200kInputMult,
+                    outputMult: claude200kOutputMult,
+                    symbol: symbol,
+                    total: (price * rate).toFixed(6),
+                  },
+                )
+              : i18next.t(
+                  '{{breakdown}} * {{ratioType}} {{ratio}} = {{symbol}}{{total}}',
+                  {
+                    breakdown: breakdownText,
+                    ratioType: ratioLabel,
+                    ratio: groupRatio,
+                    symbol: symbol,
+                    total: (price * rate).toFixed(6),
+                  },
+                )}
           </p>
           <p>{i18next.t('仅供参考，以实际扣费为准')}</p>
         </article>

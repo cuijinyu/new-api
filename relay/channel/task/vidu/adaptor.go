@@ -32,11 +32,13 @@ type requestPayload struct {
 	Prompt            string   `json:"prompt,omitempty"`
 	Duration          int      `json:"duration,omitempty"`
 	Seed              int      `json:"seed,omitempty"`
+	AspectRatio       string   `json:"aspect_ratio,omitempty"`
 	Resolution        string   `json:"resolution,omitempty"`
 	MovementAmplitude string   `json:"movement_amplitude,omitempty"`
 	Bgm               bool     `json:"bgm,omitempty"`
 	Payload           string   `json:"payload,omitempty"`
 	CallbackUrl       string   `json:"callback_url,omitempty"`
+	Moderation        string   `json:"moderation,omitempty"`
 }
 
 type responsePayload struct {

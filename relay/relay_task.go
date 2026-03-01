@@ -148,6 +148,22 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		taskErr = service.TaskErrorWrapper(err, "build_request_failed", http.StatusInternalServerError)
 		return
 	}
+
+	// 打印请求信息到日志
+	if taskAdaptor, ok := adaptor.(interface {
+		BuildRequestURL(*relaycommon.RelayInfo) (string, error)
+	}); ok {
+		if url, err := taskAdaptor.BuildRequestURL(info); err == nil {
+			logger.LogInfo(c.Request.Context(), fmt.Sprintf("Task request URL: %s", url))
+		}
+	}
+	if requestBody != nil {
+		bodyBytes, _ := io.ReadAll(requestBody)
+		logger.LogInfo(c.Request.Context(), fmt.Sprintf("Task request body: %s", string(bodyBytes)))
+		// 重新创建 io.Reader 供后续使用
+		requestBody = bytes.NewReader(bodyBytes)
+	}
+
 	// do request
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
