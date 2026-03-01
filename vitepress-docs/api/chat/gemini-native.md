@@ -131,14 +131,6 @@ curl -X POST "https://ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateC
 }
 ```
 
-## 支持的模型
-
-| 模型 | 说明 |
-|------|------|
-| gemini-2.0-flash-exp | Gemini 2.0 Flash 实验版，支持图像生成 |
-| gemini-1.5-pro | Gemini 1.5 Pro |
-| gemini-1.5-flash | Gemini 1.5 Flash |
-
 ::: tip 提示
 如果你习惯使用 OpenAI 格式，也可以使用 `/v1/chat/completions` 接口调用 Gemini 模型，系统会自动转换格式。
 :::
