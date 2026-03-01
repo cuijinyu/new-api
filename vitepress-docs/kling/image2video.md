@@ -2,6 +2,10 @@
 
 使用 Kling 模型从图片生成视频。支持通过 image 参数传入图片 URL 或 Base64 编码的图片数据。
 
+::: tip 推荐使用 Omni 端点
+对于 `kling-v3` 及 `kling-video-o1` 模型，建议使用 [Omni 全能视频](/kling/omni-video) 端点，支持更丰富的功能（多镜头、视频编辑、原生音频等）。本端点主要适用于 `kling-v1` / `kling-v1-5` / `kling-v1-6` 等旧版模型。
+:::
+
 ## 接口详情
 
 **接口地址：** `POST /kling/v1/videos/image2video`
@@ -21,7 +25,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 示例 |
 |--------|------|------|--------|------|------|
-| model | string | 是 | - | 使用的模型 ID | `kling-v1` |
+| model | string | 是 | - | 使用的模型 ID。支持 `kling-v1`, `kling-v1-5`, `kling-v1-6`, `kling-v2-1`, `kling-v2-5-turbo`, `kling-v2-6`, `kling-v3` 等 | `kling-v1` |
 | image | string | 是 | - | 输入图片的 URL 或 Base64 编码 | `https://example.com/start.jpg` |
 | image_tail | string | 否 | - | 尾帧图片 URL 或 Base64 编码，用于指定视频结束画面 | `https://example.com/end.jpg` |
 | prompt | string | 否 | - | 视频描述文本（引导图片动态） | `让图片中的人物微笑` |

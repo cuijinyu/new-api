@@ -122,6 +122,79 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			model:  "kling-v2-master",
 			want:   5.0,
 		},
+		// kling-v3 测试
+		{
+			name:   "kling-v3 Std 5s",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			want:   5.0,
+		},
+		{
+			name:   "kling-v3 Pro 5s",
+			action: constant.TaskActionOmniVideo,
+			mode:   "pro",
+			model:  "kling-v3",
+			want:   float32(5.0 * (0.112 / 0.084)), // 5s * 1.333
+		},
+		{
+			name:   "kling-v3 Std 15s",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			metadata: map[string]interface{}{
+				"duration": "15",
+			},
+			want: 15.0,
+		},
+		{
+			name:   "kling-v3 Std 5s With Video Input",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			metadata: map[string]interface{}{
+				"video_list": []interface{}{
+					map[string]interface{}{"video_url": "test.mp4"},
+				},
+			},
+			want: float32(5.0 * (0.126 / 0.084)), // 5s * 1.5
+		},
+		{
+			name:   "kling-v3 Std 5s With Sound",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			metadata: map[string]interface{}{
+				"sound": "on",
+			},
+			want: float32(5.0 * 1.5), // 5s * soundScale(1.5)
+		},
+		{
+			name:   "kling-v3 Multi-shot 3+4+5=12s",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			metadata: map[string]interface{}{
+				"multi_prompt": []interface{}{
+					map[string]interface{}{"prompt": "shot 1", "duration": "3"},
+					map[string]interface{}{"prompt": "shot 2", "duration": "4"},
+					map[string]interface{}{"prompt": "shot 3", "duration": "5"},
+				},
+			},
+			want: 12.0, // 3+4+5=12s * 1.0
+		},
+		{
+			name:   "kling-v3 Video Edit (refer_type=base)",
+			action: constant.TaskActionOmniVideo,
+			mode:   "std",
+			model:  "kling-v3",
+			metadata: map[string]interface{}{
+				"video_list": []interface{}{
+					map[string]interface{}{"video_url": "test.mp4", "refer_type": "base", "keep_original_sound": "yes"},
+				},
+			},
+			want: float32(10.0 * (0.126 / 0.084)), // 预扣10s * videoInputScale(1.5)
+		},
 		{
 			name:   "MultiImage2Video Std 10s",
 			action: constant.TaskActionMultiImage2Video,
@@ -346,10 +419,123 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 			want: 3,
 		},
 		{
-			name: "Video Base (Unsupported)",
+			name: "Video Base (Unsupported for O1)",
 			req: &requestPayload{
+				ModelName: "kling-video-o1",
 				VideoList: []OmniVideoItem{{VideoUrl: "vid", ReferType: "base"}},
 				Duration:  "5",
+			},
+			wantErr: true,
+		},
+		// V3 扩展测试
+		{
+			name: "V3 Text2Video 3s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				Duration:  "3",
+			},
+			want: 3,
+		},
+		{
+			name: "V3 Text2Video 15s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				Duration:  "15",
+			},
+			want: 15,
+		},
+		{
+			name: "V3 Text2Video 16s (Over Limit)",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				Duration:  "16",
+			},
+			wantErr: true,
+		},
+		{
+			name: "V3 Image2Video 12s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				ImageList: []OmniImageItem{{ImageUrl: "img"}},
+				Duration:  "12",
+			},
+			want: 12,
+		},
+		{
+			name: "V3 Video Feature 15s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				VideoList: []OmniVideoItem{{VideoUrl: "vid", ReferType: "feature"}},
+				Duration:  "15",
+			},
+			want: 15,
+		},
+		{
+			name: "V3 Video Base (Supported)",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				VideoList: []OmniVideoItem{{VideoUrl: "vid", ReferType: "base"}},
+				Duration:  "5",
+			},
+			want: 10, // 预扣 10s
+		},
+		{
+			name: "V3 Multi-shot 5+5=10s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				MultiPrompt: []MultiShotItem{
+					{Prompt: "shot 1", Duration: "5"},
+					{Prompt: "shot 2", Duration: "5"},
+				},
+			},
+			want: 10,
+		},
+		{
+			name: "V3 Multi-shot 3+3+3+3+3=15s",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				MultiPrompt: []MultiShotItem{
+					{Prompt: "shot 1", Duration: "3"},
+					{Prompt: "shot 2", Duration: "3"},
+					{Prompt: "shot 3", Duration: "3"},
+					{Prompt: "shot 4", Duration: "3"},
+					{Prompt: "shot 5", Duration: "3"},
+				},
+			},
+			want: 15,
+		},
+		{
+			name: "V3 Multi-shot Over Limit (4+4+4+4=16s)",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				MultiPrompt: []MultiShotItem{
+					{Prompt: "shot 1", Duration: "4"},
+					{Prompt: "shot 2", Duration: "4"},
+					{Prompt: "shot 3", Duration: "4"},
+					{Prompt: "shot 4", Duration: "4"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "V3 Multi-shot Empty Prompt",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				MultiPrompt: []MultiShotItem{
+					{Prompt: "", Duration: "5"},
+					{Prompt: "shot 2", Duration: "5"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "V3 Multi-shot Shot Duration < 3",
+			req: &requestPayload{
+				ModelName: "kling-v3",
+				MultiPrompt: []MultiShotItem{
+					{Prompt: "shot 1", Duration: "2"},
+					{Prompt: "shot 2", Duration: "5"},
+				},
 			},
 			wantErr: true,
 		},
@@ -444,7 +630,8 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 		model         string
 		mode          string
 		duration      int
-		expectedScale float64 // 预期的 PriceScale
+		action        string // 为空时默认 TaskActionGenerate
+		expectedScale float64
 		description   string
 	}{
 		// kling-v1 测试
@@ -524,22 +711,63 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 			expectedScale: 5.0 * (0.112 / 0.084), // 5 × 1.333 = 6.67
 			description:   "O1 Pro: 5s × 1.333 = 6.67",
 		},
+		// kling-v3 测试（使用 OmniVideo action）
+		{
+			name:          "V3 Std 5s",
+			model:         "kling-v3",
+			mode:          "std",
+			duration:      5,
+			action:        constant.TaskActionOmniVideo,
+			expectedScale: 5.0 * 1.0,
+			description:   "V3 Std: 5s × 1.0 = 5.0",
+		},
+		{
+			name:          "V3 Pro 5s",
+			model:         "kling-v3",
+			mode:          "pro",
+			duration:      5,
+			action:        constant.TaskActionOmniVideo,
+			expectedScale: 5.0 * (0.112 / 0.084), // 5 × 1.333 = 6.67
+			description:   "V3 Pro: 5s × 1.333 = 6.67",
+		},
+		{
+			name:          "V3 Std 15s",
+			model:         "kling-v3",
+			mode:          "std",
+			duration:      15,
+			action:        constant.TaskActionOmniVideo,
+			expectedScale: 15.0 * 1.0,
+			description:   "V3 Std: 15s × 1.0 = 15.0",
+		},
+		{
+			name:          "V3 Pro 15s",
+			model:         "kling-v3",
+			mode:          "pro",
+			duration:      15,
+			action:        constant.TaskActionOmniVideo,
+			expectedScale: 15.0 * (0.112 / 0.084), // 15 × 1.333 = 20.0
+			description:   "V3 Pro: 15s × 1.333 = 20.0",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			action := tt.action
+			if action == "" {
+				action = constant.TaskActionGenerate
+			}
 			req := relaycommon.TaskSubmitReq{
 				Model:    tt.model,
 				Mode:     tt.mode,
 				Duration: tt.duration,
 			}
 			c.Set("task_request", req)
-			c.Set("action", constant.TaskActionGenerate)
+			c.Set("action", action)
 
 			info := &relaycommon.RelayInfo{
 				TaskRelayInfo: &relaycommon.TaskRelayInfo{
-					Action: constant.TaskActionGenerate,
+					Action: action,
 				},
 			}
 
@@ -1072,6 +1300,55 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 			expectedScale: 5.0 * (0.112 / 0.084) * (0.126 / 0.084), // 5s × 1.333 × 1.5 = 10
 			description:   "O1 Pro + 视频输入: 5s × 1.333 × 1.5 = 10",
 		},
+		// V3 高级功能测试
+		{
+			name:   "V3 开启音频 Std",
+			model:  "kling-v3",
+			mode:   "std",
+			action: constant.TaskActionOmniVideo,
+			metadata: map[string]interface{}{
+				"sound": "on",
+			},
+			expectedScale: 5.0 * 1.0 * 1.5, // 5s × modeScale(1.0) × soundScale(1.5) = 7.5
+			description:   "V3 Std + 音频: 5s × 1.5 = 7.5",
+		},
+		{
+			name:   "V3 开启音频 Pro",
+			model:  "kling-v3",
+			mode:   "pro",
+			action: constant.TaskActionOmniVideo,
+			metadata: map[string]interface{}{
+				"sound": "on",
+			},
+			expectedScale: 5.0 * (0.112 / 0.084) * 1.5, // 5s × 1.333 × 1.5 = 10
+			description:   "V3 Pro + 音频: 5s × 1.333 × 1.5 = 10",
+		},
+		{
+			name:   "V3 带视频输入 Std",
+			model:  "kling-v3",
+			mode:   "std",
+			action: constant.TaskActionOmniVideo,
+			metadata: map[string]interface{}{
+				"video_list": []interface{}{
+					map[string]interface{}{"video_url": "test.mp4"},
+				},
+			},
+			expectedScale: 5.0 * 1.0 * (0.126 / 0.084), // 5s × 1.0 × 1.5 = 7.5
+			description:   "V3 Std + 视频输入: 5s × 1.5 = 7.5",
+		},
+		{
+			name:   "V3 带视频输入 Pro",
+			model:  "kling-v3",
+			mode:   "pro",
+			action: constant.TaskActionOmniVideo,
+			metadata: map[string]interface{}{
+				"video_list": []interface{}{
+					map[string]interface{}{"video_url": "test.mp4"},
+				},
+			},
+			expectedScale: 5.0 * (0.112 / 0.084) * (0.126 / 0.084), // 5s × 1.333 × 1.5 = 10
+			description:   "V3 Pro + 视频输入: 5s × 1.333 × 1.5 = 10",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1157,6 +1434,23 @@ func TestKlingPricing_OfficialPriceVerification(t *testing.T) {
 			"", 0.084, 4.5 * priceRatio},
 		{"Video-O1 Pro 5s 无视频", constant.TaskActionOmniVideo, "kling-video-o1", "pro", 5, nil, "", 0.084, 4.0 * priceRatio},
 		{"Video-O1 Pro 5s 有视频", constant.TaskActionOmniVideo, "kling-video-o1", "pro", 5,
+			map[string]interface{}{"video_list": []interface{}{map[string]interface{}{"video_url": "test.mp4"}}},
+			"", 0.084, 6.0 * priceRatio},
+
+		// ========== Video-V3 模型 ==========
+		// 官方价格: 与 O1 相同基础价格 Std 每秒0.6元, Pro 每秒0.8元; 含音频 Std 每秒0.9元, Pro 每秒1.2元
+		{"Video-V3 Std 5s 无音频", constant.TaskActionOmniVideo, "kling-v3", "std", 5, nil, "", 0.084, 3.0 * priceRatio},
+		{"Video-V3 Pro 5s 无音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5, nil, "", 0.084, 4.0 * priceRatio},
+		{"Video-V3 Std 15s 无音频", constant.TaskActionOmniVideo, "kling-v3", "std", 15, nil, "", 0.084, 9.0 * priceRatio},
+		{"Video-V3 Pro 15s 无音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 15, nil, "", 0.084, 12.0 * priceRatio},
+		{"Video-V3 Std 5s 含音频", constant.TaskActionOmniVideo, "kling-v3", "std", 5,
+			map[string]interface{}{"sound": "on"}, "", 0.084, 4.5 * priceRatio},
+		{"Video-V3 Pro 5s 含音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5,
+			map[string]interface{}{"sound": "on"}, "", 0.084, 6.0 * priceRatio},
+		{"Video-V3 Std 5s 有视频", constant.TaskActionOmniVideo, "kling-v3", "std", 5,
+			map[string]interface{}{"video_list": []interface{}{map[string]interface{}{"video_url": "test.mp4"}}},
+			"", 0.084, 4.5 * priceRatio},
+		{"Video-V3 Pro 5s 有视频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5,
 			map[string]interface{}{"video_list": []interface{}{map[string]interface{}{"video_url": "test.mp4"}}},
 			"", 0.084, 6.0 * priceRatio},
 
@@ -1312,6 +1606,7 @@ func TestKlingPricing_ProScaleMap(t *testing.T) {
 	// 验证 proScaleMap 中的倍率是否正确
 	expectedProScales := map[string]float64{
 		"kling-video-o1":   0.112 / 0.084, // 1.333
+		"kling-v3":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
 		"kling-v2-6":       0.07 / 0.07,   // 1.0
 		"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 		"kling-v2-1":       0.098 / 0.056, // 1.75

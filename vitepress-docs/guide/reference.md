@@ -16,6 +16,32 @@
 | `/kling/v1/videos/*` | POST/GET | Kling 视频生成 |
 | `/sora/v1/videos/*` | POST/GET | Sora 视频生成 |
 
+## Kling 视频模型
+
+### 支持的模型
+
+| 模型 ID | 说明 | 推荐端点 |
+|---------|------|---------|
+| `kling-v1` | Kling V1.0 基础版 | text2video / image2video |
+| `kling-v1-5` | Kling V1.5 | text2video / image2video |
+| `kling-v1-6` | Kling V1.6 | text2video / image2video |
+| `kling-v2-1` | Kling V2.1 | text2video / image2video |
+| `kling-v2-5-turbo` | Kling V2.5 Turbo | text2video / image2video |
+| `kling-v2-6` | Kling V2.6 | text2video / image2video |
+| `kling-video-o1` | Kling Omni V1 | omni-video |
+| `kling-v3` | Kling V3.0（最新） | omni-video |
+| `kling-v2-1-master` | Kling V2.1 Master | text2video / image2video |
+| `kling-v2-master` | Kling V2 Master | text2video / image2video |
+
+### Kling V3 新特性
+
+`kling-v3` 通过 [Omni 全能视频](/kling/omni-video) 端点提供以下新能力：
+
+- **扩展时长**：3-15 秒（O1 为 3-10 秒）
+- **多镜头叙事 (Multi-shot)**：单次请求生成多个连续镜头
+- **视频编辑**：通过 `refer_type: "base"` 对现有视频进行文本指令编辑
+- **原生音频**：生成同步音频（含多语言口型同步）
+
 ## 数据模型
 
 ### Message 对象

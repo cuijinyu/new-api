@@ -71,6 +71,11 @@ type OmniElementItem struct {
 	ElementId int64 `json:"element_id"`
 }
 
+type MultiShotItem struct {
+	Prompt   string `json:"prompt"`
+	Duration string `json:"duration"`
+}
+
 type MultiImageItem struct {
 	Image string `json:"image"`
 }
@@ -414,6 +419,9 @@ type requestPayload struct {
 	ImageList   []OmniImageItem   `json:"image_list,omitempty"`
 	VideoList   []OmniVideoItem   `json:"video_list,omitempty"`
 	ElementList []OmniElementItem `json:"element_list,omitempty"`
+
+	// --- V3 Multi-shot 字段 ---
+	MultiPrompt []MultiShotItem `json:"multi_prompt,omitempty"`
 }
 
 type responsePayload struct {
@@ -474,11 +482,13 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // withVideoInputScaleMap 带视频输入的价格倍率（可叠加在 Std 或 Pro 上）
 var withVideoInputScaleMap = map[string]float64{
 	"kling-video-o1": 0.126 / 0.084, // 1.5 - 相对于无视频输入的倍率
+	"kling-v3":       0.126 / 0.084, // 1.5 - V3 与 O1 相同
 }
 
 // proScaleMap Pro 模式相对于 Std 模式的价格倍率
 var proScaleMap = map[string]float64{
 	"kling-video-o1":   0.112 / 0.084, // 1.333 - Pro/Std 倍率
+	"kling-v3":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
 	"kling-v2-6":       0.07 / 0.07,           // 普通任务 Pro 和 Std 价格相同
 	"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 	"kling-v2-1":       0.098 / 0.056, // 1.75
@@ -496,6 +506,7 @@ var masterScaleMap = map[string]float64{
 // stdSupportedModels 支持 Std 模式的模型列表
 var stdSupportedModels = map[string]bool{
 	"kling-video-o1":   true,
+	"kling-v3":         true,
 	"kling-v2-6":       true,
 	"kling-v2-5-turbo": true,
 	"kling-v2-1":       true,
@@ -506,6 +517,7 @@ var stdSupportedModels = map[string]bool{
 
 var soundScaleMap = map[string]float64{
 	"kling-v2-6": 2.0 / 1.0,
+	"kling-v3":   1.5 / 1.0, // V3 含音频价格约为无音频的 1.5 倍
 }
 
 var voiceControlScaleMap = map[string]float64{
@@ -600,17 +612,54 @@ func calculateAdvanceScale(action string, req *requestPayload) float64 {
 	return scale
 }
 
+// isV3Model 判断模型是否为 V3 系列
+func isV3Model(model string) bool {
+	return model == "kling-v3"
+}
+
 // calculateOmniVideoDuration 计算 omni-video 端点的 duration
-// 规则：
-// 1. 文生、图生（不含首尾帧）：可选 5s/10s
-// 2. 有视频输入且使用视频编辑功能（类型=base）：不可指定时长，跟视频对齐
-// 3. 其他情况（不传视频+传图片+主体，或传视频+类型=feature）：可选 3-10s
+// O1 规则：
+//  1. 文生、图生（不含首尾帧）：可选 5s/10s
+//  2. 有视频输入且使用视频编辑功能（类型=base）：不支持
+//  3. 其他情况（不传视频+传图片+主体，或传视频+类型=feature）：可选 3-10s
+//
+// V3 规则：
+//  1. 所有工作流统一支持 3-15s
+//  2. 视频编辑模式（refer_type=base）：预扣 10s（实际时长跟随原视频，异步核销）
+//  3. Multi-shot 模式：总时长为各 shot duration 之和，须在 3-15s 范围内
 func calculateOmniVideoDuration(req *requestPayload) (int, error) {
+	model := req.ModelName
+	if model == "" {
+		model = req.Model
+	}
+	v3 := isV3Model(model)
+
+	// V3 Multi-shot 模式：计算各 shot 的 duration 总和
+	if v3 && len(req.MultiPrompt) > 0 {
+		totalDuration := 0
+		for i, shot := range req.MultiPrompt {
+			if shot.Prompt == "" {
+				return 0, fmt.Errorf("multi_prompt[%d].prompt is required", i)
+			}
+			shotDuration, err := validateIntegerDuration(shot.Duration)
+			if err != nil {
+				return 0, fmt.Errorf("multi_prompt[%d].duration invalid: %w", i, err)
+			}
+			if shotDuration < 3 {
+				return 0, fmt.Errorf("multi_prompt[%d].duration must be >= 3, got: %d", i, shotDuration)
+			}
+			totalDuration += shotDuration
+		}
+		if totalDuration < 3 || totalDuration > 15 {
+			return 0, fmt.Errorf("multi-shot total duration must be between 3-15, got: %d", totalDuration)
+		}
+		return totalDuration, nil
+	}
+
 	hasVideo := len(req.VideoList) > 0
 	hasImage := len(req.ImageList) > 0
 	isVideoBase := false
 
-	// 检查是否使用视频编辑功能（refer_type=base）
 	for _, video := range req.VideoList {
 		if video.ReferType == "base" {
 			isVideoBase = true
@@ -618,12 +667,30 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 		}
 	}
 
-	// 规则 2: 有视频输入且使用视频编辑功能（类型=base）
+	// 视频编辑模式（refer_type=base）
 	if hasVideo && isVideoBase {
-		return 0, fmt.Errorf("video editing mode (refer_type=base) is not supported")
+		if !v3 {
+			return 0, fmt.Errorf("video editing mode (refer_type=base) is only supported by kling-v3")
+		}
+		// V3 视频编辑：时长跟随原视频，预扣 10s 用于计费，异步核销时按实际时长
+		return 10, nil
 	}
 
-	// 规则 1: 文生视频（无图片、无视频输入）
+	// V3 统一支持 3-15s
+	if v3 {
+		durationVal, err := validateIntegerDuration(req.Duration)
+		if err != nil {
+			return 0, err
+		}
+		if durationVal < 3 || durationVal > 15 {
+			return 0, fmt.Errorf("kling-v3 supports duration 3-15, got: %d", durationVal)
+		}
+		return durationVal, nil
+	}
+
+	// ===== O1 原有逻辑 =====
+
+	// 文生视频（无图片、无视频输入）：仅支持 5 和 10s
 	if !hasVideo && !hasImage {
 		if req.Duration != "5" && req.Duration != "10" {
 			return 0, fmt.Errorf("text2video only supports duration 5 or 10, got: %s", req.Duration)
@@ -635,9 +702,8 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 		return durationVal, nil
 	}
 
-	// 规则 1: 图生视频（有图片但无视频）
+	// 图生视频（有图片但无视频）
 	if hasImage && !hasVideo {
-		// 检查是否是首尾帧模式
 		hasFirstOrEndFrame := false
 		for _, img := range req.ImageList {
 			if img.Type == "first_frame" || img.Type == "end_frame" {
@@ -647,7 +713,7 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 		}
 
 		if hasFirstOrEndFrame {
-			// 规则 3: 首尾帧模式：可选 3-10s
+			// 首尾帧模式：可选 3-10s
 			durationVal, err := validateIntegerDuration(req.Duration)
 			if err != nil {
 				return 0, err
@@ -657,7 +723,7 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 			}
 			return durationVal, nil
 		} else {
-			// 规则 1: 普通图生视频：仅支持 5 和 10s
+			// 普通图生视频：仅支持 5 和 10s
 			if req.Duration != "5" && req.Duration != "10" {
 				return 0, fmt.Errorf("image2video only supports duration 5 or 10, got: %s", req.Duration)
 			}
@@ -669,7 +735,7 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 		}
 	}
 
-	// 规则 3: 其他情况（传视频+类型=feature，或混合输入）：可选 3-10s
+	// 其他情况（传视频+类型=feature，或混合输入）：可选 3-10s
 	durationVal, err := validateIntegerDuration(req.Duration)
 	if err != nil {
 		return 0, err
@@ -1502,6 +1568,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 func (a *TaskAdaptor) GetModelList() []string {
 	return []string{
 		// 视频生成模型
+		"kling-v3",
 		"kling-video-o1",
 		"kling-v2-6",
 		"kling-v2-5-turbo",

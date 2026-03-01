@@ -2,6 +2,10 @@
 
 Generate videos from images using Kling models. Supports passing image URL or Base64 encoded image data via the `image` parameter.
 
+::: tip Recommended: Use Omni Endpoint
+For `kling-v3` and `kling-video-o1` models, we recommend using the [Omni Video](/en/kling/omni-video) endpoint, which supports richer features (multi-shot, video editing, native audio, etc.). This endpoint is primarily for legacy models such as `kling-v1` / `kling-v1-5` / `kling-v1-6`.
+:::
+
 ## API Details
 
 **Endpoint:** `POST /kling/v1/videos/image2video`
@@ -21,7 +25,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Parameter | Type | Required | Default | Description | Example |
 |-----------|------|----------|---------|-------------|---------|
-| model | string | Yes | - | The ID of the model to use | `kling-v1` |
+| model | string | Yes | - | The model ID. Supports `kling-v1`, `kling-v1-5`, `kling-v1-6`, `kling-v2-1`, `kling-v2-5-turbo`, `kling-v2-6`, `kling-v3`, etc. | `kling-v1` |
 | image | string | Yes | - | URL or Base64 encoded data of the input image | `https://example.com/start.jpg` |
 | image_tail | string | No | - | Tail frame image URL or Base64 encoded data, used to specify the ending frame of the video | `https://example.com/end.jpg` |
 | prompt | string | No | - | Text description to guide image dynamics | `Make the person in the image smile` |
