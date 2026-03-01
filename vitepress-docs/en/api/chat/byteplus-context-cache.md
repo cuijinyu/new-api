@@ -179,7 +179,7 @@ Suitable for long conversation scenarios with a single user, such as customer se
 
 ```bash
 # Step 1: Create context cache
-curl -X POST https://your-domain.com/api/v3/context/create \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/create \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -205,7 +205,7 @@ curl -X POST https://your-domain.com/api/v3/context/create \
 # Response: {"id": "ctx-abc123", ...}
 
 # Step 2: Continue conversation using cache
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -233,7 +233,7 @@ Suitable for scenarios where multiple users share the same system prompts or doc
 
 ```bash
 # Step 1: Create shared prefix cache
-curl -X POST https://your-domain.com/api/v3/context/create \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/create \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -252,7 +252,7 @@ curl -X POST https://your-domain.com/api/v3/context/create \
 
 # Step 2: Different users use the same cache
 # User A
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -267,7 +267,7 @@ curl -X POST https://your-domain.com/api/v3/context/chat/completions \
   }'
 
 # User B
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -290,7 +290,7 @@ curl -X POST https://your-domain.com/api/v3/context/chat/completions \
 import requests
 import json
 
-API_BASE = "https://your-domain.com"
+API_BASE = "https://www.ezmodel.cloud"
 API_KEY = "YOUR_API_TOKEN"
 HEADERS = {
     "Content-Type": "application/json",

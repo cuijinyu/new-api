@@ -131,7 +131,7 @@ Returns an OpenAI-compatible `video` object upon successful submission.
 ### Basic Usage - Text to Video
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -146,7 +146,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### Image to Video - First/End Frame Mode
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -163,7 +163,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### V3 Multi-shot Narrative
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -182,7 +182,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### V3 Video Editing (refer_type=base)
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{

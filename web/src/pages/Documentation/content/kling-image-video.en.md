@@ -50,7 +50,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### Curl Example
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/image2video \
+curl https://www.ezmodel.cloud/kling/v1/videos/image2video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{

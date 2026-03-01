@@ -83,7 +83,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 ```bash
 # 1. Submit task
-curl https://your-domain.com/kling/v1/videos/text2video \
+curl https://www.ezmodel.cloud/kling/v1/videos/text2video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -95,6 +95,6 @@ curl https://your-domain.com/kling/v1/videos/text2video \
   }'
 
 # 2. Query result (replace TASK_ID)
-curl https://your-domain.com/kling/v1/videos/text2video/TASK_ID \
+curl https://www.ezmodel.cloud/kling/v1/videos/text2video/TASK_ID \
   -H "Authorization: Bearer $YOUR_API_KEY"
 ```

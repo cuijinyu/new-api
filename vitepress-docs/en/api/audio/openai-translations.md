@@ -57,7 +57,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_KEY",
-    base_url="https://your-domain.com/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 audio_file = open("german_speech.mp3", "rb")
@@ -72,7 +72,7 @@ print(translation.text)
 ### Curl Example
 
 ```bash
-curl https://your-domain.com/v1/audio/translations \
+curl https://www.ezmodel.cloud/v1/audio/translations \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: multipart/form-data" \
   -F file="@german_speech.mp3" \

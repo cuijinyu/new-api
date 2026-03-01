@@ -46,8 +46,8 @@
 curl -X GET \
   -H "Authorization: access_token" \
   -H "New-Api-User: 123" \
-  https://your-domain.com/api/user/self
+  https://www.ezmodel.cloud/api/user/self
 ```
 
-请将 `access_token`、`123` 和 `https://your-domain.com` 替换为实际的值。
+请将 `access_token`、`123` 和 `https://www.ezmodel.cloud` 替换为实际的值。
 

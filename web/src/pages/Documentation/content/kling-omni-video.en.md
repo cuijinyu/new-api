@@ -68,7 +68,7 @@ Returns an OpenAI-compatible `video` object upon successful submission.
 ### Curl Example (Mixed Input)
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{

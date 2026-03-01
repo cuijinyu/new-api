@@ -80,7 +80,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### Curl 示例
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/image2video/YOUR_TASK_ID \
+curl https://www.ezmodel.cloud/kling/v1/videos/image2video/YOUR_TASK_ID \
   -H "Authorization: Bearer $YOUR_API_KEY"
 ```
 

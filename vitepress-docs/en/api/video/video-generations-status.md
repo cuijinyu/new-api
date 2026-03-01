@@ -55,7 +55,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### Curl Example
 
 ```bash
-curl https://your-domain.com/v1/video/generations/YOUR_TASK_ID \
+curl https://www.ezmodel.cloud/v1/video/generations/YOUR_TASK_ID \
   -H "Authorization: Bearer $YOUR_API_KEY"
 ```
 

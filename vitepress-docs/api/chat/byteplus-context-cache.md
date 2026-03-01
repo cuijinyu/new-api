@@ -179,7 +179,7 @@ data: [DONE]
 
 ```bash
 # 步骤 1: 创建上下文缓存
-curl -X POST https://your-domain.com/api/v3/context/create \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/create \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -205,7 +205,7 @@ curl -X POST https://your-domain.com/api/v3/context/create \
 # 响应: {"id": "ctx-abc123", ...}
 
 # 步骤 2: 使用缓存继续对话
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -233,7 +233,7 @@ curl -X POST https://your-domain.com/api/v3/context/chat/completions \
 
 ```bash
 # 步骤 1: 创建共享前缀缓存
-curl -X POST https://your-domain.com/api/v3/context/create \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/create \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -252,7 +252,7 @@ curl -X POST https://your-domain.com/api/v3/context/create \
 
 # 步骤 2: 不同用户使用同一个缓存
 # 用户 A
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -267,7 +267,7 @@ curl -X POST https://your-domain.com/api/v3/context/chat/completions \
   }'
 
 # 用户 B
-curl -X POST https://your-domain.com/api/v3/context/chat/completions \
+curl -X POST https://www.ezmodel.cloud/api/v3/context/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -290,7 +290,7 @@ curl -X POST https://your-domain.com/api/v3/context/chat/completions \
 import requests
 import json
 
-API_BASE = "https://your-domain.com"
+API_BASE = "https://www.ezmodel.cloud"
 API_KEY = "YOUR_API_TOKEN"
 HEADERS = {
     "Content-Type": "application/json",
@@ -416,7 +416,7 @@ if __name__ == "__main__":
 ```javascript
 const axios = require('axios');
 
-const API_BASE = 'https://your-domain.com';
+const API_BASE = 'https://www.ezmodel.cloud';
 const API_KEY = 'YOUR_API_TOKEN';
 const HEADERS = {
   'Content-Type': 'application/json',

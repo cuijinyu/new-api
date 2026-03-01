@@ -66,7 +66,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### Curl Example (Image Generation)
 
 ```bash
-curl -X POST "https://your-domain.com/v1beta/models/gemini-2.0-flash-exp:generateContent" \
+curl -X POST "https://www.ezmodel.cloud/v1beta/models/gemini-2.0-flash-exp:generateContent" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

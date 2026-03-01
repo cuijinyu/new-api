@@ -53,7 +53,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_KEY",
-    base_url="https://your-domain.com/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.audio.speech.create(
@@ -68,7 +68,7 @@ response.stream_to_file("speech.mp3")
 ### Curl Example
 
 ```bash
-curl https://your-domain.com/v1/audio/speech \
+curl https://www.ezmodel.cloud/v1/audio/speech \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

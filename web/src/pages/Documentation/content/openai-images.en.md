@@ -60,7 +60,7 @@ from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_API_KEY",
-    base_url="https://your-domain.com/v1"
+    base_url="https://www.ezmodel.cloud/v1"
 )
 
 response = client.images.generate(
@@ -78,7 +78,7 @@ print(image_url)
 ### Curl Example
 
 ```bash
-curl https://your-domain.com/v1/images/generations \
+curl https://www.ezmodel.cloud/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{

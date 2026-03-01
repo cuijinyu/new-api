@@ -48,7 +48,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ```python
 import requests
 
-url = "https://your-domain.com/v1/video/generations"
+url = "https://www.ezmodel.cloud/v1/video/generations"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY",
     "Content-Type": "application/json"

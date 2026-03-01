@@ -58,7 +58,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### cURL
 
 ```bash
-curl -X GET "https://your-domain.com/v1/video/generations/task_abc123xyz456" \
+curl -X GET "https://www.ezmodel.cloud/v1/video/generations/task_abc123xyz456" \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
@@ -70,7 +70,7 @@ import time
 import json
 
 task_id = "task_abc123xyz456"
-url = f"https://your-domain.com/v1/video/generations/{task_id}"
+url = f"https://www.ezmodel.cloud/v1/video/generations/{task_id}"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY"
 }
@@ -103,7 +103,7 @@ while True:
 
 ```javascript
 const taskId = 'task_abc123xyz456';
-const url = `https://your-domain.com/v1/video/generations/${taskId}`;
+const url = `https://www.ezmodel.cloud/v1/video/generations/${taskId}`;
 
 // 轮询查询任务状态
 async function pollTaskStatus() {
@@ -168,7 +168,7 @@ type TaskResponse struct {
 
 func main() {
     taskID := "task_abc123xyz456"
-    url := fmt.Sprintf("https://your-domain.com/v1/video/generations/%s", taskID)
+    url := fmt.Sprintf("https://www.ezmodel.cloud/v1/video/generations/%s", taskID)
     
     client := &http.Client{}
     

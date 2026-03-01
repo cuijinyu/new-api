@@ -50,7 +50,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### cURL
 
 ```bash
-curl -X POST "https://your-domain.com/v1/video/generations" \
+curl -X POST "https://www.ezmodel.cloud/v1/video/generations" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -65,7 +65,7 @@ curl -X POST "https://your-domain.com/v1/video/generations" \
 import requests
 import json
 
-url = "https://your-domain.com/v1/video/generations"
+url = "https://www.ezmodel.cloud/v1/video/generations"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY",
     "Content-Type": "application/json"
@@ -92,7 +92,7 @@ print(f"Task ID: {task_id}")
 import requests
 import json
 
-url = "https://your-domain.com/v1/video/generations"
+url = "https://www.ezmodel.cloud/v1/video/generations"
 headers = {
     "Authorization": "Bearer YOUR_API_KEY",
     "Content-Type": "application/json"
@@ -113,7 +113,7 @@ print(json.dumps(result, indent=2))
 ### JavaScript
 
 ```javascript
-const response = await fetch('https://your-domain.com/v1/video/generations', {
+const response = await fetch('https://www.ezmodel.cloud/v1/video/generations', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer YOUR_API_KEY',
@@ -143,7 +143,7 @@ import (
 )
 
 func main() {
-    url := "https://your-domain.com/v1/video/generations"
+    url := "https://www.ezmodel.cloud/v1/video/generations"
     
     payload := map[string]interface{}{
         "model":  "doubao-seedance-1-0-pro-250528",

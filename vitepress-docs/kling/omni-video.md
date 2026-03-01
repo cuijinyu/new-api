@@ -131,7 +131,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### 基础用法 - 文生视频
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -146,7 +146,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### 图生视频 - 首尾帧模式
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -163,7 +163,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### V3 多镜头叙事 (Multi-shot)
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
@@ -182,7 +182,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
 ### V3 视频编辑 (refer_type=base)
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{

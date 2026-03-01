@@ -206,7 +206,7 @@ Enable thinking mode to allow the model to think more deeply before generating r
 ### Basic Request Example
 
 ```bash
-curl -X POST https://your-domain.com/api/v3/responses \
+curl -X POST https://www.ezmodel.cloud/api/v3/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -224,7 +224,7 @@ curl -X POST https://your-domain.com/api/v3/responses \
 ### Request with Caching Example
 
 ```bash
-curl -X POST https://your-domain.com/api/v3/responses \
+curl -X POST https://www.ezmodel.cloud/api/v3/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -246,7 +246,7 @@ curl -X POST https://your-domain.com/api/v3/responses \
 ### Streaming Request Example
 
 ```bash
-curl -X POST https://your-domain.com/api/v3/responses \
+curl -X POST https://www.ezmodel.cloud/api/v3/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -d '{
@@ -267,7 +267,7 @@ curl -X POST https://your-domain.com/api/v3/responses \
 import requests
 import json
 
-url = "https://your-domain.com/api/v3/responses"
+url = "https://www.ezmodel.cloud/api/v3/responses"
 headers = {
     "Content-Type": "application/json",
     "Authorization": "Bearer YOUR_API_TOKEN"

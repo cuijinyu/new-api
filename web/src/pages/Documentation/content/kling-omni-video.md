@@ -68,7 +68,7 @@ Authorization: Bearer YOUR_API_TOKEN
 ### Curl 示例 (混合输入)
 
 ```bash
-curl https://your-domain.com/kling/v1/videos/omni-video \
+curl https://www.ezmodel.cloud/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
