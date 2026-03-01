@@ -49,7 +49,7 @@ Authorization: Bearer YOUR_API_TOKEN
 | video_list | array | 否 | - | 参考视频列表（使用视频参考会增加费用倍率） | 见下方 OmniVideoItem |
 | element_list | array | 否 | - | 主体元素列表 | `[{"element_id": 123456}]` |
 | multi_prompt | array | 否 | - | **V3 专属** 多镜头分镜列表，最多 6 个 shot | 见下方 MultiShotItem |
-| sound | string | 否 | `off` | 是否生成原生音频。V3 支持 `on`/`off`，V2.6 支持 `on`/`off` | `on`, `off` |
+| sound | string | 否 | `off` | 是否生成原生音频。V3 支持 `on`/`off`。**注意：使用 `video_list` 时不可设为 `on`** | `on`, `off` |
 | cfg_scale | float | 否 | 0.5 | 提示词相关性 | 0.0 - 1.0 |
 | external_task_id | string | 否 | - | 自定义任务 ID | `my_task_001` |
 | callback_url | string | 否 | - | 任务完成后回调地址 | `https://your-api.com/callback` |
@@ -58,7 +58,8 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 模型 | 工作流 | 支持的 Duration |
 |------|--------|----------------|
-| `kling-v3-omni` | 所有工作流 | `3` - `15` |
+| `kling-v3-omni` | 文生/图生视频 | `3` - `15` |
+| `kling-v3-omni` | 视频参考 (refer_type=feature) | `3` - `10` |
 | `kling-v3-omni` | Multi-shot | 各 shot duration 之和须在 3-15 范围内 |
 | `kling-v3-omni` | 视频编辑 (refer_type=base) | 自动跟随原视频时长 |
 | `kling-video-o1` | 文生/普通图生 | `5`, `10` |
@@ -92,6 +93,10 @@ Authorization: Bearer YOUR_API_TOKEN
 - 最少 2 个 shot，最多 6 个 shot
 - 各 shot 的 duration 总和须在 3-15 秒范围内
 - 每个 shot 的 duration 至少为 3 秒
+:::
+
+::: danger 音频与视频输入互斥
+使用 `video_list`（视频参考或视频编辑）时，**不支持** `sound: "on"`。上游会返回错误：`sound on is not supported with video input`。
 :::
 
 ---

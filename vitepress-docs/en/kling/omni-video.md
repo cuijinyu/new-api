@@ -49,7 +49,7 @@ Authorization: Bearer YOUR_API_TOKEN
 | video_list | array | No | - | Reference video list (using video reference increases cost multiplier) | See OmniVideoItem below |
 | element_list | array | No | - | Subject element list | `[{"element_id": 123456}]` |
 | multi_prompt | array | No | - | **V3 Only** Multi-shot scene list, up to 6 shots | See MultiShotItem below |
-| sound | string | No | `off` | Whether to generate native audio. V3 supports `on`/`off`, V2.6 supports `on`/`off` | `on`, `off` |
+| sound | string | No | `off` | Whether to generate native audio. V3 supports `on`/`off`. **Note: Cannot be `on` when using `video_list`** | `on`, `off` |
 | cfg_scale | float | No | 0.5 | Prompt adherence scale | 0.0 - 1.0 |
 | external_task_id | string | No | - | Custom task ID | `my_task_001` |
 | callback_url | string | No | - | Callback URL after task completion | `https://your-api.com/callback` |
@@ -58,7 +58,8 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Model | Workflow | Supported Duration |
 |-------|----------|-------------------|
-| `kling-v3-omni` | All workflows | `3` - `15` |
+| `kling-v3-omni` | T2V / I2V | `3` - `15` |
+| `kling-v3-omni` | Video reference (refer_type=feature) | `3` - `10` |
 | `kling-v3-omni` | Multi-shot | Sum of all shot durations must be within 3-15 range |
 | `kling-v3-omni` | Video editing (refer_type=base) | Automatically follows original video duration |
 | `kling-video-o1` | T2V / basic I2V | `5`, `10` |
@@ -92,6 +93,10 @@ Defines a single shot in multi-shot mode. When using `multi_prompt`, the top-lev
 - Minimum 2 shots, maximum 6 shots
 - Total duration of all shots must be within 3-15 seconds
 - Each shot must be at least 3 seconds
+:::
+
+::: danger Audio and Video Input are Mutually Exclusive
+When using `video_list` (video reference or video editing), `sound: "on"` is **not supported**. The upstream API will return: `sound on is not supported with video input`.
 :::
 
 ---
