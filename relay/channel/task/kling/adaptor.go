@@ -482,13 +482,13 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 // withVideoInputScaleMap 带视频输入的价格倍率（可叠加在 Std 或 Pro 上）
 var withVideoInputScaleMap = map[string]float64{
 	"kling-video-o1": 0.126 / 0.084, // 1.5 - 相对于无视频输入的倍率
-	"kling-v3":       0.126 / 0.084, // 1.5 - V3 与 O1 相同
+	"kling-v3-0":       0.126 / 0.084, // 1.5 - V3 与 O1 相同
 }
 
 // proScaleMap Pro 模式相对于 Std 模式的价格倍率
 var proScaleMap = map[string]float64{
 	"kling-video-o1":   0.112 / 0.084, // 1.333 - Pro/Std 倍率
-	"kling-v3":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
+	"kling-v3-0":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
 	"kling-v2-6":       0.07 / 0.07,           // 普通任务 Pro 和 Std 价格相同
 	"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 	"kling-v2-1":       0.098 / 0.056, // 1.75
@@ -506,7 +506,7 @@ var masterScaleMap = map[string]float64{
 // stdSupportedModels 支持 Std 模式的模型列表
 var stdSupportedModels = map[string]bool{
 	"kling-video-o1":   true,
-	"kling-v3":         true,
+	"kling-v3-0":         true,
 	"kling-v2-6":       true,
 	"kling-v2-5-turbo": true,
 	"kling-v2-1":       true,
@@ -517,7 +517,7 @@ var stdSupportedModels = map[string]bool{
 
 var soundScaleMap = map[string]float64{
 	"kling-v2-6": 2.0 / 1.0,
-	"kling-v3":   1.5 / 1.0, // V3 含音频价格约为无音频的 1.5 倍
+	"kling-v3-0":   1.5 / 1.0, // V3 含音频价格约为无音频的 1.5 倍
 }
 
 var voiceControlScaleMap = map[string]float64{
@@ -614,7 +614,7 @@ func calculateAdvanceScale(action string, req *requestPayload) float64 {
 
 // isV3Model 判断模型是否为 V3 系列
 func isV3Model(model string) bool {
-	return model == "kling-v3"
+	return model == "kling-v3-0"
 }
 
 // calculateOmniVideoDuration 计算 omni-video 端点的 duration
@@ -1569,7 +1569,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any) (*http
 func (a *TaskAdaptor) GetModelList() []string {
 	return []string{
 		// 视频生成模型
-		"kling-v3",
+		"kling-v3-0",
 		"kling-video-o1",
 		"kling-v2-6",
 		"kling-v2-5-turbo",

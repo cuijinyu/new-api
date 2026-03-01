@@ -3,7 +3,7 @@
 Kling 全能视频是 Kling 的统一多模态视频生成端点，支持丰富的多模态输入，包括多张图片、视频参考、主体控制等，能够实现精确的动作控制和丰富的视觉表达。
 
 ::: tip V3 新特性
-`kling-v3` 模型在 Omni 端点上新增了以下能力：
+`kling-v3-0` 模型在 Omni 端点上新增了以下能力：
 - **扩展时长**：支持 3-15 秒（旧版 O1 为 3-10 秒）
 - **多镜头叙事 (Multi-shot)**：单次请求生成多个连续镜头，最多 6 个分镜
 - **视频编辑模式**：通过 `refer_type: "base"` 对现有视频进行文本指令编辑
@@ -28,7 +28,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 模型 | 说明 | Duration 范围 | Multi-shot | 视频编辑 | 原生音频 |
 |------|------|---------------|------------|----------|----------|
-| `kling-v3` | Video 3.0，最新版本 | 3-15s | ✅ | ✅ | ✅ |
+| `kling-v3-0` | Video 3.0，最新版本 | 3-15s | ✅ | ✅ | ✅ |
 | `kling-video-o1` | Omni V1 | 3-10s | ❌ | ❌ | ❌ |
 
 ---
@@ -39,7 +39,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 | 示例 |
 |--------|------|------|--------|------|------|
-| model | string | 是 | - | 使用的模型 ID | `kling-v3` |
+| model | string | 是 | - | 使用的模型 ID | `kling-v3-0` |
 | prompt | string | 条件必填 | - | 视频描述文本。使用 `multi_prompt` 时不可同时传入 | `一个在森林里奔跑的小狐狸` |
 | negative_prompt | string | 否 | - | 负向提示词 | `模糊, 水印` |
 | mode | string | 否 | `std` | 生成模式：`std` (标准 720p), `pro` (专业 1080p) | `std`, `pro` |
@@ -58,9 +58,9 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 模型 | 工作流 | 支持的 Duration |
 |------|--------|----------------|
-| `kling-v3` | 所有工作流 | `3` - `15` |
-| `kling-v3` | Multi-shot | 各 shot duration 之和须在 3-15 范围内 |
-| `kling-v3` | 视频编辑 (refer_type=base) | 自动跟随原视频时长 |
+| `kling-v3-0` | 所有工作流 | `3` - `15` |
+| `kling-v3-0` | Multi-shot | 各 shot duration 之和须在 3-15 范围内 |
+| `kling-v3-0` | 视频编辑 (refer_type=base) | 自动跟随原视频时长 |
 | `kling-video-o1` | 文生/普通图生 | `5`, `10` |
 | `kling-video-o1` | 首尾帧/视频参考 | `3` - `10` |
 
@@ -76,7 +76,7 @@ Authorization: Bearer YOUR_API_TOKEN
 | 参数名 | 类型 | 说明 |
 |--------|------|------|
 | video_url | string | 视频 URL |
-| refer_type | string | 参考类型：`feature` (特征参考) 或 `base` (视频编辑，仅 `kling-v3` 支持) |
+| refer_type | string | 参考类型：`feature` (特征参考) 或 `base` (视频编辑，仅 `kling-v3-0` 支持) |
 | keep_original_sound | string | 是否保留原声：`yes`, `no` |
 
 ### MultiShotItem (V3 专属)
@@ -100,8 +100,8 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | 模型 | 模式 | 基础价格 | 含音频 | 含视频输入 |
 |------|------|---------|--------|-----------|
-| `kling-v3` | Std | 按秒计费 | ×1.5 | ×1.5 |
-| `kling-v3` | Pro | 按秒计费 ×1.333 | ×1.5 | ×1.5 |
+| `kling-v3-0` | Std | 按秒计费 | ×1.5 | ×1.5 |
+| `kling-v3-0` | Pro | 按秒计费 ×1.333 | ×1.5 | ×1.5 |
 | `kling-video-o1` | Std | 按秒计费 | - | ×1.5 |
 | `kling-video-o1` | Pro | 按秒计费 ×1.333 | - | ×1.5 |
 
@@ -130,7 +130,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "一只在森林里奔跑的小狐狸，阳光透过树叶洒下斑驳的光影",
     "duration": "10",
     "aspect_ratio": "16:9",
@@ -145,7 +145,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "让人物从站立缓缓坐下",
     "image_list": [
       {"image_url": "https://example.com/start.jpg", "type": "first_frame"},
@@ -162,7 +162,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "multi_prompt": [
       {"prompt": "一个女孩推开咖啡店的门走进去，镜头跟随", "duration": "4"},
       {"prompt": "女孩坐在窗边，打开笔记本电脑，特写", "duration": "4"},
@@ -181,7 +181,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "将背景替换为雪山风景",
     "video_list": [
       {
@@ -200,7 +200,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   "id": "842250903629086785",
   "task_id": "842250903629086785",
   "object": "video",
-  "model": "kling-v3",
+  "model": "kling-v3-0",
   "created_at": 1737367800
 }
 ```

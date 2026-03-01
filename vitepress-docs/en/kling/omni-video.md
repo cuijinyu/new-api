@@ -3,7 +3,7 @@
 Kling Omni Video is Kling's unified multimodal video generation endpoint, supporting rich multimodal inputs including multiple images, video references, and subject control, enabling precise motion control and rich visual expression.
 
 ::: tip V3 New Features
-The `kling-v3` model introduces the following new capabilities on the Omni endpoint:
+The `kling-v3-0` model introduces the following new capabilities on the Omni endpoint:
 - **Extended Duration**: Supports 3-15 seconds (legacy O1 supports 3-10 seconds)
 - **Multi-shot Narrative**: Generate multiple consecutive shots in a single request, up to 6 shots
 - **Video Editing Mode**: Edit existing videos with text instructions via `refer_type: "base"`
@@ -28,7 +28,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Model | Description | Duration Range | Multi-shot | Video Editing | Native Audio |
 |-------|-------------|----------------|------------|---------------|--------------|
-| `kling-v3` | Video 3.0, latest version | 3-15s | ✅ | ✅ | ✅ |
+| `kling-v3-0` | Video 3.0, latest version | 3-15s | ✅ | ✅ | ✅ |
 | `kling-video-o1` | Omni V1 | 3-10s | ❌ | ❌ | ❌ |
 
 ---
@@ -39,7 +39,7 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Name | Type | Required | Default | Description | Example |
 |------|------|----------|---------|-------------|---------|
-| model | string | Yes | - | Model ID | `kling-v3` |
+| model | string | Yes | - | Model ID | `kling-v3-0` |
 | prompt | string | Conditional | - | Video description text. Cannot be used together with `multi_prompt` | `A small fox running in the forest` |
 | negative_prompt | string | No | - | Negative prompts | `blur, watermark` |
 | mode | string | No | `std` | Generation mode: `std` (Standard 720p), `pro` (Professional 1080p) | `std`, `pro` |
@@ -58,9 +58,9 @@ Authorization: Bearer YOUR_API_TOKEN
 
 | Model | Workflow | Supported Duration |
 |-------|----------|-------------------|
-| `kling-v3` | All workflows | `3` - `15` |
-| `kling-v3` | Multi-shot | Sum of all shot durations must be within 3-15 range |
-| `kling-v3` | Video editing (refer_type=base) | Automatically follows original video duration |
+| `kling-v3-0` | All workflows | `3` - `15` |
+| `kling-v3-0` | Multi-shot | Sum of all shot durations must be within 3-15 range |
+| `kling-v3-0` | Video editing (refer_type=base) | Automatically follows original video duration |
 | `kling-video-o1` | T2V / basic I2V | `5`, `10` |
 | `kling-video-o1` | First/end frame / video reference | `3` - `10` |
 
@@ -76,7 +76,7 @@ Authorization: Bearer YOUR_API_TOKEN
 | Name | Type | Description |
 |------|------|-------------|
 | video_url | string | Video URL |
-| refer_type | string | Reference type: `feature` (feature reference) or `base` (video editing, `kling-v3` only) |
+| refer_type | string | Reference type: `feature` (feature reference) or `base` (video editing, `kling-v3-0` only) |
 | keep_original_sound | string | Keep original sound: `yes`, `no` |
 
 ### MultiShotItem (V3 Only)
@@ -100,8 +100,8 @@ Defines a single shot in multi-shot mode. When using `multi_prompt`, the top-lev
 
 | Model | Mode | Base Price | With Audio | With Video Input |
 |-------|------|-----------|------------|-----------------|
-| `kling-v3` | Std | Per-second billing | ×1.5 | ×1.5 |
-| `kling-v3` | Pro | Per-second billing ×1.333 | ×1.5 | ×1.5 |
+| `kling-v3-0` | Std | Per-second billing | ×1.5 | ×1.5 |
+| `kling-v3-0` | Pro | Per-second billing ×1.333 | ×1.5 | ×1.5 |
 | `kling-video-o1` | Std | Per-second billing | - | ×1.5 |
 | `kling-video-o1` | Pro | Per-second billing ×1.333 | - | ×1.5 |
 
@@ -130,7 +130,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "A fox running through a sunlit forest with dappled light filtering through the leaves",
     "duration": "10",
     "aspect_ratio": "16:9",
@@ -145,7 +145,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "The character slowly sits down from a standing position",
     "image_list": [
       {"image_url": "https://example.com/start.jpg", "type": "first_frame"},
@@ -162,7 +162,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "multi_prompt": [
       {"prompt": "A girl pushes open the door of a coffee shop and walks in, camera follows", "duration": "4"},
       {"prompt": "The girl sits by the window, opens her laptop, close-up shot", "duration": "4"},
@@ -181,7 +181,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -d '{
-    "model": "kling-v3",
+    "model": "kling-v3-0",
     "prompt": "Replace the background with a snowy mountain landscape",
     "video_list": [
       {
@@ -200,7 +200,7 @@ curl https://your-domain.com/kling/v1/videos/omni-video \
   "id": "842250903629086785",
   "task_id": "842250903629086785",
   "object": "video",
-  "model": "kling-v3",
+  "model": "kling-v3-0",
   "created_at": 1737367800
 }
 ```

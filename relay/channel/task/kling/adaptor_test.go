@@ -127,21 +127,21 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			name:   "kling-v3 Std 5s",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			want:   5.0,
 		},
 		{
 			name:   "kling-v3 Pro 5s",
 			action: constant.TaskActionOmniVideo,
 			mode:   "pro",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			want:   float32(5.0 * (0.112 / 0.084)), // 5s * 1.333
 		},
 		{
 			name:   "kling-v3 Std 15s",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			metadata: map[string]interface{}{
 				"duration": "15",
 			},
@@ -151,7 +151,7 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			name:   "kling-v3 Std 5s With Video Input",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			metadata: map[string]interface{}{
 				"video_list": []interface{}{
 					map[string]interface{}{"video_url": "test.mp4"},
@@ -163,7 +163,7 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			name:   "kling-v3 Std 5s With Sound",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			metadata: map[string]interface{}{
 				"sound": "on",
 			},
@@ -173,7 +173,7 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			name:   "kling-v3 Multi-shot 3+4+5=12s",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			metadata: map[string]interface{}{
 				"multi_prompt": []interface{}{
 					map[string]interface{}{"prompt": "shot 1", "duration": "3"},
@@ -187,7 +187,7 @@ func TestKlingAdaptor_GetPriceScale(t *testing.T) {
 			name:   "kling-v3 Video Edit (refer_type=base)",
 			action: constant.TaskActionOmniVideo,
 			mode:   "std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			metadata: map[string]interface{}{
 				"video_list": []interface{}{
 					map[string]interface{}{"video_url": "test.mp4", "refer_type": "base", "keep_original_sound": "yes"},
@@ -431,7 +431,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Text2Video 3s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				Duration:  "3",
 			},
 			want: 3,
@@ -439,7 +439,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Text2Video 15s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				Duration:  "15",
 			},
 			want: 15,
@@ -447,7 +447,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Text2Video 16s (Over Limit)",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				Duration:  "16",
 			},
 			wantErr: true,
@@ -455,7 +455,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Image2Video 12s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				ImageList: []OmniImageItem{{ImageUrl: "img"}},
 				Duration:  "12",
 			},
@@ -464,7 +464,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Video Feature 15s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				VideoList: []OmniVideoItem{{VideoUrl: "vid", ReferType: "feature"}},
 				Duration:  "15",
 			},
@@ -473,7 +473,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Video Base (Supported)",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				VideoList: []OmniVideoItem{{VideoUrl: "vid", ReferType: "base"}},
 				Duration:  "5",
 			},
@@ -482,7 +482,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Multi-shot 5+5=10s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				MultiPrompt: []MultiShotItem{
 					{Prompt: "shot 1", Duration: "5"},
 					{Prompt: "shot 2", Duration: "5"},
@@ -493,7 +493,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Multi-shot 3+3+3+3+3=15s",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				MultiPrompt: []MultiShotItem{
 					{Prompt: "shot 1", Duration: "3"},
 					{Prompt: "shot 2", Duration: "3"},
@@ -507,7 +507,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Multi-shot Over Limit (4+4+4+4=16s)",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				MultiPrompt: []MultiShotItem{
 					{Prompt: "shot 1", Duration: "4"},
 					{Prompt: "shot 2", Duration: "4"},
@@ -520,7 +520,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Multi-shot Empty Prompt",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				MultiPrompt: []MultiShotItem{
 					{Prompt: "", Duration: "5"},
 					{Prompt: "shot 2", Duration: "5"},
@@ -531,7 +531,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 		{
 			name: "V3 Multi-shot Shot Duration < 3",
 			req: &requestPayload{
-				ModelName: "kling-v3",
+				ModelName: "kling-v3-0",
 				MultiPrompt: []MultiShotItem{
 					{Prompt: "shot 1", Duration: "2"},
 					{Prompt: "shot 2", Duration: "5"},
@@ -714,7 +714,7 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 		// kling-v3 测试（使用 OmniVideo action）
 		{
 			name:          "V3 Std 5s",
-			model:         "kling-v3",
+			model:         "kling-v3-0",
 			mode:          "std",
 			duration:      5,
 			action:        constant.TaskActionOmniVideo,
@@ -723,7 +723,7 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 		},
 		{
 			name:          "V3 Pro 5s",
-			model:         "kling-v3",
+			model:         "kling-v3-0",
 			mode:          "pro",
 			duration:      5,
 			action:        constant.TaskActionOmniVideo,
@@ -732,7 +732,7 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 		},
 		{
 			name:          "V3 Std 15s",
-			model:         "kling-v3",
+			model:         "kling-v3-0",
 			mode:          "std",
 			duration:      15,
 			action:        constant.TaskActionOmniVideo,
@@ -741,7 +741,7 @@ func TestKlingPricing_OrdinaryVideo(t *testing.T) {
 		},
 		{
 			name:          "V3 Pro 15s",
-			model:         "kling-v3",
+			model:         "kling-v3-0",
 			mode:          "pro",
 			duration:      15,
 			action:        constant.TaskActionOmniVideo,
@@ -1303,7 +1303,7 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 		// V3 高级功能测试
 		{
 			name:   "V3 开启音频 Std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			mode:   "std",
 			action: constant.TaskActionOmniVideo,
 			metadata: map[string]interface{}{
@@ -1314,7 +1314,7 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 		},
 		{
 			name:   "V3 开启音频 Pro",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			mode:   "pro",
 			action: constant.TaskActionOmniVideo,
 			metadata: map[string]interface{}{
@@ -1325,7 +1325,7 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 		},
 		{
 			name:   "V3 带视频输入 Std",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			mode:   "std",
 			action: constant.TaskActionOmniVideo,
 			metadata: map[string]interface{}{
@@ -1338,7 +1338,7 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 		},
 		{
 			name:   "V3 带视频输入 Pro",
-			model:  "kling-v3",
+			model:  "kling-v3-0",
 			mode:   "pro",
 			action: constant.TaskActionOmniVideo,
 			metadata: map[string]interface{}{
@@ -1439,18 +1439,18 @@ func TestKlingPricing_OfficialPriceVerification(t *testing.T) {
 
 		// ========== Video-V3 模型 ==========
 		// 官方价格: 与 O1 相同基础价格 Std 每秒0.6元, Pro 每秒0.8元; 含音频 Std 每秒0.9元, Pro 每秒1.2元
-		{"Video-V3 Std 5s 无音频", constant.TaskActionOmniVideo, "kling-v3", "std", 5, nil, "", 0.084, 3.0 * priceRatio},
-		{"Video-V3 Pro 5s 无音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5, nil, "", 0.084, 4.0 * priceRatio},
-		{"Video-V3 Std 15s 无音频", constant.TaskActionOmniVideo, "kling-v3", "std", 15, nil, "", 0.084, 9.0 * priceRatio},
-		{"Video-V3 Pro 15s 无音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 15, nil, "", 0.084, 12.0 * priceRatio},
-		{"Video-V3 Std 5s 含音频", constant.TaskActionOmniVideo, "kling-v3", "std", 5,
+		{"Video-V3 Std 5s 无音频", constant.TaskActionOmniVideo, "kling-v3-0", "std", 5, nil, "", 0.084, 3.0 * priceRatio},
+		{"Video-V3 Pro 5s 无音频", constant.TaskActionOmniVideo, "kling-v3-0", "pro", 5, nil, "", 0.084, 4.0 * priceRatio},
+		{"Video-V3 Std 15s 无音频", constant.TaskActionOmniVideo, "kling-v3-0", "std", 15, nil, "", 0.084, 9.0 * priceRatio},
+		{"Video-V3 Pro 15s 无音频", constant.TaskActionOmniVideo, "kling-v3-0", "pro", 15, nil, "", 0.084, 12.0 * priceRatio},
+		{"Video-V3 Std 5s 含音频", constant.TaskActionOmniVideo, "kling-v3-0", "std", 5,
 			map[string]interface{}{"sound": "on"}, "", 0.084, 4.5 * priceRatio},
-		{"Video-V3 Pro 5s 含音频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5,
+		{"Video-V3 Pro 5s 含音频", constant.TaskActionOmniVideo, "kling-v3-0", "pro", 5,
 			map[string]interface{}{"sound": "on"}, "", 0.084, 6.0 * priceRatio},
-		{"Video-V3 Std 5s 有视频", constant.TaskActionOmniVideo, "kling-v3", "std", 5,
+		{"Video-V3 Std 5s 有视频", constant.TaskActionOmniVideo, "kling-v3-0", "std", 5,
 			map[string]interface{}{"video_list": []interface{}{map[string]interface{}{"video_url": "test.mp4"}}},
 			"", 0.084, 4.5 * priceRatio},
-		{"Video-V3 Pro 5s 有视频", constant.TaskActionOmniVideo, "kling-v3", "pro", 5,
+		{"Video-V3 Pro 5s 有视频", constant.TaskActionOmniVideo, "kling-v3-0", "pro", 5,
 			map[string]interface{}{"video_list": []interface{}{map[string]interface{}{"video_url": "test.mp4"}}},
 			"", 0.084, 6.0 * priceRatio},
 
@@ -1606,7 +1606,7 @@ func TestKlingPricing_ProScaleMap(t *testing.T) {
 	// 验证 proScaleMap 中的倍率是否正确
 	expectedProScales := map[string]float64{
 		"kling-video-o1":   0.112 / 0.084, // 1.333
-		"kling-v3":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
+		"kling-v3-0":         0.112 / 0.084, // 1.333 - V3 与 O1 相同
 		"kling-v2-6":       0.07 / 0.07,   // 1.0
 		"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 		"kling-v2-1":       0.098 / 0.056, // 1.75

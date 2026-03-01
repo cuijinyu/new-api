@@ -166,7 +166,7 @@ const OfficialTTSPricePerCall = 0.05 // 每次0.05元
 // ModelPriceMap 模型固定价格配置（内部计价单位，对应系统配置）
 var ModelPriceMap = map[string]float64{
 	"kling-video-o1":    0.084,
-	"kling-v3":          0.084,
+	"kling-v3-0":          0.084,
 	"kling-v2-6":        0.07,
 	"kling-v2-5-turbo":  0.042,
 	"kling-v2-1":        0.056,

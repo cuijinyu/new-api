@@ -83,7 +83,7 @@ def test_text2video_std():
     """V3 文生视频 - Std 模式, 10s, 含音频"""
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "prompt": "一只橘猫在阳光下的花园里追蝴蝶，电影质感，浅景深",
             "mode": "std",
             "duration": "10",
@@ -99,7 +99,7 @@ def test_text2video_pro_15s():
     """V3 文生视频 - Pro 模式, 15s (V3 新增上限)"""
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "prompt": "城市夜景延时摄影，车流光轨从繁忙到寂静，4K电影感",
             "mode": "pro",
             "duration": "15",
@@ -114,7 +114,7 @@ def test_image2video_first_frame():
     """V3 图生视频 - 首帧模式"""
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "prompt": "人物缓缓转头微笑，头发随风飘动",
             "image_list": [
                 {
@@ -134,7 +134,7 @@ def test_multi_shot():
     """V3 多镜头叙事 (multi_prompt) - 3个分镜, 总计13s"""
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "multi_prompt": [
                 {
                     "prompt": "一个女孩推开咖啡店的玻璃门走进去，镜头跟随，暖色调",
@@ -166,7 +166,7 @@ def test_video_edit(video_url=None):
         return None
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "prompt": "将背景替换为日落时分的海边沙滩，保持人物动作不变",
             "video_list": [
                 {
@@ -188,7 +188,7 @@ def test_video_feature_ref(video_url=None):
         return None
     task_id = submit_task(
         {
-            "model": "kling-v3",
+            "model": "kling-v3-0",
             "prompt": "同样的运镜风格，拍摄一只金毛犬在草地上奔跑",
             "video_list": [
                 {
