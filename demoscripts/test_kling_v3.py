@@ -1,6 +1,16 @@
 """
 Kling V3 新特性测试脚本
 覆盖：文生视频、图生视频、多镜头叙事(multi_prompt)、视频编辑(refer_type=base)、原生音频(sound)
+
+用法:
+  python test_kling_v3.py                          # 仅提交所有任务
+  python test_kling_v3.py --wait                   # 提交并轮询等待
+  python test_kling_v3.py --only multi_shot        # 仅运行多镜头测试
+  python test_kling_v3.py --only multi_shot,video_edit --wait
+  python test_kling_v3.py --only video_edit --video-url "https://..."
+  python test_kling_v3.py --poll 857027474373345290 # 仅轮询已有任务
+
+可用测试名: t2v_std, t2v_pro_15s, i2v_first, multi_shot, video_edit, video_feature
 """
 
 import requests
@@ -9,8 +19,9 @@ import os
 import sys
 import json
 import io
+import argparse
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 BASE_URL = os.getenv("EZMODEL_BASE_URL", "https://www.ezmodel.cloud")
 API_KEY = os.getenv("EZMODEL_API_KEY", "YOUR_API_KEY")
@@ -76,12 +87,22 @@ def poll_task(task_id, timeout=600, interval=10):
 
 
 # ---------------------------------------------------------------------------
-# 测试用例
+# 测试用例注册表
 # ---------------------------------------------------------------------------
 
-def test_text2video_std():
+ALL_TESTS = {}
+
+def register(name):
+    def decorator(fn):
+        ALL_TESTS[name] = fn
+        return fn
+    return decorator
+
+
+@register("t2v_std")
+def test_text2video_std(**_):
     """V3 文生视频 - Std 模式, 10s, 含音频"""
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "prompt": "一只橘猫在阳光下的花园里追蝴蝶，电影质感，浅景深",
@@ -92,12 +113,12 @@ def test_text2video_std():
         },
         label="V3 文生视频 (Std, 10s, sound=on)",
     )
-    return task_id
 
 
-def test_text2video_pro_15s():
+@register("t2v_pro_15s")
+def test_text2video_pro_15s(**_):
     """V3 文生视频 - Pro 模式, 15s (V3 新增上限)"""
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "prompt": "城市夜景延时摄影，车流光轨从繁忙到寂静，4K电影感",
@@ -107,12 +128,12 @@ def test_text2video_pro_15s():
         },
         label="V3 文生视频 (Pro, 15s)",
     )
-    return task_id
 
 
-def test_image2video_first_frame():
+@register("i2v_first")
+def test_image2video_first_frame(**_):
     """V3 图生视频 - 首帧模式"""
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "prompt": "人物缓缓转头微笑，头发随风飘动",
@@ -127,12 +148,12 @@ def test_image2video_first_frame():
         },
         label="V3 图生视频 (首帧, Pro, 5s)",
     )
-    return task_id
 
 
-def test_multi_shot():
+@register("multi_shot")
+def test_multi_shot(**_):
     """V3 多镜头叙事 (multi_prompt) - 3个分镜, 总计13s"""
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "multi_prompt": [
@@ -155,16 +176,15 @@ def test_multi_shot():
         },
         label="V3 多镜头叙事 (3 shots, 4+4+5=13s, Pro, sound=on)",
     )
-    return task_id
 
 
-def test_video_edit(video_url=None):
-    """V3 视频编辑 (refer_type=base) - 对已有视频进行文本指令编辑"""
+@register("video_edit")
+def test_video_edit(video_url=None, **_):
+    """V3 视频编辑 (refer_type=base)"""
     if not video_url:
-        print("\n  ⚠️ 跳过视频编辑测试：需要一个已生成的视频 URL")
-        print("  提示: 先运行其他测试获取视频 URL，或设置 TEST_VIDEO_URL 环境变量")
+        print("\n  ⚠️ 跳过视频编辑测试：需要 --video-url 或 TEST_VIDEO_URL")
         return None
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "prompt": "将背景替换为日落时分的海边沙滩，保持人物动作不变",
@@ -178,15 +198,15 @@ def test_video_edit(video_url=None):
         },
         label="V3 视频编辑 (refer_type=base)",
     )
-    return task_id
 
 
-def test_video_feature_ref(video_url=None):
-    """V3 视频特征参考 (refer_type=feature) + 音频"""
+@register("video_feature")
+def test_video_feature_ref(video_url=None, **_):
+    """V3 视频特征参考 (refer_type=feature)"""
     if not video_url:
-        print("\n  ⚠️ 跳过视频特征参考测试：需要一个已生成的视频 URL")
+        print("\n  ⚠️ 跳过视频特征参考测试：需要 --video-url 或 TEST_VIDEO_URL")
         return None
-    task_id = submit_task(
+    return submit_task(
         {
             "model": "kling-v3-omni",
             "prompt": "同样的运镜风格，拍摄一只金毛犬在草地上奔跑",
@@ -198,68 +218,89 @@ def test_video_feature_ref(video_url=None):
             ],
             "duration": "5",
             "mode": "std",
-            "sound": "on",
         },
-        label="V3 视频特征参考 (refer_type=feature, sound=on)",
+        label="V3 视频特征参考 (refer_type=feature)",
     )
-    return task_id
 
 
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 
+def parse_args():
+    p = argparse.ArgumentParser(description="Kling V3 测试脚本")
+    p.add_argument("--wait", action="store_true", help="提交后轮询等待完成")
+    p.add_argument("--only", type=str, default="",
+                   help="仅运行指定测试，逗号分隔。可选: " + ",".join(ALL_TESTS))
+    p.add_argument("--poll", type=str, default="",
+                   help="仅轮询已有 task_id（逗号分隔多个）")
+    p.add_argument("--video-url", type=str, default="",
+                   help="用于 video_edit/video_feature 的视频 URL")
+    p.add_argument("--timeout", type=int, default=600,
+                   help="轮询超时秒数 (默认 600)")
+    return p.parse_args()
+
+
 def main():
+    args = parse_args()
+
     if API_KEY == "YOUR_API_KEY":
         print("请先设置环境变量 EZMODEL_API_KEY")
         sys.exit(1)
 
-    wait = "--wait" in sys.argv
-    video_url_env = os.getenv("TEST_VIDEO_URL")
+    # --poll 模式：仅轮询已有任务
+    if args.poll:
+        print(f"[轮询模式] 超时: {args.timeout}s")
+        for tid in args.poll.split(","):
+            tid = tid.strip()
+            print(f"\n--- Task {tid} ---")
+            poll_task(tid, timeout=args.timeout)
+        return
+
+    video_url = args.video_url or os.getenv("TEST_VIDEO_URL")
+
+    # 确定要运行的测试
+    if args.only:
+        selected = [s.strip() for s in args.only.split(",")]
+        unknown = [s for s in selected if s not in ALL_TESTS]
+        if unknown:
+            print(f"未知测试名: {unknown}")
+            print(f"可选: {list(ALL_TESTS.keys())}")
+            sys.exit(1)
+    else:
+        selected = list(ALL_TESTS.keys())
 
     print(f"Base URL: {BASE_URL}")
-    print(f"等待模式: {'开启 (会轮询直到完成)' if wait else '关闭 (仅提交)'}")
+    print(f"等待模式: {'开启' if args.wait else '关闭'}")
+    print(f"运行测试: {selected}")
+    if video_url:
+        print(f"视频 URL: {video_url[:80]}...")
     print("=" * 60)
 
+    # 提交任务
     tasks = {}
-
-    # 1) 文生视频 Std
-    tasks["t2v_std"] = test_text2video_std()
-
-    # 2) 文生视频 Pro 15s
-    tasks["t2v_pro_15s"] = test_text2video_pro_15s()
-
-    # 3) 图生视频 首帧
-    tasks["i2v_first"] = test_image2video_first_frame()
-
-    # 4) 多镜头叙事
-    tasks["multi_shot"] = test_multi_shot()
-
-    # 5) 视频编辑 & 特征参考 (需要已有视频URL)
-    generated_video_url = None
-    if wait and tasks["t2v_std"]:
-        print(f"\n{'='*60}")
-        print("[等待] 等待文生视频(Std)完成，用于后续视频编辑测试...")
-        generated_video_url = poll_task(tasks["t2v_std"])
-
-    ref_video = video_url_env or generated_video_url
-    tasks["video_edit"] = test_video_edit(ref_video)
-    tasks["video_feature"] = test_video_feature_ref(ref_video)
+    for name in selected:
+        fn = ALL_TESTS[name]
+        tasks[name] = fn(video_url=video_url)
 
     # 汇总
     print(f"\n{'='*60}")
-    print("[汇总] 所有任务提交结果:")
+    print("[汇总] 任务提交结果:")
     for name, tid in tasks.items():
         status = f"Task ID: {tid}" if tid else "未提交/失败"
         print(f"  {name:20s} -> {status}")
 
-    if wait:
+    # 轮询
+    if args.wait:
         print(f"\n{'='*60}")
-        print("[轮询] 等待所有剩余任务完成...")
+        print(f"[轮询] 等待任务完成 (超时 {args.timeout}s)...")
         for name, tid in tasks.items():
-            if tid and name != "t2v_std":
+            if tid:
                 print(f"\n--- {name} ---")
-                poll_task(tid)
+                result = poll_task(tid, timeout=args.timeout)
+                if result and name in ("t2v_std", "i2v_first") and not video_url:
+                    video_url = result
+                    print(f"  (已保存视频 URL 供后续测试使用)")
 
     print("\n✅ 测试脚本执行完毕")
 
