@@ -62,10 +62,12 @@ func KlingRequestConvert() func(c *gin.Context) {
 		}
 
 		prompt, _ := originalReq["prompt"].(string)
+		mode, _ := originalReq["mode"].(string)
 
 		unifiedReq := map[string]interface{}{
 			"model":    model,
 			"prompt":   prompt,
+			"mode":     mode,
 			"metadata": originalReq,
 		}
 

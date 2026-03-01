@@ -8,6 +8,9 @@ import time
 import os
 import sys
 import json
+import io
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 BASE_URL = os.getenv("EZMODEL_BASE_URL", "https://www.ezmodel.cloud")
 API_KEY = os.getenv("EZMODEL_API_KEY", "YOUR_API_KEY")

@@ -1074,7 +1074,8 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// 检查是否是不需要 prompt 的接口
 	currentAction := c.GetString("action")
-	noPromptRequired := currentAction == constant.TaskActionMultiElementsInit || // 多模态视频编辑 - 初始化
+	noPromptRequired := currentAction == constant.TaskActionOmniVideo || // Omni 视频（V3 multi_prompt 模式下 prompt 可选）
+		currentAction == constant.TaskActionMultiElementsInit || // 多模态视频编辑 - 初始化
 		currentAction == constant.TaskActionMultiElementsAddSelection || // 多模态视频编辑 - 增加选区
 		currentAction == constant.TaskActionMultiElementsDeleteSelection || // 多模态视频编辑 - 删减选区
 		currentAction == constant.TaskActionMultiElementsClearSelection || // 多模态视频编辑 - 清除选区
