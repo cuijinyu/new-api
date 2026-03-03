@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-// 模拟 compatible_handler.go 中 ratio 计费分支的计算逻辑
+// 模拟“promptTokens 不含缓存”的 ratio 计费分支计算逻辑
+//（例如 Claude 原生计费链路中的总输入组装方式）
 // 用于集成验证 Claude 200K 倍率对最终 quota 的影响
 //
 // 计费公式:
@@ -39,8 +40,8 @@ type billingTestCase struct {
 	expectedQuota    float64 // 期望的 quota（允许浮点误差）
 }
 
-// simulateBilling 模拟 compatible_handler.go 中 ratio 计费分支的计算
-// 对应 Anthropic 频道：promptTokens 不含缓存，totalInput = promptTokens + cacheTokens + cacheCreationTokens
+// simulateBilling 模拟 ratio 计费分支（promptTokens 不含缓存）
+// totalInput = promptTokens + cacheTokens + cacheCreationTokens
 func simulateBilling(tc billingTestCase) (quota float64, inputMult float64, outputMult float64) {
 	// 计算 promptQuota（模拟 Anthropic 频道，promptTokens 不含缓存）
 	baseTokens := float64(tc.promptTokens)
@@ -67,6 +68,52 @@ func simulateBilling(tc billingTestCase) (quota float64, inputMult float64, outp
 	}
 
 	return quota, inputMult, outputMult
+}
+
+// TestClaudeCompatible200KThresholdNoDoubleCountCache 验证 compatible 链路阈值判断口径：
+// compatible_handler 中 promptTokens 已包含 cache_read / cache_creation，不能再次叠加。
+func TestClaudeCompatible200KThresholdNoDoubleCountCache(t *testing.T) {
+	modelName := "claude-sonnet-4-20250514"
+
+	// 在 compatible 链路中，promptTokens 已是“总输入”。
+	// 这个用例设计为：
+	// - 正确口径（只看 promptTokens）=> 190K，不触发 >200K
+	// - 错误口径（再加 cache/cachedCreation）=> 300K，错误触发 >200K
+	promptTokens := 190000
+	cacheTokens := 90000
+	cacheCreationTokens := 20000
+	completionTokens := 1000
+	modelRatio := 1.5
+	completionRatio := 5.0
+	cacheRatio := 0.1
+	cacheCreationRatio := 1.25
+	groupRatio := 1.0
+
+	correctInputMult, correctOutputMult := GetClaude200KMultipliers(modelName, promptTokens)
+	if correctInputMult != 1.0 || correctOutputMult != 1.0 {
+		t.Fatalf("correct threshold should not trigger >200K, got input=%f output=%f", correctInputMult, correctOutputMult)
+	}
+
+	legacyTotal := promptTokens + cacheTokens + cacheCreationTokens
+	legacyInputMult, legacyOutputMult := GetClaude200KMultipliers(modelName, legacyTotal)
+	if legacyInputMult == 1.0 && legacyOutputMult == 1.0 {
+		t.Fatalf("legacy threshold should (incorrectly) trigger >200K in this case")
+	}
+
+	// 计算同一 usage 下两种阈值口径的 quota，确保错误口径会显著高估
+	baseTokens := float64(promptTokens - cacheTokens - cacheCreationTokens)
+	promptQuota := baseTokens +
+		float64(cacheTokens)*cacheRatio +
+		float64(cacheCreationTokens)*cacheCreationRatio
+	completionQuota := float64(completionTokens) * completionRatio
+	ratio := modelRatio * groupRatio
+
+	correctQuota := (promptQuota + completionQuota) * ratio
+	legacyQuota := promptQuota*ratio*legacyInputMult + completionQuota*ratio*legacyOutputMult
+
+	if legacyQuota <= correctQuota {
+		t.Fatalf("legacy quota should be greater due to incorrect >200K trigger, got legacy=%f correct=%f", legacyQuota, correctQuota)
+	}
 }
 
 // =====================================================================

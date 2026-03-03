@@ -286,72 +286,76 @@ func postBytePlusResponsesConsume(c *gin.Context, info *relaycommon.RelayInfo, b
 
 	// 获取分段计费配置
 	tieredConfig, hasTiered := ratio_setting.GetTieredPricing(info.OriginModelName)
-	
+
 	// 计算配额
 	var quota int
 	var otherInfo = make(map[string]interface{})
-	
+
 	if hasTiered && tieredConfig != nil && tieredConfig.Enabled {
 		// 使用分段计费
 		inputTokensK := usage.PromptTokens / 1000
 		tier, foundTier := ratio_setting.GetPriceTierForTokens(info.OriginModelName, inputTokensK)
-		
+
 		if foundTier && tier != nil {
 			// 计算缓存 tokens
 			cachedTokens := usage.PromptTokensDetails.CachedTokens
 			nonCachedInputTokens := usage.PromptTokens - cachedTokens
-			
+
 			// 计算费用
 			inputCost := float64(nonCachedInputTokens) * tier.InputPrice / 1000000.0
 			outputCost := float64(usage.CompletionTokens) * tier.OutputPrice / 1000000.0
 			cacheCost := float64(cachedTokens) * tier.CacheHitPrice / 1000000.0
-			
+
 			totalCostUSD := inputCost + outputCost + cacheCost
-			
+
 			// 转换为配额 (1 USD = 500000 quota)
 			quota = int(totalCostUSD * common.QuotaPerUnit)
-			
+
 			// 记录分段计费信息
 			otherInfo["tiered_pricing"] = true
 			otherInfo["tiered_tier_range"] = fmt.Sprintf("%d-%d", tier.MinTokens, tier.MaxTokens)
 			otherInfo["tiered_input_price"] = tier.InputPrice
 			otherInfo["tiered_output_price"] = tier.OutputPrice
 			otherInfo["tiered_cache_hit_price"] = tier.CacheHitPrice
+			otherInfo["tiered_cache_store_price"] = tier.CacheStorePrice
+			otherInfo["tiered_cache_store_price_5m"] = tier.CacheStorePrice5m
+			otherInfo["tiered_cache_store_price_1h"] = tier.CacheStorePrice1h
+			otherInfo["tiered_prompt_tokens_include_cache"] = true
 			otherInfo["cache_tokens"] = cachedTokens
 		}
 	}
-	
+
 	if quota == 0 {
 		// 使用标准计费 - 使用模型倍率和分组倍率计算
 		modelRatio, _, _ := ratio_setting.GetModelRatio(info.OriginModelName)
 		groupRatio := ratio_setting.GetGroupRatio(info.UsingGroup)
 		completionRatio := ratio_setting.GetCompletionRatio(info.OriginModelName)
-		
+
 		promptTokensFloat := float64(usage.PromptTokens)
 		completionTokensFloat := float64(usage.CompletionTokens)
-		
+
 		quota = int((promptTokensFloat + completionTokensFloat*completionRatio) * modelRatio * groupRatio)
 	}
-	
+
 	// 记录其他信息
 	otherInfo["request_path"] = "/api/v3/responses"
 	otherInfo["cache_tokens"] = usage.PromptTokensDetails.CachedTokens
-	
+
 	// 记录消费日志
 	logger.LogInfo(c, fmt.Sprintf("BytePlus Responses consume: prompt_tokens=%d, completion_tokens=%d, cached_tokens=%d, quota=%d",
 		usage.PromptTokens, usage.CompletionTokens, usage.PromptTokensDetails.CachedTokens, quota))
-	
+
 	// 扣除配额
 	if quota > 0 {
 		userId := info.UserId
 		channelId := info.ChannelMeta.ChannelId
 		modelName := info.OriginModelName
-		
+
 		err := service.PostConsumeQuota(info, quota, 0, true)
 		if err != nil {
 			logger.LogError(c, fmt.Sprintf("Failed to consume token quota: %v", err))
 		}
-		
+
 		// 记录日志
 		logContent := fmt.Sprintf("模型: %s, 输入: %d, 输出: %d, 缓存: %d",
 			modelName, usage.PromptTokens, usage.CompletionTokens, usage.PromptTokensDetails.CachedTokens)

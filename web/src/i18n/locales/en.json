@@ -2085,6 +2085,7 @@
     "重试": "Retry",
     "钱包管理": "Wallet Management",
     "链接中的{key}将自动替换为sk-xxxx，{address}将自动替换为系统设置的服务器地址，末尾不带/和/v1": "The {key} in the link will be automatically replaced with sk-xxxx, the {address} will be automatically replaced with the server address in system settings, and the end will not have / and /v1",
+    "退费": "Refund",
     "错误": "Error",
     "键为分组名称，值为另一个 JSON 对象，键为分组名称，值为该分组的用户的特殊分组倍率，例如：{\"vip\": {\"default\": 0.5, \"test\": 1}}，表示 vip 分组的用户在使用default分组的令牌时倍率为0.5，使用test分组时倍率为1": "The key is the group name, and the value is another JSON object. The key is the group name, and the value is the special group ratio for users in that group. For example: {\"vip\": {\"default\": 0.5, \"test\": 1}} means that users in the vip group have a ratio of 0.5 when using tokens from the default group, and a ratio of 1 when using tokens from the test group",
     "键为原状态码，值为要复写的状态码，仅影响本地判断": "The key is the original status code, and the value is the status code to override, only affects local judgment",

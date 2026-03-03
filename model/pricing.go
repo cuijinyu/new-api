@@ -16,12 +16,14 @@ import (
 
 // PricingTier 前端展示用的分段价格信息
 type PricingTier struct {
-	MinTokens       int     `json:"min_tokens"`        // 区间最小值（千 tokens）
-	MaxTokens       int     `json:"max_tokens"`        // 区间最大值（千 tokens），-1 表示无上限
-	InputPrice      float64 `json:"input_price"`       // 输入价格 USD/M tokens
-	OutputPrice     float64 `json:"output_price"`      // 输出价格 USD/M tokens
-	CacheHitPrice   float64 `json:"cache_hit_price"`   // 缓存命中价格 USD/M tokens
-	CacheStorePrice float64 `json:"cache_store_price"` // 缓存存储价格 USD/M tokens/hour
+	MinTokens         int     `json:"min_tokens"`                     // 区间最小值（千 tokens）
+	MaxTokens         int     `json:"max_tokens"`                     // 区间最大值（千 tokens），-1 表示无上限
+	InputPrice        float64 `json:"input_price"`                    // 输入价格 USD/M tokens
+	OutputPrice       float64 `json:"output_price"`                   // 输出价格 USD/M tokens
+	CacheHitPrice     float64 `json:"cache_hit_price"`                // 缓存命中价格 USD/M tokens
+	CacheStorePrice   float64 `json:"cache_store_price"`              // 缓存存储价格 USD/M tokens/hour
+	CacheStorePrice5m float64 `json:"cache_store_price_5m,omitempty"` // 5m 缓存写入价格 USD/M tokens
+	CacheStorePrice1h float64 `json:"cache_store_price_1h,omitempty"` // 1h 缓存写入价格 USD/M tokens
 }
 
 type Pricing struct {
@@ -313,17 +315,19 @@ func updatePricing() {
 			pricing.TieredPricing = make([]PricingTier, len(tieredPricing.Tiers))
 			for i, tier := range tieredPricing.Tiers {
 				pricing.TieredPricing[i] = PricingTier{
-					MinTokens:       tier.MinTokens,
-					MaxTokens:       tier.MaxTokens,
-					InputPrice:      tier.InputPrice,
-					OutputPrice:     tier.OutputPrice,
-					CacheHitPrice:   tier.CacheHitPrice,
-					CacheStorePrice: tier.CacheStorePrice,
+					MinTokens:         tier.MinTokens,
+					MaxTokens:         tier.MaxTokens,
+					InputPrice:        tier.InputPrice,
+					OutputPrice:       tier.OutputPrice,
+					CacheHitPrice:     tier.CacheHitPrice,
+					CacheStorePrice:   tier.CacheStorePrice,
+					CacheStorePrice5m: tier.CacheStorePrice5m,
+					CacheStorePrice1h: tier.CacheStorePrice1h,
 				}
 			}
 		} else if ratio_setting.IsClaudeModel(model) && pricing.QuotaType == 0 {
 			// Claude 模型 >200K tokens 时有分段计费，自动生成展示信息
-			baseInputPrice := pricing.ModelRatio * 2   // USD/M tokens
+			baseInputPrice := pricing.ModelRatio * 2 // USD/M tokens
 			baseOutputPrice := baseInputPrice * pricing.CompletionRatio
 			cacheHitPrice := baseInputPrice * 0.1 // Claude 缓存命中为输入价格的 10%
 
@@ -334,17 +338,17 @@ func updatePricing() {
 			pricing.TieredPricingEnabled = true
 			pricing.TieredPricing = []PricingTier{
 				{
-					MinTokens:  0,
-					MaxTokens:  ratio_setting.Claude200KThreshold / 1000, // 转换为千 tokens
-					InputPrice:  baseInputPrice,
-					OutputPrice: baseOutputPrice,
+					MinTokens:     0,
+					MaxTokens:     ratio_setting.Claude200KThreshold / 1000, // 转换为千 tokens
+					InputPrice:    baseInputPrice,
+					OutputPrice:   baseOutputPrice,
 					CacheHitPrice: cacheHitPrice,
 				},
 				{
-					MinTokens:  ratio_setting.Claude200KThreshold / 1000,
-					MaxTokens:  -1,
-					InputPrice:  highInputPrice,
-					OutputPrice: highOutputPrice,
+					MinTokens:     ratio_setting.Claude200KThreshold / 1000,
+					MaxTokens:     -1,
+					InputPrice:    highInputPrice,
+					OutputPrice:   highOutputPrice,
 					CacheHitPrice: highCacheHitPrice,
 				},
 			}

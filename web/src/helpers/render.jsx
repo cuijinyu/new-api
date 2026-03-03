@@ -1188,6 +1188,13 @@ export function renderModelPrice(
   tieredOutputPrice = 0,
   tieredCacheHitPrice = 0,
   tieredTierRange = '',
+  tieredCacheStorePrice = 0,
+  tieredCacheStorePrice5m = 0,
+  tieredCacheStorePrice1h = 0,
+  tieredCacheCreationTokens5m = 0,
+  tieredCacheCreationTokens1h = 0,
+  tieredCacheCreationTokensRemaining = 0,
+  tieredPromptTokensIncludeCache = true,
 ) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
@@ -1200,14 +1207,34 @@ export function renderModelPrice(
 
   // 分段计费显示
   if (tieredPricing && tieredInputPrice > 0) {
-    // 计算实际输入 tokens（减去缓存）
-    const actualInputTokens = Math.max(0, inputTokens - cacheTokens);
+    const cacheCreationTotal =
+      tieredCacheCreationTokens5m +
+      tieredCacheCreationTokens1h +
+      tieredCacheCreationTokensRemaining;
+    // 有些日志的 prompt_tokens 已经是非缓存输入（如 Claude 原生），需要避免二次扣减
+    const actualInputTokens = tieredPromptTokensIncludeCache
+      ? Math.max(0, inputTokens - cacheTokens - cacheCreationTotal)
+      : inputTokens;
+    const cacheStorePrice5m = tieredCacheStorePrice5m || tieredCacheStorePrice;
+    const cacheStorePrice1h = tieredCacheStorePrice1h || tieredCacheStorePrice;
 
     // 计算各部分费用
     const inputCost = (actualInputTokens / 1000000) * tieredInputPrice;
     const outputCost = (completionTokens / 1000000) * tieredOutputPrice;
     const cacheCost = (cacheTokens / 1000000) * tieredCacheHitPrice;
-    const totalBeforeGroup = inputCost + outputCost + cacheCost;
+    const cacheCreationCost5m =
+      (tieredCacheCreationTokens5m / 1000000) * cacheStorePrice5m;
+    const cacheCreationCost1h =
+      (tieredCacheCreationTokens1h / 1000000) * cacheStorePrice1h;
+    const cacheCreationCostRemaining =
+      (tieredCacheCreationTokensRemaining / 1000000) * tieredCacheStorePrice;
+    const totalBeforeGroup =
+      inputCost +
+      outputCost +
+      cacheCost +
+      cacheCreationCost5m +
+      cacheCreationCost1h +
+      cacheCreationCostRemaining;
     const totalAfterGroup = totalBeforeGroup * groupRatio;
 
     return (
@@ -1238,6 +1265,30 @@ export function renderModelPrice(
               })}
             </p>
           )}
+          {tieredCacheCreationTokens5m > 0 && (
+            <p>
+              {i18next.t('缓存创建(5m)价格：{{symbol}}{{price}} / 1M tokens', {
+                symbol: symbol,
+                price: (cacheStorePrice5m * rate).toFixed(6),
+              })}
+            </p>
+          )}
+          {tieredCacheCreationTokens1h > 0 && (
+            <p>
+              {i18next.t('缓存创建(1h)价格：{{symbol}}{{price}} / 1M tokens', {
+                symbol: symbol,
+                price: (cacheStorePrice1h * rate).toFixed(6),
+              })}
+            </p>
+          )}
+          {tieredCacheCreationTokensRemaining > 0 && tieredCacheStorePrice > 0 && (
+            <p>
+              {i18next.t('缓存创建(默认)价格：{{symbol}}{{price}} / 1M tokens', {
+                symbol: symbol,
+                price: (tieredCacheStorePrice * rate).toFixed(6),
+              })}
+            </p>
+          )}
           <p>
             {(() => {
               let inputDesc = '';
@@ -1263,6 +1314,44 @@ export function renderModelPrice(
                 );
               }
 
+              const cacheCreationDesc = [];
+              if (tieredCacheCreationTokens5m > 0) {
+                cacheCreationDesc.push(
+                  i18next.t(
+                    '缓存创建(5m) {{tokens}} tokens / 1M * {{symbol}}{{price}}',
+                    {
+                      tokens: tieredCacheCreationTokens5m,
+                      symbol,
+                      price: (cacheStorePrice5m * rate).toFixed(6),
+                    },
+                  ),
+                );
+              }
+              if (tieredCacheCreationTokens1h > 0) {
+                cacheCreationDesc.push(
+                  i18next.t(
+                    '缓存创建(1h) {{tokens}} tokens / 1M * {{symbol}}{{price}}',
+                    {
+                      tokens: tieredCacheCreationTokens1h,
+                      symbol,
+                      price: (cacheStorePrice1h * rate).toFixed(6),
+                    },
+                  ),
+                );
+              }
+              if (tieredCacheCreationTokensRemaining > 0 && tieredCacheStorePrice > 0) {
+                cacheCreationDesc.push(
+                  i18next.t(
+                    '缓存创建(默认) {{tokens}} tokens / 1M * {{symbol}}{{price}}',
+                    {
+                      tokens: tieredCacheCreationTokensRemaining,
+                      symbol,
+                      price: (tieredCacheStorePrice * rate).toFixed(6),
+                    },
+                  ),
+                );
+              }
+
               const outputDesc = i18next.t(
                 '输出 {{completion}} tokens / 1M * {{symbol}}{{price}}) * {{ratioType}} {{ratio}}',
                 {
@@ -1274,15 +1363,16 @@ export function renderModelPrice(
                 },
               );
 
-              return i18next.t(
-                '{{inputDesc}} + {{outputDesc}} = {{symbol}}{{total}}',
-                {
-                  inputDesc,
-                  outputDesc,
-                  symbol: symbol,
-                  total: (totalAfterGroup * rate).toFixed(6),
-                },
-              );
+              const breakdownParts = [inputDesc];
+              if (cacheCreationDesc.length > 0) {
+                breakdownParts.push(cacheCreationDesc.join(' + '));
+              }
+              breakdownParts.push(outputDesc);
+              return i18next.t('{{breakdown}} = {{symbol}}{{total}}', {
+                breakdown: breakdownParts.join(' + '),
+                symbol: symbol,
+                total: (totalAfterGroup * rate).toFixed(6),
+              });
             })()}
           </p>
           <p>{i18next.t('仅供参考，以实际扣费为准')}</p>
@@ -1923,14 +2013,14 @@ export function renderClaudeModelPrice(
       ? 0
       : cacheCreationTokens;
     const effectiveInputTokens =
-      nonCachedTokens +
+      nonCachedTokens * claude200kInputMult +
       cacheTokens * cacheRatio +
       legacyCacheCreationTokens * cacheCreationRatio +
       cacheCreationTokens5m * cacheCreationRatio5m +
       cacheCreationTokens1h * cacheCreationRatio1h;
 
     let price =
-      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio * claude200kInputMult +
+      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
       (completionTokens / 1000000) * completionRatioPrice * groupRatio * claude200kOutputMult;
 
     const inputUnitPrice = inputRatioPrice * rate;

@@ -2016,6 +2016,7 @@
     "重试": "Réessayer",
     "钱包管理": "Gestion du portefeuille",
     "链接中的{key}将自动替换为sk-xxxx，{address}将自动替换为系统设置的服务器地址，末尾不带/和/v1": "Le {key} dans le lien sera automatiquement remplacé par sk-xxxx, le {address} sera automatiquement remplacé par l'adresse du serveur dans les paramètres système, et la fin n'aura pas / et /v1",
+    "退费": "Remboursement",
     "错误": "Erreur",
     "键为分组名称，值为另一个 JSON 对象，键为分组名称，值为该分组的用户的特殊分组倍率，例如：{\"vip\": {\"default\": 0.5, \"test\": 1}}，表示 vip 分组的用户在使用default分组的令牌时倍率为0.5，使用test分组时倍率为1": "La clé est le nom du groupe, la valeur est un autre objet JSON, la clé est le nom du groupe, la valeur est le ratio de groupe spécial des utilisateurs de ce groupe, par exemple : {\"vip\": {\"default\": 0.5, \"test\": 1}}, ce qui signifie que les utilisateurs du groupe vip ont un ratio de 0.5 lors de l'utilisation de jetons du groupe default et un ratio de 1 lors de l'utilisation du groupe test",
     "键为原状态码，值为要复写的状态码，仅影响本地判断": "La clé est le code d'état d'origine, la valeur est le code d'état à réécrire, n'affecte que le jugement local",

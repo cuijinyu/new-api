@@ -212,7 +212,13 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 								logger.LogInfo(ctx, "视频任务额度返还: "+logDetail)
 								if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err == nil {
 									task.Quota = actualQuota
-									model.RecordLog(task.UserId, model.LogTypeSystem, "视频任务成功退还多扣费用: "+logDetail)
+									model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
+										ChannelId: task.ChannelId,
+										ModelName: modelName,
+										Quota:     refundQuota,
+										Content:   "视频任务成功退还多扣费用: " + logDetail,
+										Group:     task.Group,
+									})
 								}
 							} else {
 								logger.LogInfo(ctx, "视频任务预扣费准确: "+logDetail)
@@ -256,7 +262,20 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 			logger.LogError(ctx, "Failed to increase user quota: "+err.Error())
 		}
 		logContent := fmt.Sprintf("Video async task failed %s, refund %s", task.TaskID, logger.LogQuota(quota))
-		model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
+		modelName := ""
+		var taskData map[string]interface{}
+		if err := json.Unmarshal(task.Data, &taskData); err == nil {
+			if m, ok := taskData["model"].(string); ok {
+				modelName = m
+			}
+		}
+		model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
+			ChannelId: task.ChannelId,
+			ModelName: modelName,
+			Quota:     quota,
+			Content:   logContent,
+			Group:     task.Group,
+		})
 	}
 
 	return nil

@@ -153,6 +153,39 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+type RecordRefundLogParams struct {
+	ChannelId int    `json:"channel_id"`
+	ModelName string `json:"model_name"`
+	Quota     int    `json:"quota"`
+	Content   string `json:"content"`
+	TokenId   int    `json:"token_id"`
+	Group     string `json:"group"`
+}
+
+func RecordRefundLog(userId int, params RecordRefundLogParams) {
+	username, _ := GetUsernameById(userId, false)
+	refundQuota := params.Quota
+	if refundQuota > 0 {
+		refundQuota = -refundQuota
+	}
+	log := &Log{
+		UserId:    userId,
+		Username:  username,
+		CreatedAt: common.GetTimestamp(),
+		Type:      LogTypeRefund,
+		Content:   params.Content,
+		ModelName: params.ModelName,
+		Quota:     refundQuota,
+		ChannelId: params.ChannelId,
+		TokenId:   params.TokenId,
+		Group:     params.Group,
+	}
+	err := LOG_DB.Create(log).Error
+	if err != nil {
+		common.SysLog("failed to record refund log: " + err.Error())
+	}
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return

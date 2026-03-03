@@ -182,7 +182,11 @@ func UpdateMidjourneyTaskBulk() {
 							logger.LogError(ctx, "fail to increase user quota: "+err.Error())
 						}
 						logContent := fmt.Sprintf("构图失败 %s，补偿 %s", task.MjId, logger.LogQuota(task.Quota))
-						model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
+						model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
+							ChannelId: task.ChannelId,
+							Quota:     task.Quota,
+							Content:   logContent,
+						})
 					}
 				}
 			}

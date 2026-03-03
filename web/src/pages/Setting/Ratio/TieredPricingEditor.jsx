@@ -172,6 +172,12 @@ export default function TieredPricingEditor(props) {
                     {tier.cache_store_price > 0 && (
                       <div>{t('缓存存储')}: ${tier.cache_store_price}/M/h</div>
                     )}
+                    {tier.cache_store_price_5m > 0 && (
+                      <div>{t('缓存存储 5m')}: ${tier.cache_store_price_5m}/M</div>
+                    )}
+                    {tier.cache_store_price_1h > 0 && (
+                      <div>{t('缓存存储 1h')}: ${tier.cache_store_price_1h}/M</div>
+                    )}
                   </div>
                 }
               >
@@ -239,6 +245,18 @@ export default function TieredPricingEditor(props) {
       dataIndex: 'cache_store_price',
       key: 'cache_store_price',
       render: (price) => (price > 0 ? `$${price}/M/h` : '-'),
+    },
+    {
+      title: t('缓存存储(5m)'),
+      dataIndex: 'cache_store_price_5m',
+      key: 'cache_store_price_5m',
+      render: (price) => (price > 0 ? `$${price}/M` : '-'),
+    },
+    {
+      title: t('缓存存储(1h)'),
+      dataIndex: 'cache_store_price_1h',
+      key: 'cache_store_price_1h',
+      render: (price) => (price > 0 ? `$${price}/M` : '-'),
     },
     {
       title: t('操作'),
@@ -339,6 +357,8 @@ export default function TieredPricingEditor(props) {
       output_price: 2.0,
       cache_hit_price: 0.05,
       cache_store_price: 0,
+      cache_store_price_5m: 0,
+      cache_store_price_1h: 0,
     });
     setCurrentTierIndex(-1);
     setTierModalVisible(true);
@@ -590,7 +610,31 @@ export default function TieredPricingEditor(props) {
                 setCurrentTier((prev) => ({ ...prev, cache_store_price: value }))
               }
               suffix='$/M tokens/h'
-              extraText={t('可选，设为 0 表示不计费')}
+              extraText={t('默认缓存创建价格，5m/1h 未配置时会回退到该值')}
+            />
+            <Form.InputNumber
+              field='cache_store_price_5m'
+              label={t('缓存存储价格(5m)')}
+              value={currentTier.cache_store_price_5m || 0}
+              min={0}
+              precision={4}
+              onChange={(value) =>
+                setCurrentTier((prev) => ({ ...prev, cache_store_price_5m: value }))
+              }
+              suffix='$/M tokens'
+              extraText={t('可选，设为 0 表示回退到默认缓存存储价格')}
+            />
+            <Form.InputNumber
+              field='cache_store_price_1h'
+              label={t('缓存存储价格(1h)')}
+              value={currentTier.cache_store_price_1h || 0}
+              min={0}
+              precision={4}
+              onChange={(value) =>
+                setCurrentTier((prev) => ({ ...prev, cache_store_price_1h: value }))
+              }
+              suffix='$/M tokens'
+              extraText={t('可选，设为 0 表示回退到默认缓存存储价格')}
             />
           </Form>
         )}

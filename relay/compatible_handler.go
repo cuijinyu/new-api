@@ -311,33 +311,74 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
 		tieredData := relayInfo.PriceData.TieredPricingData
 
+		// Claude 200K token 分段计费：重新评估分段
+		// 对于 compatible_handler，promptTokens 已经包含了 cacheTokens 和 cachedCreationTokens
+		totalInputForClaude := promptTokens
+		inputTokensK := totalInputForClaude / 1000
+		if priceTier, found := ratio_setting.GetPriceTierForTokens(modelName, inputTokensK); found {
+			tieredData = &types.TieredPricingInfo{
+				InputPrice:        priceTier.InputPrice,
+				OutputPrice:       priceTier.OutputPrice,
+				CacheHitPrice:     priceTier.CacheHitPrice,
+				CacheStorePrice:   priceTier.CacheStorePrice,
+				CacheStorePrice5m: priceTier.CacheStorePrice5m,
+				CacheStorePrice1h: priceTier.CacheStorePrice1h,
+				TierMinTokens:     priceTier.MinTokens,
+				TierMaxTokens:     priceTier.MaxTokens,
+			}
+		}
+		relayInfo.PriceData.TieredPricingData = tieredData
+
 		// 计算各部分费用 (价格单位是 USD/M tokens)
 		// 需要减去缓存 tokens
-		actualPromptTokens := promptTokens - cacheTokens
+		actualPromptTokens := promptTokens - cacheTokens - cachedCreationTokens
 		if actualPromptTokens < 0 {
 			actualPromptTokens = 0
 		}
 
 		dActualPromptTokens := decimal.NewFromInt(int64(actualPromptTokens))
 		dCacheTokens := decimal.NewFromInt(int64(cacheTokens))
+		cacheCreationTokens5m := usage.ClaudeCacheCreation5mTokens
+		cacheCreationTokens1h := usage.ClaudeCacheCreation1hTokens
+		remainingCacheCreationTokens := cachedCreationTokens - cacheCreationTokens5m - cacheCreationTokens1h
+		if remainingCacheCreationTokens < 0 {
+			remainingCacheCreationTokens = 0
+		}
+		dCachedCreationTokensRemaining := decimal.NewFromInt(int64(remainingCacheCreationTokens))
+		dCachedCreationTokens5m := decimal.NewFromInt(int64(cacheCreationTokens5m))
+		dCachedCreationTokens1h := decimal.NewFromInt(int64(cacheCreationTokens1h))
 		dCompletionTokens := decimal.NewFromInt(int64(completionTokens))
 
 		dInputPrice := decimal.NewFromFloat(tieredData.InputPrice)
 		dOutputPrice := decimal.NewFromFloat(tieredData.OutputPrice)
 		dCacheHitPrice := decimal.NewFromFloat(tieredData.CacheHitPrice)
+		dCacheStorePrice := decimal.NewFromFloat(tieredData.CacheStorePrice)
+		cacheStorePrice5m := tieredData.CacheStorePrice5m
+		if cacheStorePrice5m <= 0 {
+			cacheStorePrice5m = tieredData.CacheStorePrice
+		}
+		cacheStorePrice1h := tieredData.CacheStorePrice1h
+		if cacheStorePrice1h <= 0 {
+			cacheStorePrice1h = tieredData.CacheStorePrice
+		}
+		dCacheStorePrice5m := decimal.NewFromFloat(cacheStorePrice5m)
+		dCacheStorePrice1h := decimal.NewFromFloat(cacheStorePrice1h)
 
-		// 计算 quota = (inputTokens * inputPrice + outputTokens * outputPrice + cacheTokens * cacheHitPrice) / 1000000 * QuotaPerUnit * groupRatio
+		// 计算 quota = (inputTokens * inputPrice + outputTokens * outputPrice + cacheTokens * cacheHitPrice + cacheCreationTokens * cacheStorePrice) / 1000000 * QuotaPerUnit * groupRatio
 		dMillion := decimal.NewFromInt(1000000)
 
 		inputQuota := dActualPromptTokens.Mul(dInputPrice).Div(dMillion)
 		outputQuota := dCompletionTokens.Mul(dOutputPrice).Div(dMillion)
 		cacheQuota := dCacheTokens.Mul(dCacheHitPrice).Div(dMillion)
+		cacheCreationQuota := dCachedCreationTokensRemaining.Mul(dCacheStorePrice).Div(dMillion).
+			Add(dCachedCreationTokens5m.Mul(dCacheStorePrice5m).Div(dMillion)).
+			Add(dCachedCreationTokens1h.Mul(dCacheStorePrice1h).Div(dMillion))
 
-		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
 
 		// 计算等效模型价格用于日志显示 (不含分组倍率)
-		// modelPrice = inputQuota + outputQuota + cacheQuota (单位: USD)
-		modelPrice = inputQuota.Add(outputQuota).Add(cacheQuota).InexactFloat64()
+		// modelPrice = inputQuota + outputQuota + cacheQuota + cacheCreationQuota (单位: USD)
+		modelPrice = inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).InexactFloat64()
 
 		// 添加其他费用（web search 等）
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
@@ -349,13 +390,10 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	} else if !relayInfo.PriceData.UsePrice {
 		baseTokens := dPromptTokens
 		// 减去 cached tokens
-		// Anthropic API 的 input_tokens 已经不包含缓存 tokens，不需要减去
-		// OpenAI/OpenRouter 等 API 的 prompt_tokens 包含缓存 tokens，需要减去
+		// 对于 compatible_handler，promptTokens 已经包含了 cacheTokens 和 cachedCreationTokens
 		var cachedTokensWithRatio decimal.Decimal
 		if !dCacheTokens.IsZero() {
-			if relayInfo.ChannelType != constant.ChannelTypeAnthropic {
-				baseTokens = baseTokens.Sub(dCacheTokens)
-			}
+			baseTokens = baseTokens.Sub(dCacheTokens)
 			cachedTokensWithRatio = dCacheTokens.Mul(dCacheRatio)
 		}
 		var dCachedCreationTokensWithRatio decimal.Decimal
@@ -367,9 +405,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		// 减去 image tokens
 		var imageTokensWithRatio decimal.Decimal
 		if !dImageTokens.IsZero() {
-			if relayInfo.ChannelType != constant.ChannelTypeAnthropic {
-				baseTokens = baseTokens.Sub(dCachedCreationTokens)
-			}
+			baseTokens = baseTokens.Sub(dImageTokens)
 			imageTokensWithRatio = dImageTokens.Mul(dImageRatio)
 		}
 
@@ -383,23 +419,29 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 				extraContent += fmt.Sprintf("Audio Input 花费 %s", audioInputQuota.String())
 			}
 		}
-		promptQuota := baseTokens.Add(cachedTokensWithRatio).
-			Add(imageTokensWithRatio).
-			Add(dCachedCreationTokensWithRatio)
+		// Claude 200K token 分段计费：当总输入 tokens 超过 200K 时，输入倍率 x2，输出倍率 x1.5
+		// 在 compatible_handler 链路中，promptTokens 已经是“总输入”（包含 cache_read 和 cache_creation），
+		// 不能再次叠加 cacheTokens / cachedCreationTokens，否则会重复计入并导致阈值误判。
+		totalInputForClaude = promptTokens
+		claudeInputMult, claudeOutputMult = ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
+
+		var promptQuota decimal.Decimal
+		if claudeInputMult != 1.0 {
+			dInputMult := decimal.NewFromFloat(claudeInputMult)
+			promptQuota = baseTokens.Mul(dInputMult).Add(cachedTokensWithRatio).
+				Add(imageTokensWithRatio).
+				Add(dCachedCreationTokensWithRatio)
+		} else {
+			promptQuota = baseTokens.Add(cachedTokensWithRatio).
+				Add(imageTokensWithRatio).
+				Add(dCachedCreationTokensWithRatio)
+		}
 
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
 
-		// Claude 200K token 分段计费：当总输入 tokens 超过 200K 时，输入倍率 x2，输出倍率 x1.5
-		// 对于 Anthropic 频道：input_tokens 不包含 cache_read 和 cache_creation，
-		//   总输入 = promptTokens + cacheTokens + cachedCreationTokens
-		// 对于其他频道（如 OpenRouter 转发 Claude）：promptTokens 已包含缓存，
-		//   但 cachedCreationTokens 仍需额外加上
-		totalInputForClaude = promptTokens + cacheTokens + cachedCreationTokens
-		claudeInputMult, claudeOutputMult = ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
 		if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
-			dInputMult := decimal.NewFromFloat(claudeInputMult)
 			dOutputMult := decimal.NewFromFloat(claudeOutputMult)
-			quotaCalculateDecimal = promptQuota.Mul(ratio).Mul(dInputMult).
+			quotaCalculateDecimal = promptQuota.Mul(ratio).
 				Add(completionQuota.Mul(ratio).Mul(dOutputMult))
 			extraContent += fmt.Sprintf("Claude >200K 倍率：输入 x%.1f，输出 x%.1f", claudeInputMult, claudeOutputMult)
 		} else {
@@ -528,11 +570,31 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		other["claude_200k_total_input_tokens"] = totalInputForClaude
 	}
 	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
+		tieredData := relayInfo.PriceData.TieredPricingData
+		cacheStorePrice5m := tieredData.CacheStorePrice5m
+		if cacheStorePrice5m <= 0 {
+			cacheStorePrice5m = tieredData.CacheStorePrice
+		}
+		cacheStorePrice1h := tieredData.CacheStorePrice1h
+		if cacheStorePrice1h <= 0 {
+			cacheStorePrice1h = tieredData.CacheStorePrice
+		}
 		other["tiered_pricing"] = true
-		other["tiered_input_price"] = relayInfo.PriceData.TieredPricingData.InputPrice
-		other["tiered_output_price"] = relayInfo.PriceData.TieredPricingData.OutputPrice
-		other["tiered_cache_hit_price"] = relayInfo.PriceData.TieredPricingData.CacheHitPrice
-		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", relayInfo.PriceData.TieredPricingData.TierMinTokens, relayInfo.PriceData.TieredPricingData.TierMaxTokens)
+		other["tiered_input_price"] = tieredData.InputPrice
+		other["tiered_output_price"] = tieredData.OutputPrice
+		other["tiered_cache_hit_price"] = tieredData.CacheHitPrice
+		other["tiered_cache_store_price"] = tieredData.CacheStorePrice
+		other["tiered_cache_store_price_5m"] = cacheStorePrice5m
+		other["tiered_cache_store_price_1h"] = cacheStorePrice1h
+		other["tiered_cache_creation_tokens_5m"] = usage.ClaudeCacheCreation5mTokens
+		other["tiered_cache_creation_tokens_1h"] = usage.ClaudeCacheCreation1hTokens
+		remaining := cachedCreationTokens - usage.ClaudeCacheCreation5mTokens - usage.ClaudeCacheCreation1hTokens
+		if remaining < 0 {
+			remaining = 0
+		}
+		other["tiered_cache_creation_tokens_remaining"] = remaining
+		other["tiered_prompt_tokens_include_cache"] = true
+		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", tieredData.TierMinTokens, tieredData.TierMaxTokens)
 	}
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

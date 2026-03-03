@@ -94,6 +94,12 @@ function renderType(type, t) {
           {t('错误')}
         </Tag>
       );
+    case 6:
+      return (
+        <Tag color='teal' shape='circle'>
+          {t('退费')}
+        </Tag>
+      );
     default:
       return (
         <Tag color='grey' shape='circle'>

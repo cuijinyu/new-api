@@ -293,8 +293,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				for _, ctx := range message.ParseContent() {
 					if ctx.Type == "text" {
 						systemMessages = append(systemMessages, dto.ClaudeMediaMessage{
-							Type: "text",
-							Text: common.GetPointer[string](ctx.Text),
+							Type:         "text",
+							Text:         common.GetPointer[string](ctx.Text),
+							CacheControl: ctx.CacheControl,
 						})
 					}
 					// 未来可以在这里扩展对图片等其他类型的支持
@@ -407,7 +408,27 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 	// 设置累积的system消息
 	if len(systemMessages) > 0 {
-		claudeRequest.System = systemMessages
+		var hasCacheControl bool
+		for _, msg := range systemMessages {
+			if msg.CacheControl != nil {
+				hasCacheControl = true
+				break
+			}
+		}
+		if hasCacheControl {
+			claudeRequest.System = systemMessages
+		} else {
+			var systemStr string
+			for _, msg := range systemMessages {
+				if msg.Text != nil {
+					if systemStr != "" {
+						systemStr += "\n\n"
+					}
+					systemStr += *msg.Text
+				}
+			}
+			claudeRequest.System = systemStr
+		}
 	}
 
 	claudeRequest.Prompt = ""
@@ -751,7 +772,17 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
 		openaiResponse := ResponseClaude2OpenAI(requestMode, &claudeResponse)
-		openaiResponse.Usage = *claudeInfo.Usage
+		// For OpenAI format, PromptTokens should include cache tokens
+		usage := *claudeInfo.Usage
+		if usage.PromptTokensDetails.CachedTokens > 0 {
+			usage.PromptTokens += usage.PromptTokensDetails.CachedTokens
+		}
+		if usage.PromptTokensDetails.CachedCreationTokens > 0 {
+			usage.PromptTokens += usage.PromptTokensDetails.CachedCreationTokens
+		}
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		openaiResponse.Usage = usage
+		claudeInfo.Usage = &usage // Update claudeInfo.Usage so that the returned usage is correct
 		responseData, err = json.Marshal(openaiResponse)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)

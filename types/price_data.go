@@ -13,8 +13,12 @@ type TieredPricingInfo struct {
 	OutputPrice     float64 // 当前区间的输出价格 USD/M tokens
 	CacheHitPrice   float64 // 当前区间的缓存命中价格 USD/M tokens
 	CacheStorePrice float64 // 当前区间的缓存存储价格 USD/M tokens/hour
-	TierMinTokens   int     // 当前区间最小 tokens（千）
-	TierMaxTokens   int     // 当前区间最大 tokens（千）
+	// Claude 专用：支持分段下 5m/1h 缓存写入独立价格
+	// 为 0 时回退到 CacheStorePrice
+	CacheStorePrice5m float64 // 当前区间 5m 缓存写入价格 USD/M tokens
+	CacheStorePrice1h float64 // 当前区间 1h 缓存写入价格 USD/M tokens
+	TierMinTokens     int     // 当前区间最小 tokens（千）
+	TierMaxTokens     int     // 当前区间最大 tokens（千）
 }
 
 type PriceData struct {
@@ -33,8 +37,8 @@ type PriceData struct {
 	UsePrice             bool
 	QuotaToPreConsume    int // 预消耗额度
 	GroupRatioInfo       GroupRatioInfo
-	UseTieredPricing     bool                // 是否使用分段价格
-	TieredPricingData    *TieredPricingInfo  // 分段价格数据（如果启用）
+	UseTieredPricing     bool               // 是否使用分段价格
+	TieredPricingData    *TieredPricingInfo // 分段价格数据（如果启用）
 }
 
 type PerCallPriceData struct {
@@ -45,17 +49,19 @@ type PerCallPriceData struct {
 
 func (p PriceData) ToSetting() string {
 	baseStr := fmt.Sprintf("ModelPrice: %f, ModelRatio: %f, CompletionRatio: %f, CacheRatio: %f, GroupRatio: %f, UsePrice: %t, CacheCreationRatio: %f, CacheCreation5mRatio: %f, CacheCreation1hRatio: %f, QuotaToPreConsume: %d, ImageRatio: %f, AudioRatio: %f, AudioCompletionRatio: %f, UseTieredPricing: %t", p.ModelPrice, p.ModelRatio, p.CompletionRatio, p.CacheRatio, p.GroupRatioInfo.GroupRatio, p.UsePrice, p.CacheCreationRatio, p.CacheCreation5mRatio, p.CacheCreation1hRatio, p.QuotaToPreConsume, p.ImageRatio, p.AudioRatio, p.AudioCompletionRatio, p.UseTieredPricing)
-	
+
 	if p.UseTieredPricing && p.TieredPricingData != nil {
-		tieredStr := fmt.Sprintf(", TieredPricingData: InputPrice: %f, OutputPrice: %f, CacheHitPrice: %f, CacheStorePrice: %f, TierMinTokens: %d, TierMaxTokens: %d", 
-			p.TieredPricingData.InputPrice, 
-			p.TieredPricingData.OutputPrice, 
-			p.TieredPricingData.CacheHitPrice, 
-			p.TieredPricingData.CacheStorePrice, 
-			p.TieredPricingData.TierMinTokens, 
+		tieredStr := fmt.Sprintf(", TieredPricingData: InputPrice: %f, OutputPrice: %f, CacheHitPrice: %f, CacheStorePrice: %f, CacheStorePrice5m: %f, CacheStorePrice1h: %f, TierMinTokens: %d, TierMaxTokens: %d",
+			p.TieredPricingData.InputPrice,
+			p.TieredPricingData.OutputPrice,
+			p.TieredPricingData.CacheHitPrice,
+			p.TieredPricingData.CacheStorePrice,
+			p.TieredPricingData.CacheStorePrice5m,
+			p.TieredPricingData.CacheStorePrice1h,
+			p.TieredPricingData.TierMinTokens,
 			p.TieredPricingData.TierMaxTokens)
 		return baseStr + tieredStr
 	}
-	
+
 	return baseStr
 }

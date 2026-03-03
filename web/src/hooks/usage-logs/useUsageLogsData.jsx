@@ -352,7 +352,26 @@ export const useLogsData = () => {
       if (logs[i].type === 2) {
         expandDataLocal.push({
           key: t('日志详情'),
-          value: other?.claude
+          value: other?.tiered_pricing
+            ? renderLogContent(
+                other?.model_ratio,
+                other.completion_ratio,
+                other.model_price,
+                other.group_ratio,
+                other?.user_group_ratio,
+                other.cache_ratio || 1.0,
+                false,
+                1.0,
+                other.web_search || false,
+                other.web_search_call_count || 0,
+                other.file_search || false,
+                other.file_search_call_count || 0,
+                other?.tiered_pricing || false,
+                other?.tiered_input_price || 0,
+                other?.tiered_output_price || 0,
+                other?.tiered_tier_range || '',
+              )
+            : other?.claude
             ? renderClaudeLogContent(
                 other?.model_ratio,
                 other.completion_ratio,
@@ -379,10 +398,10 @@ export const useLogsData = () => {
                 other.web_search_call_count || 0,
                 other.file_search || false,
                 other.file_search_call_count || 0,
-                other?.tiered_pricing || false,
-                other?.tiered_input_price || 0,
-                other?.tiered_output_price || 0,
-                other?.tiered_tier_range || '',
+                false,
+                0,
+                0,
+                '',
               ),
         });
         if (logs[i]?.content) {
@@ -423,6 +442,44 @@ export const useLogsData = () => {
             other?.user_group_ratio,
             other?.cache_tokens || 0,
             other?.cache_ratio || 1.0,
+          );
+        } else if (other?.tiered_pricing) {
+          content = renderModelPrice(
+            logs[i].prompt_tokens,
+            logs[i].completion_tokens,
+            other?.model_ratio,
+            other?.model_price,
+            other?.completion_ratio,
+            other?.group_ratio,
+            other?.user_group_ratio,
+            other?.cache_tokens || 0,
+            other?.cache_ratio || 1.0,
+            false,
+            0,
+            0,
+            false,
+            0,
+            0,
+            false,
+            0,
+            0,
+            false,
+            0,
+            0,
+            false,
+            0,
+            other?.tiered_pricing || false,
+            other?.tiered_input_price || 0,
+            other?.tiered_output_price || 0,
+            other?.tiered_cache_hit_price || 0,
+            other?.tiered_tier_range || '',
+            other?.tiered_cache_store_price || 0,
+            other?.tiered_cache_store_price_5m || 0,
+            other?.tiered_cache_store_price_1h || 0,
+            other?.tiered_cache_creation_tokens_5m || 0,
+            other?.tiered_cache_creation_tokens_1h || 0,
+            other?.tiered_cache_creation_tokens_remaining || 0,
+            other?.tiered_prompt_tokens_include_cache ?? true,
           );
         } else if (other?.claude) {
           content = renderClaudeModelPrice(

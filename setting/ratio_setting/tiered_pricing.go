@@ -17,6 +17,10 @@ type PriceTier struct {
 	OutputPrice     float64 `json:"output_price"`      // 输出价格 USD/M tokens
 	CacheHitPrice   float64 `json:"cache_hit_price"`   // 缓存命中价格 USD/M tokens
 	CacheStorePrice float64 `json:"cache_store_price"` // 缓存存储价格 USD/M tokens/hour
+	// Claude 专用：当需要区分不同 TTL 的缓存写入价格时使用
+	// 为空或 0 时，回退到 CacheStorePrice
+	CacheStorePrice5m float64 `json:"cache_store_price_5m,omitempty"` // 5m 缓存写入价格 USD/M tokens
+	CacheStorePrice1h float64 `json:"cache_store_price_1h,omitempty"` // 1h 缓存写入价格 USD/M tokens
 }
 
 // TieredPricing 模型的分段价格配置

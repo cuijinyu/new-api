@@ -649,9 +649,6 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 			if err != nil {
 				return 0, fmt.Errorf("multi_prompt[%d].duration invalid: %w", i, err)
 			}
-			if shotDuration < 3 {
-				return 0, fmt.Errorf("multi_prompt[%d].duration must be >= 3, got: %d", i, shotDuration)
-			}
 			totalDuration += shotDuration
 		}
 		if totalDuration < 3 || totalDuration > 15 {
@@ -2219,12 +2216,19 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	if status == "succeed" && len(resPayload.Data.TaskResult.Videos) > 0 {
 		video := resPayload.Data.TaskResult.Videos[0]
 		taskInfo.Url = video.Url
-		// 将视频实际时长解析并存入明确的 Duration 字段（用于异步核销）
-		if video.Duration != "" {
-			var duration float64
-			if _, err := fmt.Sscanf(video.Duration, "%f", &duration); err == nil {
-				taskInfo.Duration = duration
+		
+		// 累加所有视频的实际时长（用于异步核销，特别是 multi_prompt 模式下会有多个视频）
+		var totalDuration float64
+		for _, v := range resPayload.Data.TaskResult.Videos {
+			if v.Duration != "" {
+				var d float64
+				if _, err := fmt.Sscanf(v.Duration, "%f", &d); err == nil {
+					totalDuration += d
+				}
 			}
+		}
+		if totalDuration > 0 {
+			taskInfo.Duration = totalDuration
 		}
 	}
 	return taskInfo, nil
@@ -2254,6 +2258,11 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 		}
 		if video.Duration != "" {
 			openAIVideo.Seconds = video.Duration
+		}
+		
+		// 如果有多个视频（例如 multi_prompt 模式），将所有视频信息放入 metadata
+		if len(klingResp.Data.TaskResult.Videos) > 1 {
+			openAIVideo.SetMetadata("videos", klingResp.Data.TaskResult.Videos)
 		}
 	}
 
