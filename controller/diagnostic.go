@@ -175,6 +175,8 @@ func runDiagnosticTest(channel *model.Channel, modelName string, testType string
 func runStandardTest(channel *model.Channel, modelName string, opts DiagnosticOptions, result *DiagnosticChannelResult) {
 	cleanOpts := opts
 	cleanOpts.EnableCache = false
+	cleanOpts.TargetInputTokens = 0
+	cleanOpts.EnableThinking = false
 
 	dr := executeDiagnosticRequest(channel, modelName, cleanOpts)
 	if dr.err != nil {
@@ -232,6 +234,8 @@ func runStandardTest(channel *model.Channel, modelName string, opts DiagnosticOp
 
 func runCacheTest(channel *model.Channel, modelName string, opts DiagnosticOptions, result *DiagnosticChannelResult) {
 	opts.EnableCache = true
+	opts.TargetInputTokens = 0
+	opts.EnableThinking = false
 	if opts.CacheTTL == "" {
 		opts.CacheTTL = "5m"
 	}
@@ -339,6 +343,8 @@ func runCacheTest(channel *model.Channel, modelName string, opts DiagnosticOptio
 }
 
 func runThinkingTest(channel *model.Channel, modelName string, opts DiagnosticOptions, result *DiagnosticChannelResult) {
+	opts.TargetInputTokens = 0
+	opts.EnableCache = false
 	opts.EnableThinking = true
 	if opts.ThinkingType == "" {
 		opts.ThinkingType = "enabled"
@@ -378,6 +384,8 @@ func runThinkingTest(channel *model.Channel, modelName string, opts DiagnosticOp
 }
 
 func runLongContextTest(channel *model.Channel, modelName string, opts DiagnosticOptions, result *DiagnosticChannelResult) {
+	opts.EnableCache = false
+	opts.EnableThinking = false
 	if opts.TargetInputTokens == 0 {
 		opts.TargetInputTokens = 210000
 	}
