@@ -173,13 +173,20 @@ func runDiagnosticTest(channel *model.Channel, modelName string, testType string
 }
 
 func runStandardTest(channel *model.Channel, modelName string, opts DiagnosticOptions, result *DiagnosticChannelResult) {
-	dr := executeDiagnosticRequest(channel, modelName, opts)
+	cleanOpts := opts
+	cleanOpts.EnableCache = false
+
+	dr := executeDiagnosticRequest(channel, modelName, cleanOpts)
 	if dr.err != nil {
 		result.Status = "error"
 		result.Error = dr.err.Error()
 		result.DurationMs = dr.duration
 		result.Checks = append(result.Checks, DiagnosticCheck{
 			Name: "API 连通性", Passed: false, Detail: dr.err.Error(),
+		})
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name: "空提示词检测", Passed: true,
+			Detail: "请求失败，无法检测（非异常）",
 		})
 		return
 	}
@@ -197,6 +204,28 @@ func runStandardTest(channel *model.Channel, modelName string, opts DiagnosticOp
 		result.Checks = append(result.Checks, DiagnosticCheck{
 			Name: "Usage 返回", Passed: true,
 			Detail: fmt.Sprintf("prompt=%d, completion=%d", dr.usage.PromptTokens, dr.usage.CompletionTokens),
+		})
+	}
+
+	cachedTokens := dr.usage.PromptTokensDetails.CachedTokens
+	cacheCreation := dr.usage.PromptTokensDetails.CachedCreationTokens
+	if cachedTokens > 0 {
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "空提示词检测",
+			Passed: false,
+			Detail: fmt.Sprintf("未发送缓存指令但出现 cached_tokens=%d，渠道注入了带缓存的系统提示词（疑似逆向）", cachedTokens),
+		})
+	} else if cacheCreation > 0 {
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "空提示词检测",
+			Passed: false,
+			Detail: fmt.Sprintf("未发送缓存指令但出现 cache_creation=%d，渠道注入了缓存写入（疑似逆向）", cacheCreation),
+		})
+	} else {
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "空提示词检测",
+			Passed: true,
+			Detail: "未检测到意外的缓存 token，渠道行为正常",
 		})
 	}
 }
@@ -259,11 +288,39 @@ func runCacheTest(channel *model.Channel, modelName string, opts DiagnosticOptio
 		return
 	}
 
-	cacheHit := dr2.usage.PromptTokensDetails.CachedTokens > 0
+	r2Cached := dr2.usage.PromptTokensDetails.CachedTokens
+	r2Creation := dr2.usage.PromptTokensDetails.CachedCreationTokens
+	r1Creation := dr1.usage.PromptTokensDetails.CachedCreationTokens
+
+	cacheHit := r2Cached > 0
 	result.Checks = append(result.Checks, DiagnosticCheck{
 		Name: "缓存命中", Passed: cacheHit,
-		Detail: fmt.Sprintf("cached_tokens=%d", dr2.usage.PromptTokensDetails.CachedTokens),
+		Detail: fmt.Sprintf("第二次请求 cached_tokens=%d（第一次 cache_creation=%d）", r2Cached, r1Creation),
 	})
+
+	if cacheHit && r1Creation > 0 {
+		hitRatio := float64(r2Cached) / float64(r1Creation) * 100
+		fullHit := r2Cached >= r1Creation
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "缓存命中完整性",
+			Passed: fullHit,
+			Detail: fmt.Sprintf("命中率 %.1f%%: cached=%d vs created=%d", hitRatio, r2Cached, r1Creation),
+		})
+	}
+
+	if r2Creation > 0 {
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "二次缓存写入检测",
+			Passed: false,
+			Detail: fmt.Sprintf("第二次请求仍产生 cache_creation=%d，缓存未正确复用", r2Creation),
+		})
+	} else if cacheHit {
+		result.Checks = append(result.Checks, DiagnosticCheck{
+			Name:   "二次缓存写入检测",
+			Passed: true,
+			Detail: "第二次请求无新缓存写入，缓存正确复用",
+		})
+	}
 
 	if !ttlMismatch {
 		result.Checks = append(result.Checks, DiagnosticCheck{
@@ -275,7 +332,7 @@ func runCacheTest(channel *model.Channel, modelName string, opts DiagnosticOptio
 	result.Status = "success"
 	result.DurationMs = dr1.duration + dr2.duration
 	result.Usage = convertUsage(dr2.usage)
-	result.Usage.CacheCreationTokens = dr1.usage.PromptTokensDetails.CachedCreationTokens
+	result.Usage.CacheCreationTokens = r1Creation
 	result.Usage.CacheCreation5mTokens = dr1.usage.ClaudeCacheCreation5mTokens
 	result.Usage.CacheCreation1hTokens = dr1.usage.ClaudeCacheCreation1hTokens
 	result.Pricing = computePricing(dr1.usage, dr1.priceData, modelName)
