@@ -49,6 +49,7 @@ const routerMap = {
   personal: '/console/personal',
   invoice: '/console/invoice',
   diagnostic: '/console/diagnostic',
+  reconciliation: '/console/reconciliation',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -181,6 +182,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('模型诊断'),
         itemKey: 'diagnostic',
         to: '/console/diagnostic',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('对账管理'),
+        itemKey: 'reconciliation',
+        to: '/console/reconciliation',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

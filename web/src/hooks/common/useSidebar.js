@@ -65,6 +65,7 @@ export const useSidebar = () => {
       user: true,
       invoice: true,
       diagnostic: true,
+      reconciliation: true,
       setting: true,
     },
   };

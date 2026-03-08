@@ -272,5 +272,17 @@ func SetApiRouter(router *gin.Engine) {
 			modelsRoute.PUT("/", controller.UpdateModelMeta)
 			modelsRoute.DELETE("/:id", controller.DeleteModelMeta)
 		}
+
+		reconRoute := apiRouter.Group("/recon")
+		reconRoute.Use(middleware.AdminAuth())
+		{
+			reconRoute.GET("/template", controller.DownloadUpstreamTemplate)
+			reconRoute.POST("/upload", controller.UploadUpstreamBill)
+			reconRoute.POST("/run", controller.RunReconciliation)
+			reconRoute.GET("/results", controller.GetReconResults)
+			reconRoute.GET("/discounts", controller.GetReconDiscounts)
+			reconRoute.POST("/discounts", controller.SaveReconDiscount)
+			reconRoute.DELETE("/discounts", controller.DeleteReconDiscount)
+		}
 	}
 }

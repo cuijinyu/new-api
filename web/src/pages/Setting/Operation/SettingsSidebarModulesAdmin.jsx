@@ -66,6 +66,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       user: true,
       invoice: true,
       diagnostic: true,
+      reconciliation: true,
       setting: true,
     },
   });
@@ -126,6 +127,8 @@ export default function SettingsSidebarModulesAdmin(props) {
         redemption: true,
         user: true,
         invoice: true,
+        diagnostic: true,
+        reconciliation: true,
         setting: true,
       },
     };
@@ -194,6 +197,8 @@ export default function SettingsSidebarModulesAdmin(props) {
             redemption: true,
             user: true,
             invoice: true,
+            diagnostic: true,
+            reconciliation: true,
             setting: true,
           },
         };
@@ -263,6 +268,16 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'invoice',
           title: t('账单管理'),
           description: t('用户账单生成管理'),
+        },
+        {
+          key: 'diagnostic',
+          title: t('模型诊断'),
+          description: t('模型诊断工具'),
+        },
+        {
+          key: 'reconciliation',
+          title: t('对账管理'),
+          description: t('上游渠道对账'),
         },
         {
           key: 'setting',

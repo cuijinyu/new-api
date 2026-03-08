@@ -44,6 +44,7 @@ import Task from './pages/Task';
 import ModelPage from './pages/Model';
 import InvoicePage from './pages/Invoice';
 import DiagnosticPage from './pages/Diagnostic';
+import ReconciliationPage from './pages/Reconciliation';
 import Playground from './pages/Playground';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
@@ -116,6 +117,14 @@ function App() {
           element={
             <AdminRoute>
               <DiagnosticPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/reconciliation'
+          element={
+            <AdminRoute>
+              <ReconciliationPage />
             </AdminRoute>
           }
         />
