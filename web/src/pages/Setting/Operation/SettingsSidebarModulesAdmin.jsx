@@ -65,6 +65,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       redemption: true,
       user: true,
       invoice: true,
+      diagnostic: true,
       setting: true,
     },
   });

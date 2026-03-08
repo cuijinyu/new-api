@@ -157,6 +157,12 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.POST("/copy/:id", controller.CopyChannel)
 			channelRoute.POST("/multi_key/manage", controller.ManageMultiKeys)
 		}
+		diagnosticRoute := apiRouter.Group("/diagnostic")
+		diagnosticRoute.Use(middleware.AdminAuth())
+		{
+			diagnosticRoute.POST("/test", controller.DiagnosticTest)
+			diagnosticRoute.GET("/channels", controller.DiagnosticGetChannels)
+		}
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())
 		{

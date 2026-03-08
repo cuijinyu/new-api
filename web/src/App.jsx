@@ -43,6 +43,7 @@ import Pricing from './pages/Pricing';
 import Task from './pages/Task';
 import ModelPage from './pages/Model';
 import InvoicePage from './pages/Invoice';
+import DiagnosticPage from './pages/Diagnostic';
 import Playground from './pages/Playground';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
@@ -107,6 +108,14 @@ function App() {
           element={
             <AdminRoute>
               <InvoicePage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/diagnostic'
+          element={
+            <AdminRoute>
+              <DiagnosticPage />
             </AdminRoute>
           }
         />

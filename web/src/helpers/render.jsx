@@ -74,6 +74,7 @@ import {
   CircleUser,
   Package,
   FileText,
+  Stethoscope,
 } from 'lucide-react';
 
 // 获取侧边栏Lucide图标组件
@@ -119,6 +120,8 @@ export function getLucideIcon(key, selected = false) {
       return <Settings {...commonProps} color={iconColor} />;
     case 'invoice':
       return <FileText {...commonProps} color={iconColor} />;
+    case 'diagnostic':
+      return <Stethoscope {...commonProps} color={iconColor} />;
     default:
       return <CircleUser {...commonProps} color={iconColor} />;
   }
