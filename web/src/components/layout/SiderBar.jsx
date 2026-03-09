@@ -50,6 +50,7 @@ const routerMap = {
   invoice: '/console/invoice',
   diagnostic: '/console/diagnostic',
   reconciliation: '/console/reconciliation',
+  claude200kfix: '/console/claude-200k-fix',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -189,6 +190,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'reconciliation',
         to: '/console/reconciliation',
         className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('计费修复'),
+        itemKey: 'claude200kfix',
+        to: '/console/claude-200k-fix',
+        className: isRoot() ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),

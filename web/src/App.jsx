@@ -45,6 +45,7 @@ import ModelPage from './pages/Model';
 import InvoicePage from './pages/Invoice';
 import DiagnosticPage from './pages/Diagnostic';
 import ReconciliationPage from './pages/Reconciliation';
+import Claude200KFixPage from './pages/Claude200KFix';
 import Playground from './pages/Playground';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
@@ -125,6 +126,14 @@ function App() {
           element={
             <AdminRoute>
               <ReconciliationPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/claude-200k-fix'
+          element={
+            <AdminRoute>
+              <Claude200KFixPage />
             </AdminRoute>
           }
         />

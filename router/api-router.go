@@ -284,5 +284,15 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.POST("/discounts", controller.SaveReconDiscount)
 			reconRoute.DELETE("/discounts", controller.DeleteReconDiscount)
 		}
+
+		claude200kFixRoute := apiRouter.Group("/claude_200k_fix")
+		claude200kFixRoute.Use(middleware.RootAuth())
+		{
+			claude200kFixRoute.GET("/scan", controller.Claude200KFixScan)
+			claude200kFixRoute.GET("/summary", controller.Claude200KFixSummary)
+			claude200kFixRoute.POST("/apply", controller.Claude200KFixApply)
+			claude200kFixRoute.POST("/ignore", controller.Claude200KFixIgnore)
+			claude200kFixRoute.GET("/export", controller.Claude200KFixExport)
+		}
 	}
 }
