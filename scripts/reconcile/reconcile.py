@@ -27,7 +27,9 @@ import json
 import os
 import re
 import sys
-from collections import defaultdict
+import time
+from collections import defaultdict, Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import boto3
@@ -77,6 +79,8 @@ def parse_args():
                    help="账单币种 (USD 或 CNY)")
     p.add_argument("--exchange-rate", type=float, default=7.3,
                    help="USD 转 CNY 汇率，默认 7.3")
+    p.add_argument("--workers", type=int, default=10,
+                   help="并发下载线程数，默认 10")
     p.add_argument("--verbose", action="store_true")
     return p.parse_args()
 
@@ -133,23 +137,117 @@ def download_and_parse(s3, bucket, key):
 # Usage 提取
 # ---------------------------------------------------------------------------
 
+def classify_error_response(body, status_code):
+    """从 response_body 中识别上游错误类型，返回可读的分类字符串"""
+    error_type = ""
+    error_msg = ""
+
+    # SSE 格式的 error event（data: 后可能跨多行）
+    lines = body.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("data:"):
+            payload = line[len("data:"):].strip()
+            # 收集可能的多行 JSON（后续非 event:/data:/空行 的行属于同一 data 块）
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                if not next_line or next_line.startswith("event:") or next_line.startswith("data:"):
+                    break
+                payload += next_line
+                j += 1
+            i = j
+            try:
+                d = json.loads(payload)
+                err = d.get("error", {})
+                if isinstance(err, dict):
+                    error_type = err.get("type", "")
+                    error_msg = err.get("message", "")
+                    if error_type:
+                        break
+            except (json.JSONDecodeError, AttributeError):
+                continue
+        else:
+            i += 1
+
+    # 非 SSE 的 JSON error
+    if not error_type:
+        try:
+            obj = json.loads(body)
+            err = obj.get("error", {})
+            if isinstance(err, dict):
+                error_type = err.get("type", err.get("code", ""))
+                error_msg = err.get("message", "")
+            elif isinstance(err, str):
+                error_type = err
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    if error_type:
+        short_msg = _shorten_error_msg(error_msg)
+        label = f"{error_type}"
+        if short_msg:
+            label += f": {short_msg}"
+        return label
+
+    if status_code and status_code >= 400:
+        return f"http_{status_code}"
+
+    return "unknown_error"
+
+
+def _shorten_error_msg(msg):
+    """将冗长的错误消息缩短为可读的分类标签"""
+    if not msg:
+        return ""
+    if "tool_use" in msg and "tool_result" in msg:
+        return "tool_use缺少tool_result"
+    if "credit" in msg.lower() or "balance" in msg.lower() or "quota" in msg.lower():
+        return "额度不足"
+    if "rate_limit" in msg.lower() or "rate limit" in msg.lower():
+        return "速率限制"
+    if "context_length" in msg.lower() or "too many tokens" in msg.lower():
+        return "上下文超长"
+    if "overloaded" in msg.lower():
+        return "服务过载"
+    if "timeout" in msg.lower():
+        return "超时"
+    if len(msg) > 60:
+        return msg[:57] + "..."
+    return msg
+
+
 def extract_usage(record):
-    """从 response_body 中提取上游返回的 token 用量和工具调用信息"""
+    """
+    从 response_body 中提取上游返回的 token 用量。
+    成功返回 dict，失败返回 (None, reason_str)。
+    """
     body = record.get("response_body", "")
+    status_code = record.get("status_code", 0)
+
     if not body:
-        return None
+        if status_code and status_code >= 400:
+            return None, f"http_{status_code}_empty_body"
+        return None, "empty_response_body"
 
     # 非流式：完整 JSON
     try:
         obj = json.loads(body)
         usage = obj.get("usage")
         if usage:
-            return normalize_usage(usage)
+            return normalize_usage(usage), None
+        if obj.get("error"):
+            return None, classify_error_response(body, status_code)
     except json.JSONDecodeError:
         pass
 
     # 流式 SSE
-    return extract_usage_from_sse(body)
+    result = extract_usage_from_sse(body)
+    if result is not None:
+        return result, None
+
+    return None, classify_error_response(body, status_code)
 
 
 def extract_usage_from_sse(text):
@@ -248,11 +346,17 @@ def calc_cost(usage, model_pricing, model_name, web_search_cfg):
     """
     根据 usage 和模型价格计算费用 (USD)。
 
-    三条路径对齐 compatible_handler.go:
+    四条路径:
+      0. 有 per_call_price -> 按次计费
       1. 有 tiered_pricing -> 按分段价格
       2. Claude 模型无 tiered_pricing -> 自动 200K 倍率
       3. 普通模型 -> 基础价格
     """
+    # 路径 0：按次计费（视频/图片生成等）
+    per_call = model_pricing.get("per_call_price")
+    if per_call is not None:
+        return per_call
+
     input_tokens = usage["input_tokens"]
     output_tokens = usage["output_tokens"]
     cache_read = usage["cache_read_tokens"]
@@ -375,8 +479,15 @@ def new_stat_bucket():
 # 处理单天数据
 # ---------------------------------------------------------------------------
 
+def _download_one(region, endpoint, bucket, key):
+    """在独立线程中创建 S3 client 并下载解析单个文件（避免 boto3 client 线程安全问题）"""
+    client = get_s3_client(region, endpoint)
+    return download_and_parse(client, bucket, key)
+
+
 def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
-                 filter_user_ids=None, filter_models=None, filter_channel_ids=None):
+                 filter_user_ids=None, filter_models=None, filter_channel_ids=None,
+                 workers=10, region="", endpoint=""):
     """处理单天数据，返回汇总结果和明细"""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     s3_prefix = f"{prefix}/{dt.strftime('%Y/%m/%d')}/"
@@ -397,9 +508,40 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
     total_records = 0
     filtered_out = 0
     parse_failures = 0
+    error_categories = Counter()
+    download_errors = 0
 
-    for key in keys:
-        records = download_and_parse(s3, bucket, key)
+    # 并发下载
+    t0 = time.time()
+    all_records_batches = []
+
+    if len(keys) <= 1 or workers <= 1:
+        for key in keys:
+            all_records_batches.append(download_and_parse(s3, bucket, key))
+    else:
+        actual_workers = min(workers, len(keys))
+        with ThreadPoolExecutor(max_workers=actual_workers) as pool:
+            future_to_key = {
+                pool.submit(_download_one, region, endpoint, bucket, key): key
+                for key in keys
+            }
+            for future in as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    all_records_batches.append(future.result())
+                except Exception as e:
+                    download_errors += 1
+                    if verbose:
+                        print(f"    下载失败 {key}: {e}")
+
+    elapsed = time.time() - t0
+    if verbose and len(keys) > 1:
+        print(f"  [{date_str}] 下载完成: {len(keys)} 文件, {elapsed:.1f}s, "
+              f"{len(keys)/max(elapsed,0.001):.0f} 文件/s"
+              + (f", {download_errors} 失败" if download_errors else ""))
+
+    # 处理记录
+    for records in all_records_batches:
         total_records += len(records)
 
         for rec in records:
@@ -415,10 +557,11 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
                 filtered_out += 1
                 continue
 
-            usage = extract_usage(rec)
+            usage, fail_reason = extract_usage(rec)
 
             if usage is None:
                 parse_failures += 1
+                error_categories[fail_reason] += 1
                 continue
 
             model_pricing = models_pricing.get(model)
@@ -465,7 +608,7 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
             else:
                 s["no_pricing"] += 1
 
-    return stats, details, total_records, parse_failures, filtered_out
+    return stats, details, total_records, parse_failures, filtered_out, error_categories
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +616,7 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
 # ---------------------------------------------------------------------------
 
 def print_report(date_label, stats, total_records, parse_failures, group_by,
-                 filtered_out=0, filters=None):
+                 filtered_out=0, filters=None, error_categories=None):
     print(f"\n{'='*80}")
     print(f"  费用报告 - {date_label}")
     print(f"{'='*80}")
@@ -483,6 +626,12 @@ def print_report(date_label, stats, total_records, parse_failures, group_by,
     print(summary)
     if filters:
         print(f"  过滤条件: {filters}")
+
+    if error_categories:
+        print(f"\n  ── 失败原因归类 ({parse_failures} 条) ──")
+        for reason, cnt in error_categories.most_common():
+            print(f"    {cnt:>5}  {reason}")
+
     print()
 
     headers = [
@@ -802,16 +951,22 @@ def main():
     grand_total_records = 0
     grand_parse_failures = 0
     grand_filtered_out = 0
+    grand_error_categories = Counter()
+
+    if args.workers > 1:
+        print(f"  并发下载: {args.workers} 线程")
 
     for date_str in dates:
-        stats, details, total_records, parse_failures, filtered_out = process_date(
+        stats, details, total_records, parse_failures, filtered_out, err_cats = process_date(
             s3, args.bucket, args.prefix, date_str, pricing_cfg, args.group_by, args.verbose,
             filter_user_ids=args.user_id, filter_models=args.model,
             filter_channel_ids=args.channel_id,
+            workers=args.workers, region=args.region, endpoint=args.endpoint,
         )
         grand_total_records += total_records
         grand_parse_failures += parse_failures
         grand_filtered_out += filtered_out
+        grand_error_categories += err_cats
         all_details.extend(details)
 
         for key, s in stats.items():
@@ -820,7 +975,8 @@ def main():
 
     date_label = dates[0] if len(dates) == 1 else f"{dates[0]} ~ {dates[-1]}"
     print_report(date_label, all_stats, grand_total_records, grand_parse_failures, args.group_by,
-                 filtered_out=grand_filtered_out, filters=filters_desc)
+                 filtered_out=grand_filtered_out, filters=filters_desc,
+                 error_categories=grand_error_categories)
 
     if args.output:
         export_csv(args.output, all_details, all_stats, args.group_by)
