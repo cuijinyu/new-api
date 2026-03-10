@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,8 +11,10 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -22,20 +25,28 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var sensitiveHeaders = []string{
+	"authorization", "api-key", "x-api-key", "proxy-authorization",
+}
+
 type rawLogUploader struct {
-	enabled     bool
-	bucket      string
-	prefix      string
-	region      string
+	enabled    bool
+	bucket     string
+	prefix     string
+	region     string
+	endpoint   string
+	maxBytes   int
+	retries    int
+	batchSize  int
+	batchBytes int
+	flushSec   int
+
 	credentials aws.Credentials
 	signer      *v4.Signer
 	httpClient  *http.Client
-	queue       chan rawLogRecord
-}
-
-type rawLogRecord struct {
-	Key  string
-	Body []byte
+	queue       chan []byte
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
 }
 
 type rawLogPayload struct {
@@ -79,48 +90,176 @@ func initRawLogUploader() *rawLogUploader {
 	accessKey := common.GetEnvOrDefaultString("RAW_LOG_S3_ACCESS_KEY_ID", "")
 	secretKey := common.GetEnvOrDefaultString("RAW_LOG_S3_SECRET_ACCESS_KEY", "")
 	sessionToken := common.GetEnvOrDefaultString("RAW_LOG_S3_SESSION_TOKEN", "")
+	endpoint := common.GetEnvOrDefaultString("RAW_LOG_S3_ENDPOINT", "")
 	if bucket == "" || region == "" || accessKey == "" || secretKey == "" {
 		common.SysError("raw log s3 enabled but config missing, disable uploader")
 		return &rawLogUploader{enabled: false}
 	}
+	maxBytes := common.GetEnvOrDefault("RAW_LOG_S3_MAX_BYTES", 1024*1024)
+	if maxBytes <= 0 {
+		maxBytes = 1024 * 1024
+	}
+	retries := common.GetEnvOrDefault("RAW_LOG_S3_RETRIES", 2)
+	if retries < 0 {
+		retries = 0
+	}
+	batchSize := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_SIZE", 100)
+	if batchSize < 1 {
+		batchSize = 1
+	}
+	batchBytes := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_BYTES", 5*1024*1024)
+	if batchBytes < 1 {
+		batchBytes = 5 * 1024 * 1024
+	}
+	flushSec := common.GetEnvOrDefault("RAW_LOG_S3_FLUSH_INTERVAL", 10)
+	if flushSec < 1 {
+		flushSec = 1
+	}
+
 	u := &rawLogUploader{
 		enabled:     true,
 		bucket:      bucket,
 		prefix:      prefix,
 		region:      region,
+		endpoint:    endpoint,
+		maxBytes:    maxBytes,
+		retries:     retries,
+		batchSize:   batchSize,
+		batchBytes:  batchBytes,
+		flushSec:    flushSec,
 		credentials: aws.Credentials{AccessKeyID: accessKey, SecretAccessKey: secretKey, SessionToken: sessionToken},
 		signer:      v4.NewSigner(),
 		httpClient:  GetHttpClient(),
-		queue:       make(chan rawLogRecord, common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 1000)),
+		queue:       make(chan []byte, common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 10000)),
+		stopCh:      make(chan struct{}),
 	}
 	workerNum := common.GetEnvOrDefault("RAW_LOG_S3_WORKERS", 2)
 	if workerNum < 1 {
 		workerNum = 1
 	}
 	for i := 0; i < workerNum; i++ {
-		go u.worker()
+		u.wg.Add(1)
+		go u.batchWorker()
 	}
-	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s", region, bucket))
+	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, gzip=on",
+		region, bucket, batchSize, flushSec))
 	return u
 }
 
-func (u *rawLogUploader) worker() {
-	for item := range u.queue {
-		if err := u.upload(item); err != nil {
-			common.SysError("failed to upload raw log to s3: " + err.Error())
+func (u *rawLogUploader) batchWorker() {
+	defer u.wg.Done()
+
+	ticker := time.NewTicker(time.Duration(u.flushSec) * time.Second)
+	defer ticker.Stop()
+
+	batch := make([][]byte, 0, u.batchSize)
+	batchLen := 0
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		if err := u.flushBatch(batch); err != nil {
+			common.SysError(fmt.Sprintf("failed to flush %d raw logs to s3: %s", len(batch), err.Error()))
+		}
+		batch = make([][]byte, 0, u.batchSize)
+		batchLen = 0
+	}
+
+	for {
+		select {
+		case line, ok := <-u.queue:
+			if !ok {
+				flush()
+				return
+			}
+			batch = append(batch, line)
+			batchLen += len(line)
+			if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
+				flush()
+			}
+
+		case <-ticker.C:
+			flush()
+
+		case <-u.stopCh:
+			for {
+				select {
+				case line := <-u.queue:
+					batch = append(batch, line)
+					batchLen += len(line)
+					if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
+						flush()
+					}
+				default:
+					flush()
+					return
+				}
+			}
 		}
 	}
 }
 
-func (u *rawLogUploader) upload(item rawLogRecord) error {
-	url := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", u.bucket, u.region, item.Key)
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(item.Body))
+func (u *rawLogUploader) flushBatch(batch [][]byte) error {
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return fmt.Errorf("gzip writer: %w", err)
+	}
+	for i, line := range batch {
+		if i > 0 {
+			_, _ = gw.Write([]byte("\n"))
+		}
+		_, _ = gw.Write(line)
+	}
+	if err = gw.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
+
+	keyPrefix := time.Now().Format("2006/01/02/15")
+	if u.prefix != "" {
+		keyPrefix = path.Join(u.prefix, keyPrefix)
+	}
+	objectKey := path.Join(keyPrefix, fmt.Sprintf("%d-%d.ndjson.gz", time.Now().UnixNano(), len(batch)))
+
+	return u.uploadWithRetry(objectKey, buf.Bytes())
+}
+
+func (u *rawLogUploader) Shutdown() {
+	close(u.stopCh)
+	u.wg.Wait()
+}
+
+func (u *rawLogUploader) uploadWithRetry(key string, body []byte) error {
+	var lastErr error
+	for attempt := 0; attempt <= u.retries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+		}
+		lastErr = u.upload(key, body)
+		if lastErr == nil {
+			return nil
+		}
+	}
+	return lastErr
+}
+
+func (u *rawLogUploader) upload(key string, body []byte) error {
+	var url string
+	if u.endpoint != "" {
+		url = fmt.Sprintf("%s/%s/%s", strings.TrimRight(u.endpoint, "/"), u.bucket, key)
+	} else {
+		url = fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", u.bucket, u.region, key)
+	}
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	hashBytes := sha256.Sum256(item.Body)
+	req.Header.Set("Content-Type", "application/x-ndjson")
+	req.Header.Set("Content-Encoding", "gzip")
+	hashBytes := sha256.Sum256(body)
 	payloadHash := hex.EncodeToString(hashBytes[:])
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 	if err = u.signer.SignHTTP(context.Background(), u.credentials, req, payloadHash, "s3", u.region, time.Now()); err != nil {
 		return err
 	}
@@ -136,6 +275,18 @@ func (u *rawLogUploader) upload(item rawLogRecord) error {
 	return nil
 }
 
+func sanitizeHeaders(h http.Header) http.Header {
+	cleaned := h.Clone()
+	for _, key := range sensitiveHeaders {
+		for k := range cleaned {
+			if strings.EqualFold(k, key) {
+				cleaned.Set(k, "***")
+			}
+		}
+	}
+	return cleaned
+}
+
 func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.Request, resp *http.Response) {
 	u := getRawLogUploader()
 	if !u.enabled || req == nil || resp == nil || resp.Body == nil {
@@ -149,8 +300,8 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 		Path:           c.Request.URL.Path,
 		URL:            req.URL.String(),
 		StatusCode:     resp.StatusCode,
-		RequestHeaders: req.Header.Clone(),
-		RequestBody:    truncateRawLog(string(reqBody)),
+		RequestHeaders: sanitizeHeaders(req.Header),
+		RequestBody:    truncateUTF8(string(reqBody), u.maxBytes),
 		ChannelID:      c.GetInt("channel_id"),
 		ChannelName:    c.GetString("channel_name"),
 		ChannelType:    c.GetInt("channel_type"),
@@ -160,14 +311,9 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 		payload.Model = info.OriginModelName
 		payload.RelayMode = fmt.Sprintf("%d", info.RelayMode)
 	}
-	keyPrefix := time.Now().Format("2006/01/02")
-	if u.prefix != "" {
-		keyPrefix = path.Join(u.prefix, keyPrefix)
-	}
-	objectKey := path.Join(keyPrefix, fmt.Sprintf("%s-%d.json", payload.RequestID, time.Now().UnixNano()))
 
-	resp.Body = newCaptureReadCloser(resp.Body, common.GetEnvOrDefault("RAW_LOG_S3_MAX_BYTES", 1024*1024), func(captured []byte, closeErr error) {
-		payload.ResponseBody = truncateRawLog(string(captured))
+	resp.Body = newCaptureReadCloser(resp.Body, u.maxBytes, func(captured []byte, closeErr error) {
+		payload.ResponseBody = truncateUTF8(string(captured), u.maxBytes)
 		if closeErr != nil {
 			payload.ResponseError = closeErr.Error()
 		}
@@ -176,9 +322,8 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 			logger.LogError(c, "failed to marshal raw log payload: "+err.Error())
 			return
 		}
-		rec := rawLogRecord{Key: objectKey, Body: data}
 		select {
-		case u.queue <- rec:
+		case u.queue <- data:
 		default:
 			logger.LogWarn(c, "raw log s3 queue full, drop current raw log")
 		}
@@ -201,15 +346,18 @@ func readRequestBody(req *http.Request) []byte {
 	return data
 }
 
-func truncateRawLog(v string) string {
-	maxLen := common.GetEnvOrDefault("RAW_LOG_S3_MAX_BYTES", 1024*1024)
-	if maxLen <= 0 {
+func truncateUTF8(v string, maxLen int) string {
+	if maxLen <= 0 || len(v) == 0 {
 		return ""
 	}
 	if len(v) <= maxLen {
 		return v
 	}
-	return v[:maxLen]
+	truncated := v[:maxLen]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 type captureReadCloser struct {
