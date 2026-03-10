@@ -371,6 +371,10 @@ func (h *redisDualWriteHook) BeforeProcess(ctx context.Context, cmd redis.Cmder)
 }
 
 func (h *redisDualWriteHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	// 主库命令本身失败，不镜像到副库
+	if cmd.Err() != nil && cmd.Err() != redis.Nil {
+		return nil
+	}
 	if !shouldMirrorRedisCommand(cmd) {
 		return nil
 	}
@@ -380,9 +384,12 @@ func (h *redisDualWriteHook) AfterProcess(ctx context.Context, cmd redis.Cmder) 
 	}
 
 	if h.strict {
+		// Strict 模式：同步写副库。
+		// 注意：此时主库已写入成功，若副库失败，go-redis 会将错误设置到原始 cmd 上，
+		// 调用方会收到错误，但主库数据已写入，需业务层决定是否补偿。
 		_, err := h.secondary.Do(ctx, args...).Result()
 		if err != nil {
-			SysError("redis dual-write failed: " + err.Error())
+			SysError("redis dual-write failed (strict): " + err.Error())
 		}
 		return err
 	}
@@ -403,6 +410,10 @@ func (h *redisDualWriteHook) BeforeProcessPipeline(ctx context.Context, cmds []r
 func (h *redisDualWriteHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
 	toMirror := make([][]interface{}, 0, len(cmds))
 	for _, cmd := range cmds {
+		// 跳过主库已失败的命令，避免将无效操作同步到副库
+		if cmd.Err() != nil && cmd.Err() != redis.Nil {
+			continue
+		}
 		if shouldMirrorRedisCommand(cmd) {
 			args := cloneRedisArgs(cmd.Args())
 			if len(args) > 0 {
