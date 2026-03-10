@@ -25,6 +25,13 @@ func SetVideoRouter(router *gin.Engine) {
 	klingV1Router := router.Group("/kling/v1")
 	klingV1Router.Use(middleware.KlingRequestConvert(), middleware.TokenAuth(), middleware.Distribute())
 	{
+		// Element (主体) 端点
+		klingV1Router.POST("/general/advanced-custom-elements", controller.RelayTask)            // 创建主体
+		klingV1Router.GET("/general/advanced-custom-elements", controller.RelayTask)             // 查询自定义主体列表
+		klingV1Router.GET("/general/advanced-custom-elements/:element_id", controller.RelayTask) // 查询单个主体
+		klingV1Router.GET("/general/advanced-presets-elements", controller.RelayTask)            // 查询预置主体列表
+		klingV1Router.POST("/general/delete-elements", controller.RelayTask)                     // 删除主体
+
 		klingV1Router.POST("/videos/text2video", controller.RelayTask)
 		klingV1Router.POST("/videos/image2video", controller.RelayTask)
 		klingV1Router.POST("/videos/omni-video", controller.RelayTask)
@@ -54,7 +61,7 @@ func SetVideoRouter(router *gin.Engine) {
 		klingV1Router.POST("/videos/multi-elements/", controller.RelayTask)                  // 创建多模态视频编辑任务（带斜杠）
 		klingV1Router.GET("/videos/multi-elements/:task_id", controller.RelayTask)           // 查询多模态视频编辑任务
 		// 数字人 (Avatar) 端点
-		klingV1Router.POST("/videos/avatar/image2video", controller.RelayTask)    // 数字人图生视频
+		klingV1Router.POST("/videos/avatar/image2video", controller.RelayTask)         // 数字人图生视频
 		klingV1Router.GET("/videos/avatar/image2video/:task_id", controller.RelayTask) // 查询数字人任务
 	}
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -359,8 +360,8 @@ type avatarImage2VideoResponsePayload struct {
 	Message   string `json:"message"`    // 错误信息
 	RequestId string `json:"request_id"` // 请求ID
 	Data      struct {
-		TaskId     string `json:"task_id"`     // 任务ID
-		TaskInfo   struct {
+		TaskId   string `json:"task_id"` // 任务ID
+		TaskInfo struct {
 			ExternalTaskId string `json:"external_task_id"` // 客户自定义任务ID
 		} `json:"task_info"`
 		TaskStatus string `json:"task_status"` // 任务状态：submitted, processing, succeed, failed
@@ -481,9 +482,9 @@ func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
 
 // withVideoInputScaleMap 带视频输入的价格倍率（可叠加在 Std 或 Pro 上）
 var withVideoInputScaleMap = map[string]float64{
-	"kling-video-o1":  0.126 / 0.084, // 1.5 - 相对于无视频输入的倍率
-	"kling-v3":        0.126 / 0.084, // 1.5 - V3 text2video/image2video
-	"kling-v3-omni":   0.126 / 0.084, // 1.5 - V3 omni-video
+	"kling-video-o1": 0.126 / 0.084, // 1.5 - 相对于无视频输入的倍率
+	"kling-v3":       0.126 / 0.084, // 1.5 - V3 text2video/image2video
+	"kling-v3-omni":  0.126 / 0.084, // 1.5 - V3 omni-video
 }
 
 // proScaleMap Pro 模式相对于 Std 模式的价格倍率
@@ -491,7 +492,7 @@ var proScaleMap = map[string]float64{
 	"kling-video-o1":   0.112 / 0.084, // 1.333 - Pro/Std 倍率
 	"kling-v3":         0.112 / 0.084, // 1.333 - V3 text2video/image2video
 	"kling-v3-omni":    0.112 / 0.084, // 1.333 - V3 omni-video
-	"kling-v2-6":       0.07 / 0.07,           // 普通任务 Pro 和 Std 价格相同
+	"kling-v2-6":       0.07 / 0.07,   // 普通任务 Pro 和 Std 价格相同
 	"kling-v2-5-turbo": 0.07 / 0.042,  // 1.667
 	"kling-v2-1":       0.098 / 0.056, // 1.75
 	"kling-v1-6":       0.098 / 0.056, // 1.75
@@ -792,9 +793,10 @@ var multiImage2VideoStdScaleMap = map[string]float64{
 
 // videoExtendProScaleMap 视频延长 Pro 模式相对于 Std 模式的价格倍率
 // 官方价格:
-//   V1: std=1元, pro=3.5元 → pro/std = 3.5
-//   V1.5: std=2元, pro=3.5元 → pro/std = 1.75
-//   V1.6: std=2元, pro=3.5元 → pro/std = 1.75
+//
+//	V1: std=1元, pro=3.5元 → pro/std = 3.5
+//	V1.5: std=2元, pro=3.5元 → pro/std = 1.75
+//	V1.6: std=2元, pro=3.5元 → pro/std = 1.75
 var videoExtendProScaleMap = map[string]float64{
 	"kling-v1":   3.5 / 1.0, // 3.5
 	"kling-v1-5": 3.5 / 2.0, // 1.75
@@ -955,6 +957,12 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 		constant.TaskActionMultiElementsDeleteSelection: true, // 删减视频选区
 		constant.TaskActionMultiElementsClearSelection:  true, // 清除视频选区
 		constant.TaskActionMultiElementsPreview:         true, // 预览已选区视频
+		// Element (主体) 管理类接口：不扣费
+		constant.TaskActionElementCreate:  true,
+		constant.TaskActionElementGet:     true,
+		constant.TaskActionElementList:    true,
+		constant.TaskActionElementPresets: true,
+		constant.TaskActionElementDelete:  true,
 		// 注意：人脸识别不再免费，按次收费 0.05 元
 	}
 	if freeActions[action] {
@@ -1074,7 +1082,6 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 
 // ... 保持其他代码不变 ...
 
-
 // ValidateRequestAndSetAction parses body, validates fields and sets default action.
 func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.TaskError) {
 	// 检查是否是不需要 prompt 的接口
@@ -1089,16 +1096,35 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		currentAction == constant.TaskActionAdvancedLipSync || // 对口型
 		currentAction == constant.TaskActionVideoExtend || // 视频延长
 		currentAction == constant.TaskActionTTS || // 语音合成（使用 text 而非 prompt）
-		currentAction == constant.TaskActionAvatarImage2Video // 数字人图生视频（prompt 可选）
+		currentAction == constant.TaskActionAvatarImage2Video || // 数字人图生视频（prompt 可选）
+		currentAction == constant.TaskActionElementCreate ||
+		currentAction == constant.TaskActionElementGet ||
+		currentAction == constant.TaskActionElementList ||
+		currentAction == constant.TaskActionElementPresets ||
+		currentAction == constant.TaskActionElementDelete
 
 	// 使用带选项的验证方法
-	return relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
+	taskErr := relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
+	if taskErr != nil {
+		return taskErr
+	}
+	// Kling 的 action 主要由中间件根据官方端点决定；这里同步到 info.Action，确保计费/路由按 action 生效
+	if currentAction != "" {
+		info.Action = currentAction
+	}
+	return nil
 }
 
 // BuildRequestURL constructs the upstream URL.
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	var path string
 	switch info.Action {
+	case constant.TaskActionElementCreate,
+		constant.TaskActionElementGet,
+		constant.TaskActionElementList,
+		constant.TaskActionElementPresets,
+		constant.TaskActionElementDelete:
+		return a.buildGeneralRequestURL(info)
 	case constant.TaskActionOmniVideo:
 		path = "/v1/videos/omni-video"
 	case constant.TaskActionMotionControl:
@@ -1165,6 +1191,22 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	req := v.(relaycommon.TaskSubmitReq)
 
 	currentAction := c.GetString("action")
+
+	// Element (主体) - 直接透传请求体/无 body
+	if currentAction == constant.TaskActionElementCreate || currentAction == constant.TaskActionElementDelete {
+		payload := req.Metadata
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		return bytes.NewReader(data), nil
+	}
+	if currentAction == constant.TaskActionElementGet || currentAction == constant.TaskActionElementList || currentAction == constant.TaskActionElementPresets {
+		return bytes.NewReader([]byte{}), nil
+	}
 
 	// Motion Control 使用专用的请求结构
 	if currentAction == constant.TaskActionMotionControl {
@@ -1379,6 +1421,29 @@ func (a *TaskAdaptor) DoResponse(c *gin.Context, resp *http.Response, info *rela
 	}
 
 	currentAction := c.GetString("action")
+
+	// Element (主体) 相关接口为同步接口：校验 code 并直接透传响应
+	if currentAction == constant.TaskActionElementCreate ||
+		currentAction == constant.TaskActionElementGet ||
+		currentAction == constant.TaskActionElementList ||
+		currentAction == constant.TaskActionElementPresets ||
+		currentAction == constant.TaskActionElementDelete {
+		var gr struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		}
+		err = json.Unmarshal(responseBody, &gr)
+		if err != nil {
+			taskErr = service.TaskErrorWrapper(err, "unmarshal_response_failed", http.StatusInternalServerError)
+			return
+		}
+		if gr.Code != 0 {
+			taskErr = service.TaskErrorWrapperLocal(errors.New(gr.Message), "element_failed", http.StatusBadRequest)
+			return
+		}
+		c.Data(http.StatusOK, "application/json", responseBody)
+		return "", responseBody, nil
+	}
 
 	// 人脸识别端点返回的是人脸数据而非任务ID，直接透传响应
 	if currentAction == constant.TaskActionIdentifyFace {
@@ -1602,6 +1667,27 @@ func (a *TaskAdaptor) GetModelList() []string {
 
 func (a *TaskAdaptor) GetChannelName() string {
 	return "kling"
+}
+
+func (a *TaskAdaptor) buildGeneralRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	u, err := url.Parse(info.RequestURLPath)
+	if err != nil {
+		return "", err
+	}
+
+	path := u.Path
+	// 本项目对外暴露的是 /kling/v1/...；Kling 官方上游是 /v1/...
+	if strings.HasPrefix(path, "/kling/v1") {
+		path = "/v1" + strings.TrimPrefix(path, "/kling/v1")
+	}
+	if u.RawQuery != "" {
+		path = path + "?" + u.RawQuery
+	}
+
+	if isNewAPIRelay(info.ApiKey) {
+		return fmt.Sprintf("%s/kling%s", a.baseURL, path), nil
+	}
+	return fmt.Sprintf("%s%s", a.baseURL, path), nil
 }
 
 // ============================
@@ -1831,8 +1917,8 @@ func (a *TaskAdaptor) convertToVideoExtendPayload(req *relaycommon.TaskSubmitReq
 // convertToTTSPayload 转换为语音合成 API 专用请求格式
 func (a *TaskAdaptor) convertToTTSPayload(req *relaycommon.TaskSubmitReq) (*ttsRequestPayload, error) {
 	r := ttsRequestPayload{
-		VoiceLanguage: "zh",  // 默认中文
-		VoiceSpeed:    1.0,   // 默认语速
+		VoiceLanguage: "zh", // 默认中文
+		VoiceSpeed:    1.0,  // 默认语速
 	}
 
 	// 从 metadata 中解析所有字段
@@ -2216,7 +2302,7 @@ func (a *TaskAdaptor) ParseTaskResult(respBody []byte) (*relaycommon.TaskInfo, e
 	if status == "succeed" && len(resPayload.Data.TaskResult.Videos) > 0 {
 		video := resPayload.Data.TaskResult.Videos[0]
 		taskInfo.Url = video.Url
-		
+
 		// 累加所有视频的实际时长（用于异步核销，特别是 multi_prompt 模式下会有多个视频）
 		var totalDuration float64
 		for _, v := range resPayload.Data.TaskResult.Videos {
@@ -2259,7 +2345,7 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(originTask *model.Task) ([]byte, erro
 		if video.Duration != "" {
 			openAIVideo.Seconds = video.Duration
 		}
-		
+
 		// 如果有多个视频（例如 multi_prompt 模式），将所有视频信息放入 metadata
 		if len(klingResp.Data.TaskResult.Videos) > 1 {
 			openAIVideo.SetMetadata("videos", klingResp.Data.TaskResult.Videos)

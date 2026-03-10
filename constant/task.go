@@ -24,6 +24,12 @@ const (
 	TaskActionVideoExtend       = "videoExtend"
 	TaskActionTTS               = "tts" // 语音合成 (Text-to-Speech)
 
+	// Kling 相关 Action (Element)
+	TaskActionElementCreate  = "elementCreate"  // 创建元素
+	TaskActionElementGet     = "elementGet"     // 获取元素
+	TaskActionElementList    = "elementList"    // 列出元素
+	TaskActionElementPresets = "elementPresets" // 元素预设
+	TaskActionElementDelete  = "elementDelete"  // 删除元素
 	// 多模态视频编辑 (Multi-Elements) 相关 Action
 	TaskActionMultiElementsInit            = "multiElementsInit"            // 初始化待编辑视频
 	TaskActionMultiElementsAddSelection    = "multiElementsAddSelection"    // 增加视频选区

@@ -238,6 +238,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		return
 	}
 	info.ConsumeQuota = true
+	// 同步直返接口（例如 TTS、Element 等）没有 taskID，不落库，只计费
+	if taskID == "" {
+		return nil
+	}
 	// insert task
 	task := model.InitTask(platform, info)
 	task.TaskID = taskID
