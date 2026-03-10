@@ -220,13 +220,19 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 	if err != nil {
 		return nil, err
 	}
-	if textRequest.Messages == nil || len(textRequest.Messages) == 0 {
+	if len(textRequest.Messages) == 0 {
 		return nil, errors.New("field messages is required")
+	}
+	// Do not block empty content; only guard against missing `content` field (nil)
+	// to avoid downstream conversion errors.
+	for i := range textRequest.Messages {
+		if textRequest.Messages[i].Content == nil {
+			 return nil, errors.New("field messages[i].content is required") 
+			}
 	}
 	if textRequest.Model == "" {
 		return nil, errors.New("field model is required")
 	}
-
 	//if textRequest.Stream {
 	//	relayInfo.IsStream = true
 	//}

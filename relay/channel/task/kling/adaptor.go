@@ -824,6 +824,10 @@ const identifyFacePricePerCall = 0.05 // 每次0.05元
 // 官方价格：每次从资源包总数里扣减0.05积分
 const ttsPricePerCall = 0.05 // 每次0.05元
 
+// elementPricePerCall 主体管理接口计费单价。
+// 当前按免费接口处理，保留常量用于测试与后续策略调整。
+const elementPricePerCall = 0.0
+
 // avatarStdPricePerCall 数字人 Std 模式计费：每次价格
 // 官方价格：std 模式按次计费
 const avatarStdPricePerCall = 1.0 // 每次1元（std模式），请根据官方价格调整
@@ -957,15 +961,18 @@ func (a *TaskAdaptor) GetPriceScale(c *gin.Context, info *relaycommon.RelayInfo)
 		constant.TaskActionMultiElementsDeleteSelection: true, // 删减视频选区
 		constant.TaskActionMultiElementsClearSelection:  true, // 清除视频选区
 		constant.TaskActionMultiElementsPreview:         true, // 预览已选区视频
-		// Element (主体) 管理类接口：不扣费
-		constant.TaskActionElementCreate:  true,
-		constant.TaskActionElementGet:     true,
-		constant.TaskActionElementList:    true,
-		constant.TaskActionElementPresets: true,
-		constant.TaskActionElementDelete:  true,
 		// 注意：人脸识别不再免费，按次收费 0.05 元
 	}
 	if freeActions[action] {
+		return 0, nil
+	}
+
+	// 主体管理接口免费，不扣费
+	if action == constant.TaskActionElementCreate ||
+		action == constant.TaskActionElementGet ||
+		action == constant.TaskActionElementList ||
+		action == constant.TaskActionElementPresets ||
+		action == constant.TaskActionElementDelete {
 		return 0, nil
 	}
 
@@ -1104,7 +1111,7 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 		currentAction == constant.TaskActionElementDelete
 
 	// 使用带选项的验证方法
-	taskErr := relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
+	taskErr = relaycommon.ValidateBasicTaskRequestWithOptions(c, info, constant.TaskActionGenerate, !noPromptRequired)
 	if taskErr != nil {
 		return taskErr
 	}
@@ -1662,6 +1669,7 @@ func (a *TaskAdaptor) GetModelList() []string {
 		"kling-video-extend",   // 视频延长
 		"kling-multi-elements", // 多模态视频编辑
 		"kling-avatar",         // 数字人
+		"kling-element",        // 主体管理
 	}
 }
 
@@ -2254,6 +2262,10 @@ func (a *TaskAdaptor) createJWTToken() (string, error) {
 func (a *TaskAdaptor) createJWTTokenWithKey(apiKey string) (string, error) {
 	if isNewAPIRelay(apiKey) {
 		return apiKey, nil // new api relay
+	}
+	// 兼容直接传入已签名 JWT（header.payload.signature）
+	if strings.Count(apiKey, ".") == 2 {
+		return apiKey, nil
 	}
 	keyParts := strings.Split(apiKey, "|")
 	if len(keyParts) != 2 {

@@ -335,7 +335,7 @@ func TestKlingAdaptor_GetUnitPriceScale(t *testing.T) {
 
 func TestKlingAdaptor_ParseTaskResult(t *testing.T) {
 	adaptor := &TaskAdaptor{}
-	
+
 	respBody := `{
 		"code": 0,
 		"data": {
@@ -565,7 +565,7 @@ func TestKling_CalculateOmniVideoDuration(t *testing.T) {
 
 func TestKling_ConvertToRequestPayload(t *testing.T) {
 	adaptor := &TaskAdaptor{}
-	
+
 	submitReq := &relaycommon.TaskSubmitReq{
 		Prompt: "test prompt",
 		Model:  "kling-v2-6",
@@ -811,32 +811,32 @@ func TestKlingPricing_MultiImage2Video(t *testing.T) {
 			name:          "Std 5s",
 			mode:          "std",
 			duration:      "5",
-			expectedScale: 5.0,                  // duration × modeScale(1.0)
-			officialPrice: 2.0 * priceRatio,    // 2元 × 0.14 = 0.28
+			expectedScale: 5.0,              // duration × modeScale(1.0)
+			officialPrice: 2.0 * priceRatio, // 2元 × 0.14 = 0.28
 			description:   "多图生视频 Std 5s = 2元",
 		},
 		{
 			name:          "Std 10s",
 			mode:          "std",
 			duration:      "10",
-			expectedScale: 10.0,                 // duration × modeScale(1.0)
-			officialPrice: 4.0 * priceRatio,    // 4元 × 0.14 = 0.56
+			expectedScale: 10.0,             // duration × modeScale(1.0)
+			officialPrice: 4.0 * priceRatio, // 4元 × 0.14 = 0.56
 			description:   "多图生视频 Std 10s = 4元",
 		},
 		{
 			name:          "Pro 5s",
 			mode:          "pro",
 			duration:      "5",
-			expectedScale: 5.0 * 1.75,           // duration × proScale(1.75)
-			officialPrice: 3.5 * priceRatio,    // 3.5元 × 0.14 = 0.49
+			expectedScale: 5.0 * 1.75,       // duration × proScale(1.75)
+			officialPrice: 3.5 * priceRatio, // 3.5元 × 0.14 = 0.49
 			description:   "多图生视频 Pro 5s = 3.5元",
 		},
 		{
 			name:          "Pro 10s",
 			mode:          "pro",
 			duration:      "10",
-			expectedScale: 10.0 * 1.75,          // duration × proScale(1.75)
-			officialPrice: 7.0 * priceRatio,    // 7元 × 0.14 = 0.98
+			expectedScale: 10.0 * 1.75,      // duration × proScale(1.75)
+			officialPrice: 7.0 * priceRatio, // 7元 × 0.14 = 0.98
 			description:   "多图生视频 Pro 10s = 7元",
 		},
 	}
@@ -973,11 +973,11 @@ func TestKlingPricing_AdvancedLipSync(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name           string
-		audioDurationMs int64  // 音频时长（毫秒）
-		expectedScale  float64
-		expectedPrice  float64 // 预期价格（元）
-		description    string
+		name            string
+		audioDurationMs int64 // 音频时长（毫秒）
+		expectedScale   float64
+		expectedPrice   float64 // 预期价格（元）
+		description     string
 	}{
 		{
 			name:            "3秒音频",
@@ -1243,6 +1243,42 @@ func TestKlingPricing_FreeActions(t *testing.T) {
 	}
 }
 
+// TestKlingPricing_ElementActionsCharged 主体管理接口计费测试
+// 验证 Element 相关接口不再免费，按次计费 0.05 元
+func TestKlingPricing_ElementActionsCharged(t *testing.T) {
+	adaptor := &TaskAdaptor{}
+	gin.SetMode(gin.TestMode)
+
+	elementActions := []struct {
+		name   string
+		action string
+	}{
+		{"主体-创建", constant.TaskActionElementCreate},
+		{"主体-查询单个", constant.TaskActionElementGet},
+		{"主体-查询列表", constant.TaskActionElementList},
+		{"主体-查询预设", constant.TaskActionElementPresets},
+		{"主体-删除", constant.TaskActionElementDelete},
+	}
+
+	expectedScale := float32(elementPricePerCall / priceRatioToOfficial)
+	for _, tt := range elementActions {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			req := relaycommon.TaskSubmitReq{Model: "kling-element"}
+			c.Set("task_request", req)
+			c.Set("action", tt.action)
+
+			info := &relaycommon.RelayInfo{
+				TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: tt.action},
+			}
+
+			got, err := adaptor.GetPriceScale(c, info)
+			assert.NoError(t, err)
+			assert.InDelta(t, expectedScale, got, 0.0001, "Element 接口应按次收费")
+		})
+	}
+}
+
 // TestKlingPricing_AdvancedFeatures 高级功能附加倍率测试
 // 验证音频、音色控制、视频输入等附加倍率
 func TestKlingPricing_AdvancedFeatures(t *testing.T) {
@@ -1389,7 +1425,7 @@ func TestKlingPricing_AdvancedFeatures(t *testing.T) {
 // 综合测试：验证配置正确的 ModelPrice 后，计算结果与官方价格一致
 func TestKlingPricing_OfficialPriceVerification(t *testing.T) {
 	// 这个测试验证：当 ModelPrice 配置正确时，最终价格与官方一致
-	
+
 	type priceCase struct {
 		name          string
 		action        string
@@ -1601,7 +1637,7 @@ func TestKlingPricing_OfficialPriceVerification(t *testing.T) {
 
 			// 计算最终价格
 			calculatedPrice := tc.modelPrice * float64(priceScale)
-			
+
 			// 验证与官方价格一致（允许0.01误差）
 			assert.InDelta(t, tc.officialPrice, calculatedPrice, 0.01,
 				"%s: 计算价格=%.2f, 官方价格=%.2f, PriceScale=%.2f",
@@ -1640,7 +1676,7 @@ func TestKlingPricing_ProScaleMap(t *testing.T) {
 func TestKlingPricing_LipSyncUnits(t *testing.T) {
 	// 验证对口型的计费单位计算逻辑
 	// 每5秒一个单位，不足5秒按5秒计算
-	
+
 	testCases := []struct {
 		durationSec   float64
 		expectedUnits float64
@@ -1663,7 +1699,7 @@ func TestKlingPricing_LipSyncUnits(t *testing.T) {
 				totalDurationSec = advancedLipSyncUnitSeconds
 			}
 			units := math.Ceil(totalDurationSec / advancedLipSyncUnitSeconds)
-			
+
 			assert.Equal(t, tc.expectedUnits, units,
 				"%.1f秒应计算为%.0f个单位", tc.durationSec, tc.expectedUnits)
 		})

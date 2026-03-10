@@ -144,7 +144,7 @@ var defaultModelRatio = map[string]float64{
 	"claude-sonnet-4-20250514":                  1.5,
 	"claude-sonnet-4-5-20250929":                1.5,
 	"claude-opus-4-5-20251101":                  2.5,
-	"claude-opus-4-6-20260120":                  2.5,  // $5 / 1M tokens (≤200K), $10 / 1M tokens (>200K) - uses tiered pricing
+	"claude-opus-4-6-20260120":                  2.5, // $5 / 1M tokens (≤200K), $10 / 1M tokens (>200K) - uses tiered pricing
 	"claude-3-opus-20240229":                    7.5, // $15 / 1M tokens
 	"claude-opus-4-20250514":                    7.5,
 	"claude-opus-4-1-20250805":                  7.5,
@@ -304,6 +304,7 @@ var defaultModelPrice = map[string]float64{
 	"kling-lip-sync":       0.14,  // 对口型: 每5秒0.5元，PriceScale 直接返回官方价格倍率
 	"kling-identify-face":  0.14,  // 人脸识别: 每次0.05元，PriceScale=0.05/0.14≈0.357
 	"kling-tts":            0.14,  // 语音合成: 每次0.05元，PriceScale=0.05/0.14≈0.357
+	"kling-element":        0.14,  // 主体管理: 按次计费，PriceScale=0.05/0.14≈0.357
 }
 
 var defaultAudioRatio = map[string]float64{

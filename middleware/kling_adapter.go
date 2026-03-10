@@ -106,6 +106,11 @@ func KlingRequestConvert() func(c *gin.Context) {
 
 		// Rewrite request body
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
+		// Ensure downstream body parser treats rewritten payload as JSON,
+		// especially for GET Element endpoints that originally have no content-type.
+		if !strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
+			c.Request.Header.Set("Content-Type", "application/json")
+		}
 		// 除了 Element 接口以外，仍然重写路径到统一的 /v1/video/generations，方便 distributor 设置 relay_mode
 		if !isElementAPI {
 			c.Request.URL.Path = "/v1/video/generations"
