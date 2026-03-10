@@ -301,6 +301,8 @@ docker run --name new-api -d --restart always \
 | `SESSION_SECRET` | 会话密钥（多机部署必须） | - |
 | `CRYPTO_SECRET` | 加密密钥（Redis 必须） | - |
 | `SQL_DSN` | 数据库连接字符串 | - |
+| `DUAL_WRITE_SQL_DSN` | 双写目标库连接字符串（用于迁移期双写） | - |
+| `DUAL_WRITE_STRICT` | 双写失败是否中断主写入（`true/false`） | `false` |
 | `REDIS_CONN_STRING` | Redis 连接字符串 | - |
 | `STREAMING_TIMEOUT` | 流式超时时间（秒） | `300` |
 | `AZURE_DEFAULT_API_VERSION` | Azure API 版本 | `2025-04-01-preview` |
