@@ -81,6 +81,14 @@ def parse_args():
                    help="USD 转 CNY 汇率，默认 7.3")
     p.add_argument("--workers", type=int, default=10,
                    help="并发下载线程数，默认 10")
+    p.add_argument("--cache-dir", type=str, default=".cache",
+                   help="本地缓存目录，缓存已下载的 S3 文件（默认 .cache）")
+    p.add_argument("--no-cache", action="store_true",
+                   help="禁用本地缓存，强制从 S3 下载")
+    p.add_argument("--time-from", type=str, default=None,
+                   help="起始时间过滤，格式 HH:MM:SS 或 YYYY-MM-DDTHH:MM:SS")
+    p.add_argument("--time-to", type=str, default=None,
+                   help="截止时间过滤，格式 HH:MM:SS 或 YYYY-MM-DDTHH:MM:SS")
     p.add_argument("--verbose", action="store_true")
     return p.parse_args()
 
@@ -119,9 +127,9 @@ def list_s3_objects(s3, bucket, prefix):
     return objects
 
 
-def download_and_parse(s3, bucket, key):
-    resp = s3.get_object(Bucket=bucket, Key=key)
-    data = gzip.decompress(resp["Body"].read())
+def _parse_gzip_data(raw):
+    """解析 gzip 压缩的 JSONL 数据"""
+    data = gzip.decompress(raw)
     records = []
     for line in data.decode("utf-8", errors="replace").strip().split("\n"):
         if not line.strip():
@@ -131,6 +139,30 @@ def download_and_parse(s3, bucket, key):
         except json.JSONDecodeError:
             continue
     return records
+
+
+def _get_cache_path(cache_dir, key):
+    """根据 S3 key 生成本地缓存文件路径"""
+    return os.path.join(cache_dir, key)
+
+
+def download_and_parse(s3, bucket, key, cache_dir=None):
+    if cache_dir:
+        cache_path = _get_cache_path(cache_dir, key)
+        if os.path.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                return _parse_gzip_data(f.read())
+
+    resp = s3.get_object(Bucket=bucket, Key=key)
+    raw = resp["Body"].read()
+
+    if cache_dir:
+        cache_path = _get_cache_path(cache_dir, key)
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as f:
+            f.write(raw)
+
+    return _parse_gzip_data(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +283,13 @@ def extract_usage(record):
 
 
 def extract_usage_from_sse(text):
-    last_usage = None
+    """
+    从流式 SSE 中提取 usage，需要合并多个事件：
+    - message_start 包含 input_tokens, cache 等
+    - message_delta 包含最终 output_tokens
+    - 也可能来自 amazon-bedrock-invocationMetrics
+    """
+    merged = {}
     for line in text.split("\n"):
         line = line.strip()
         if not line.startswith("data:"):
@@ -261,16 +299,50 @@ def extract_usage_from_sse(text):
             continue
         try:
             data = json.loads(payload)
-            if "usage" in data and data["usage"]:
-                last_usage = data["usage"]
-            msg = data.get("message")
-            if isinstance(msg, dict) and msg.get("usage"):
-                last_usage = msg["usage"]
         except json.JSONDecodeError:
             continue
-    if last_usage:
-        return normalize_usage(last_usage)
+
+        usage = None
+        if "usage" in data and data["usage"]:
+            usage = data["usage"]
+        msg = data.get("message")
+        if isinstance(msg, dict) and msg.get("usage"):
+            usage = msg["usage"]
+
+        if usage:
+            _merge_usage(merged, usage)
+
+        # Bedrock invocationMetrics 作为补充来源
+        metrics = data.get("amazon-bedrock-invocationMetrics")
+        if isinstance(metrics, dict):
+            bedrock_usage = {}
+            if "inputTokenCount" in metrics:
+                bedrock_usage["input_tokens"] = metrics["inputTokenCount"]
+            if "outputTokenCount" in metrics:
+                bedrock_usage["output_tokens"] = metrics["outputTokenCount"]
+            if "cacheReadInputTokenCount" in metrics:
+                bedrock_usage["cache_read_input_tokens"] = metrics["cacheReadInputTokenCount"]
+            if "cacheWriteInputTokenCount" in metrics:
+                bedrock_usage["cache_creation_input_tokens"] = metrics["cacheWriteInputTokenCount"]
+            if bedrock_usage:
+                _merge_usage(merged, bedrock_usage)
+
+    if merged:
+        return normalize_usage(merged)
     return None
+
+
+def _merge_usage(target, source):
+    """将 source usage 合并到 target，对数值字段取较大值，对嵌套对象递归合并"""
+    for k, v in source.items():
+        if isinstance(v, dict):
+            if k not in target or not isinstance(target[k], dict):
+                target[k] = {}
+            _merge_usage(target[k], v)
+        elif isinstance(v, (int, float)):
+            target[k] = max(target.get(k, 0), v)
+        else:
+            target[k] = v
 
 
 def normalize_usage(usage):
@@ -479,15 +551,21 @@ def new_stat_bucket():
 # 处理单天数据
 # ---------------------------------------------------------------------------
 
-def _download_one(region, endpoint, bucket, key):
+def _download_one(region, endpoint, bucket, key, cache_dir=None):
     """在独立线程中创建 S3 client 并下载解析单个文件（避免 boto3 client 线程安全问题）"""
+    if cache_dir:
+        cache_path = _get_cache_path(cache_dir, key)
+        if os.path.exists(cache_path):
+            with open(cache_path, "rb") as f:
+                return _parse_gzip_data(f.read())
     client = get_s3_client(region, endpoint)
-    return download_and_parse(client, bucket, key)
+    return download_and_parse(client, bucket, key, cache_dir=cache_dir)
 
 
 def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
                  filter_user_ids=None, filter_models=None, filter_channel_ids=None,
-                 workers=10, region="", endpoint=""):
+                 workers=10, region="", endpoint="", cache_dir=None,
+                 time_from=None, time_to=None):
     """处理单天数据，返回汇总结果和明细"""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     s3_prefix = f"{prefix}/{dt.strftime('%Y/%m/%d')}/"
@@ -515,14 +593,23 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
     t0 = time.time()
     all_records_batches = []
 
+    # 统计缓存命中
+    cache_hits = 0
+    if cache_dir:
+        for key in keys:
+            if os.path.exists(_get_cache_path(cache_dir, key)):
+                cache_hits += 1
+        if verbose and cache_hits:
+            print(f"  [{date_str}] 缓存命中: {cache_hits}/{len(keys)} 文件")
+
     if len(keys) <= 1 or workers <= 1:
         for key in keys:
-            all_records_batches.append(download_and_parse(s3, bucket, key))
+            all_records_batches.append(download_and_parse(s3, bucket, key, cache_dir=cache_dir))
     else:
         actual_workers = min(workers, len(keys))
         with ThreadPoolExecutor(max_workers=actual_workers) as pool:
             future_to_key = {
-                pool.submit(_download_one, region, endpoint, bucket, key): key
+                pool.submit(_download_one, region, endpoint, bucket, key, cache_dir): key
                 for key in keys
             }
             for future in as_completed(future_to_key):
@@ -545,6 +632,17 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
         total_records += len(records)
 
         for rec in records:
+            # 时间过滤
+            if time_from or time_to:
+                ts = rec.get("created_at", "")
+                if ts:
+                    if time_from and ts < time_from:
+                        filtered_out += 1
+                        continue
+                    if time_to and ts > time_to:
+                        filtered_out += 1
+                        continue
+
             if user_id_set and rec.get("user_id", 0) not in user_id_set:
                 filtered_out += 1
                 continue
@@ -934,6 +1032,22 @@ def main():
 
     s3 = get_s3_client(args.region, args.endpoint)
 
+    # 缓存目录
+    cache_dir = None
+    if not args.no_cache:
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
+        if args.verbose:
+            print(f"  缓存目录: {cache_dir}")
+
+    # 时间过滤：短格式 HH:MM:SS 自动补全为当天的完整时间戳
+    time_from = args.time_from
+    time_to = args.time_to
+    if time_from and len(time_from) <= 8:
+        time_from = f"{dates[0]}T{time_from}"
+    if time_to and len(time_to) <= 8:
+        time_to = f"{dates[-1]}T{time_to}"
+
     # 构建过滤条件描述
     filter_parts = []
     if args.user_id:
@@ -942,6 +1056,10 @@ def main():
         filter_parts.append(f"model={args.model}")
     if args.channel_id:
         filter_parts.append(f"channel_id={args.channel_id}")
+    if time_from:
+        filter_parts.append(f"from={time_from}")
+    if time_to:
+        filter_parts.append(f"to={time_to}")
     filters_desc = ", ".join(filter_parts) if filter_parts else None
     if filters_desc:
         print(f"  过滤条件: {filters_desc}")
@@ -962,6 +1080,7 @@ def main():
             filter_user_ids=args.user_id, filter_models=args.model,
             filter_channel_ids=args.channel_id,
             workers=args.workers, region=args.region, endpoint=args.endpoint,
+            cache_dir=cache_dir, time_from=time_from, time_to=time_to,
         )
         grand_total_records += total_records
         grand_parse_failures += parse_failures

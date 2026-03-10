@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -30,16 +31,17 @@ var sensitiveHeaders = []string{
 }
 
 type rawLogUploader struct {
-	enabled    bool
-	bucket     string
-	prefix     string
-	region     string
-	endpoint   string
-	maxBytes   int
-	retries    int
-	batchSize  int
-	batchBytes int
-	flushSec   int
+	enabled         bool
+	bucket          string
+	prefix          string
+	region          string
+	endpoint        string
+	maxBytes        int
+	retries         int
+	batchSize       int
+	batchBytes      int
+	flushSec        int
+	enqueueTimeout  time.Duration
 
 	credentials aws.Credentials
 	signer      *v4.Signer
@@ -47,6 +49,9 @@ type rawLogUploader struct {
 	queue       chan []byte
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
+
+	dropCount  atomic.Int64
+	totalCount atomic.Int64
 }
 
 type rawLogPayload struct {
@@ -103,7 +108,7 @@ func initRawLogUploader() *rawLogUploader {
 	if retries < 0 {
 		retries = 0
 	}
-	batchSize := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_SIZE", 100)
+	batchSize := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_SIZE", 200)
 	if batchSize < 1 {
 		batchSize = 1
 	}
@@ -115,25 +120,30 @@ func initRawLogUploader() *rawLogUploader {
 	if flushSec < 1 {
 		flushSec = 1
 	}
+	enqueueTimeoutSec := common.GetEnvOrDefault("RAW_LOG_S3_ENQUEUE_TIMEOUT", 5)
+	if enqueueTimeoutSec < 0 {
+		enqueueTimeoutSec = 0
+	}
 
 	u := &rawLogUploader{
-		enabled:     true,
-		bucket:      bucket,
-		prefix:      prefix,
-		region:      region,
-		endpoint:    endpoint,
-		maxBytes:    maxBytes,
-		retries:     retries,
-		batchSize:   batchSize,
-		batchBytes:  batchBytes,
-		flushSec:    flushSec,
-		credentials: aws.Credentials{AccessKeyID: accessKey, SecretAccessKey: secretKey, SessionToken: sessionToken},
-		signer:      v4.NewSigner(),
-		httpClient:  GetHttpClient(),
-		queue:       make(chan []byte, common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 10000)),
-		stopCh:      make(chan struct{}),
+		enabled:        true,
+		bucket:         bucket,
+		prefix:         prefix,
+		region:         region,
+		endpoint:       endpoint,
+		maxBytes:       maxBytes,
+		retries:        retries,
+		batchSize:      batchSize,
+		batchBytes:     batchBytes,
+		flushSec:       flushSec,
+		enqueueTimeout: time.Duration(enqueueTimeoutSec) * time.Second,
+		credentials:    aws.Credentials{AccessKeyID: accessKey, SecretAccessKey: secretKey, SessionToken: sessionToken},
+		signer:         v4.NewSigner(),
+		httpClient:     GetHttpClient(),
+		queue:          make(chan []byte, common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 50000)),
+		stopCh:         make(chan struct{}),
 	}
-	workerNum := common.GetEnvOrDefault("RAW_LOG_S3_WORKERS", 2)
+	workerNum := common.GetEnvOrDefault("RAW_LOG_S3_WORKERS", 4)
 	if workerNum < 1 {
 		workerNum = 1
 	}
@@ -141,8 +151,10 @@ func initRawLogUploader() *rawLogUploader {
 		u.wg.Add(1)
 		go u.batchWorker()
 	}
-	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, gzip=on",
-		region, bucket, batchSize, flushSec))
+	// 定期输出丢弃统计
+	go u.reportDropStats()
+	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, workers=%d, queue=%d, enqueue_timeout=%ds, gzip=on",
+		region, bucket, batchSize, flushSec, workerNum, cap(u.queue), enqueueTimeoutSec))
 	return u
 }
 
@@ -223,6 +235,54 @@ func (u *rawLogUploader) flushBatch(batch [][]byte) error {
 	objectKey := path.Join(keyPrefix, fmt.Sprintf("%d-%d.ndjson.gz", time.Now().UnixNano(), len(batch)))
 
 	return u.uploadWithRetry(objectKey, buf.Bytes())
+}
+
+func (u *rawLogUploader) enqueue(c *gin.Context, data []byte) {
+	u.totalCount.Add(1)
+
+	// 先尝试非阻塞写入
+	select {
+	case u.queue <- data:
+		return
+	default:
+	}
+
+	// 队列满，带超时等待
+	if u.enqueueTimeout <= 0 {
+		u.dropCount.Add(1)
+		logger.LogWarn(c, "raw log s3 queue full, drop current raw log")
+		return
+	}
+
+	timer := time.NewTimer(u.enqueueTimeout)
+	defer timer.Stop()
+	select {
+	case u.queue <- data:
+	case <-timer.C:
+		u.dropCount.Add(1)
+		logger.LogWarn(c, fmt.Sprintf("raw log s3 queue full after %s timeout, drop current raw log", u.enqueueTimeout))
+	}
+}
+
+func (u *rawLogUploader) reportDropStats() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			dropped := u.dropCount.Load()
+			total := u.totalCount.Load()
+			if dropped > 0 {
+				common.SysError(fmt.Sprintf("raw log s3: dropped %d/%d logs (%.1f%%) in last period, queue_len=%d/%d",
+					dropped, total, float64(dropped)/float64(max(total, 1))*100,
+					len(u.queue), cap(u.queue)))
+				u.dropCount.Store(0)
+				u.totalCount.Store(0)
+			}
+		case <-u.stopCh:
+			return
+		}
+	}
 }
 
 func (u *rawLogUploader) Shutdown() {
@@ -322,11 +382,7 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 			logger.LogError(c, "failed to marshal raw log payload: "+err.Error())
 			return
 		}
-		select {
-		case u.queue <- data:
-		default:
-			logger.LogWarn(c, "raw log s3 queue full, drop current raw log")
-		}
+		u.enqueue(c, data)
 	})
 }
 
