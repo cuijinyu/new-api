@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -14,7 +15,10 @@ import (
 )
 
 var RDB *redis.Client
+var SecondaryRDB *redis.Client
 var RedisEnabled = true
+var RedisDualWriteEnabled bool
+var RedisDualWriteStrict bool
 
 func RedisKeyCacheSeconds() int {
 	return SyncFrequency
@@ -49,6 +53,33 @@ func InitRedisClient() (err error) {
 	if DebugEnabled {
 		SysLog(fmt.Sprintf("Redis connected to %s", opt.Addr))
 		SysLog(fmt.Sprintf("Redis database: %d", opt.DB))
+	}
+
+	RedisDualWriteStrict = GetEnvOrDefaultBool("REDIS_DUAL_WRITE_STRICT", false)
+	secondaryConn := os.Getenv("REDIS_DUAL_WRITE_CONN_STRING")
+	if secondaryConn != "" {
+		secOpt, secErr := redis.ParseURL(secondaryConn)
+		if secErr != nil {
+			if RedisDualWriteStrict {
+				FatalLog("failed to parse REDIS_DUAL_WRITE_CONN_STRING: " + secErr.Error())
+			}
+			SysError("dual-write disabled, failed to parse secondary redis connection string: " + secErr.Error())
+			return nil
+		}
+		secOpt.PoolSize = GetEnvOrDefault("REDIS_DUAL_WRITE_POOL_SIZE", opt.PoolSize)
+		SecondaryRDB = redis.NewClient(secOpt)
+
+		_, secErr = SecondaryRDB.Ping(ctx).Result()
+		if secErr != nil {
+			if RedisDualWriteStrict {
+				FatalLog("secondary redis ping test failed: " + secErr.Error())
+			}
+			SysError("dual-write disabled, secondary redis ping test failed: " + secErr.Error())
+			return err
+		}
+		RedisDualWriteEnabled = true
+		RDB.AddHook(newRedisDualWriteHook(SecondaryRDB, RedisDualWriteStrict))
+		SysLog("Redis dual-write enabled")
 	}
 	return err
 }
@@ -324,4 +355,127 @@ func RedisHSetField(key, field string, value interface{}) error {
 		return err
 	}
 	return nil
+}
+
+type redisDualWriteHook struct {
+	secondary *redis.Client
+	strict    bool
+}
+
+func newRedisDualWriteHook(secondary *redis.Client, strict bool) *redisDualWriteHook {
+	return &redisDualWriteHook{secondary: secondary, strict: strict}
+}
+
+func (h *redisDualWriteHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (h *redisDualWriteHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	// 主库命令本身失败，不镜像到副库
+	if cmd.Err() != nil && cmd.Err() != redis.Nil {
+		return nil
+	}
+	if !shouldMirrorRedisCommand(cmd) {
+		return nil
+	}
+	args := cloneRedisArgs(cmd.Args())
+	if len(args) == 0 {
+		return nil
+	}
+
+	if h.strict {
+		// Strict 模式：同步写副库。
+		// 注意：此时主库已写入成功，若副库失败，go-redis 会将错误设置到原始 cmd 上，
+		// 调用方会收到错误，但主库数据已写入，需业务层决定是否补偿。
+		_, err := h.secondary.Do(ctx, args...).Result()
+		if err != nil {
+			SysError("redis dual-write failed (strict): " + err.Error())
+		}
+		return err
+	}
+
+	go func(a []interface{}) {
+		_, err := h.secondary.Do(context.Background(), a...).Result()
+		if err != nil {
+			SysError("redis dual-write failed: " + err.Error())
+		}
+	}(args)
+	return nil
+}
+
+func (h *redisDualWriteHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+
+func (h *redisDualWriteHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	toMirror := make([][]interface{}, 0, len(cmds))
+	for _, cmd := range cmds {
+		// 跳过主库已失败的命令，避免将无效操作同步到副库
+		if cmd.Err() != nil && cmd.Err() != redis.Nil {
+			continue
+		}
+		if shouldMirrorRedisCommand(cmd) {
+			args := cloneRedisArgs(cmd.Args())
+			if len(args) > 0 {
+				toMirror = append(toMirror, args)
+			}
+		}
+	}
+	if len(toMirror) == 0 {
+		return nil
+	}
+
+	execMirror := func(c context.Context, all [][]interface{}) error {
+		pipe := h.secondary.Pipeline()
+		for _, args := range all {
+			pipe.Do(c, args...)
+		}
+		_, err := pipe.Exec(c)
+		if err != nil {
+			SysError("redis dual-write pipeline failed: " + err.Error())
+		}
+		return err
+	}
+
+	if h.strict {
+		return execMirror(ctx, toMirror)
+	}
+
+	go func(all [][]interface{}) {
+		_ = execMirror(context.Background(), all)
+	}(toMirror)
+	return nil
+}
+
+func cloneRedisArgs(args []interface{}) []interface{} {
+	out := make([]interface{}, len(args))
+	copy(out, args)
+	return out
+}
+
+func shouldMirrorRedisCommand(cmd redis.Cmder) bool {
+	name := strings.ToLower(cmd.Name())
+
+	if name == "script" {
+		args := cmd.Args()
+		if len(args) >= 2 {
+			if sub, ok := args[1].(string); ok {
+				sub = strings.ToLower(sub)
+				return sub == "load" || sub == "flush"
+			}
+		}
+		return false
+	}
+
+	switch name {
+	case "set", "setex", "mset", "msetnx",
+		"del", "unlink", "expire", "pexpire",
+		"incr", "incrby", "decr", "decrby",
+		"hset", "hsetnx", "hmset", "hdel", "hincrby",
+		"lpush", "rpush", "ltrim",
+		"eval", "evalsha":
+		return true
+	default:
+		return false
+	}
 }

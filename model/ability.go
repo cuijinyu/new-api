@@ -293,13 +293,13 @@ func FixAbility() (int, int, error) {
 
 	// truncate abilities table
 	if common.UsingSQLite {
-		err := DB.Exec("DELETE FROM abilities").Error
+		err := ExecWithDualWrite(DB, "DELETE FROM abilities")
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))
 			return 0, 0, err
 		}
 	} else {
-		err := DB.Exec("TRUNCATE TABLE abilities").Error
+		err := ExecWithDualWrite(DB, "TRUNCATE TABLE abilities")
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Truncate abilities failed: %s", err.Error()))
 			return 0, 0, err
@@ -319,7 +319,7 @@ func FixAbility() (int, int, error) {
 	for _, chunk := range lo.Chunk(channels, 50) {
 		ids := lo.Map(chunk, func(c *Channel, _ int) int { return c.Id })
 		// Delete all abilities of this channel
-		err = DB.Where("channel_id IN ?", ids).Delete(&Ability{}).Error
+		err = ExecWithDualWrite(DB, "DELETE FROM abilities WHERE channel_id IN ?", ids)
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))
 			failCount += len(chunk)
