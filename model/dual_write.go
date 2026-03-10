@@ -83,6 +83,30 @@ func registerDualWriteCallbacks() {
 	_ = DB.Callback().Delete().After("gorm:delete").Register("dualwrite:delete", dualWriteCallback)
 }
 
+func ExecWithDualWrite(db *gorm.DB, sqlText string, values ...any) error {
+	if db == nil {
+		db = DB
+	}
+	if db == nil {
+		return errors.New("primary db is nil")
+	}
+	res := db.Exec(sqlText, values...)
+	if res.Error != nil {
+		return res.Error
+	}
+	if !DualWriteEnabled || SecondaryDB == nil {
+		return nil
+	}
+	secondaryRes := SecondaryDB.Exec(sqlText, values...)
+	if secondaryRes.Error != nil {
+		common.SysError("dual-write exec failed: " + secondaryRes.Error.Error())
+		if DualWriteStrict {
+			return secondaryRes.Error
+		}
+	}
+	return nil
+}
+
 func dualWriteCallback(tx *gorm.DB) {
 	if !DualWriteEnabled || SecondaryDB == nil {
 		return
