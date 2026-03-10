@@ -246,6 +246,7 @@ func SetApiRouter(router *gin.Engine) {
 			invoiceRoute.GET("/:id", controller.GetInvoice)
 			invoiceRoute.DELETE("/:id", controller.DeleteInvoice)
 			invoiceRoute.GET("/:id/export", controller.ExportInvoiceCSV)
+			invoiceRoute.GET("/:id/export/details", controller.ExportInvoiceDetailCSV)
 		}
 
 		vendorRoute := apiRouter.Group("/vendors")
