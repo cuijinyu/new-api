@@ -1,11 +1,11 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -73,6 +73,9 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
+	if err = prepareReusableBody(req, requestBody); err != nil {
+		return nil, fmt.Errorf("prepare request body failed: %w", err)
+	}
 	headers := req.Header
 	headerOverride, err := processHeaderOverride(info)
 	if err != nil {
@@ -103,6 +106,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
+	}
+	if err = prepareReusableBody(req, requestBody); err != nil {
+		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
 	// set form data
 	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
@@ -287,16 +293,16 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
-	log.Default().Println("Req:", req)
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
-	log.Default().Println("Resp:", resp)
 	if resp == nil {
 		return nil, errors.New("resp is nil")
 	}
+
+	service.AttachRawLogCapture(c, info, req, resp)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
@@ -312,8 +318,8 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(requestBody), nil
+	if err = prepareReusableBody(req, requestBody); err != nil {
+		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
 
 	err = a.BuildRequestHeader(c, req, info)
@@ -325,4 +331,20 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
 	return resp, nil
+}
+
+func prepareReusableBody(req *http.Request, requestBody io.Reader) error {
+	if req == nil || requestBody == nil {
+		return nil
+	}
+	bodyBytes, err := io.ReadAll(requestBody)
+	if err != nil {
+		return err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+	}
+	req.ContentLength = int64(len(bodyBytes))
+	return nil
 }

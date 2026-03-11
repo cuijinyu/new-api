@@ -1,0 +1,164 @@
+{
+  "_comment": "模型价格配置。tiered_pricing 的 min/max_tokens_k 单位为千 tokens; per_call_price 为按次计费 USD/次; 其余价格单位 USD/1M tokens; web_search 单位 USD/千次",
+  "models": {
+    "claude-opus-4-6": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 5, "output_price": 25, "cache_hit_price": 0.5, "cache_write_price": 6.25, "cache_write_price_1h": 10},
+        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 10, "output_price": 37.5, "cache_hit_price": 1, "cache_write_price": 12.5, "cache_write_price_1h": 20}
+      ]
+    },
+    "claude-opus-4-5-20251101": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 5, "output_price": 25, "cache_hit_price": 0.5, "cache_write_price": 6.25, "cache_write_price_1h": 10},
+        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 10, "output_price": 37.5, "cache_hit_price": 1, "cache_write_price": 12.5, "cache_write_price_1h": 20}
+      ]
+    },
+    "claude-opus-4-1-20250805": {
+      "input_price": 15, "output_price": 75, "cache_hit_price": 1.5, "cache_write_price": 18.75
+    },
+    "claude-opus-4-20250514": {
+      "input_price": 15, "output_price": 75, "cache_hit_price": 1.5, "cache_write_price": 18.75
+    },
+    "claude-sonnet-4-6": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 3, "output_price": 15, "cache_hit_price": 0.3, "cache_write_price": 3.75, "cache_write_price_1h": 6},
+        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 6, "output_price": 22.5, "cache_hit_price": 0.6, "cache_write_price": 7.5, "cache_write_price_1h": 12}
+      ]
+    },
+    "claude-sonnet-4-5-20250929": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 3, "output_price": 15, "cache_hit_price": 0.3, "cache_write_price": 3.75, "cache_write_price_1h": 6},
+        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 6, "output_price": 22.5, "cache_hit_price": 0.6, "cache_write_price": 7.5, "cache_write_price_1h": 12}
+      ]
+    },
+    "claude-sonnet-4-20250514": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 3, "output_price": 15, "cache_hit_price": 0.3, "cache_write_price": 3.75},
+        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 6, "output_price": 22.5, "cache_hit_price": 0.6, "cache_write_price": 7.5}
+      ]
+    },
+    "claude-3-7-sonnet-20250219": {
+      "input_price": 3, "output_price": 15, "cache_hit_price": 0.3, "cache_write_price": 3.75
+    },
+    "claude-haiku-4-5-20251001": {
+      "input_price": 1, "output_price": 5, "cache_hit_price": 0.1, "cache_write_price": 1.25
+    },
+    "claude-3-5-haiku-20241022": {
+      "input_price": 0.8, "output_price": 4, "cache_hit_price": 0.08, "cache_write_price": 1.0
+    },
+    "seed-1-6-flash-250715": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 128, "input_price": 0.075, "output_price": 0.3, "cache_hit_price": 0.015, "cache_write_price": 0.0083},
+        {"min_tokens_k": 128, "max_tokens_k": 256, "input_price": 0.1, "output_price": 0.8, "cache_hit_price": 0.015, "cache_write_price": 0.0083}
+      ]
+    },
+    "seed-1-6-250915": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 128, "input_price": 0.25, "output_price": 2, "cache_hit_price": 0.05, "cache_write_price": 0.0083},
+        {"min_tokens_k": 128, "max_tokens_k": 256, "input_price": 0.5, "output_price": 4, "cache_hit_price": 0.05, "cache_write_price": 0.0083}
+      ]
+    },
+    "seed-1-8-251228": {
+      "tiered_pricing": [
+        {"min_tokens_k": 0, "max_tokens_k": 128, "input_price": 0.25, "output_price": 2, "cache_hit_price": 0.05, "cache_write_price": 0.0083},
+        {"min_tokens_k": 128, "max_tokens_k": 256, "input_price": 0.5, "output_price": 4, "cache_hit_price": 0.05, "cache_write_price": 0.0083}
+      ]
+    },
+
+    "_comment_ratio_models": "以下模型由 model_ratio * 2 = input_price, input_price * completion_ratio = output_price 换算",
+
+    "grok-4-1-fast-reasoning":     {"input_price": 0.2, "output_price": 0.5},
+    "grok-4-1-fast-non-reasoning": {"input_price": 0.2, "output_price": 0.5},
+    "grok-code-fast-1":            {"input_price": 0.2, "output_price": 1.5},
+    "grok-4-fast-reasoning":       {"input_price": 0.2, "output_price": 0.5},
+    "grok-4-fast-non-reasoning":   {"input_price": 0.2, "output_price": 0.5},
+    "grok-4-0709":                 {"input_price": 3, "output_price": 15},
+
+    "gemini-3-flash-preview":          {"input_price": 0.5, "output_price": 3},
+    "gemini-3-pro-preview":            {"input_price": 2, "output_price": 12},
+    "gemini-3-pro-image-preview":      {"input_price": 2, "output_price": 120},
+    "gemini-3.1-flash-image-preview":  {"input_price": 0.5, "output_price": 60},
+    "gemini-2.5-pro":                  {"input_price": 1.25, "output_price": 10},
+    "gemini-2.5-flash":                {"input_price": 0.3, "output_price": 0.75},
+    "gemini-2.5-flash-image-preview":  {"input_price": 0.3, "output_price": 30},
+    "gemini-2.5-flash-image":          {"input_price": 0.3, "output_price": 30},
+    "gemini-2.5-flash-lite":           {"input_price": 0.1, "output_price": 0.4},
+
+    "gpt-5-pro-2025-10-06": {"input_price": 0.02, "output_price": 0.0002},
+    "gpt-5":                {"input_price": 1.25, "output_price": 10},
+    "gpt-5-pro":            {"input_price": 15, "output_price": 120},
+    "gpt-5-codex":          {"input_price": 1.25, "output_price": 10},
+    "gpt-5-mini":           {"input_price": 0.25, "output_price": 2},
+    "gpt-5-nano":           {"input_price": 0.05, "output_price": 0.4},
+    "gpt-5-chat":           {"input_price": 1.25, "output_price": 10},
+    "gpt-4.1":              {"input_price": 2, "output_price": 8},
+    "gpt-4.1-mini":         {"input_price": 0.4, "output_price": 1.6},
+    "gpt-4.1-nano":         {"input_price": 0.1, "output_price": 0.4},
+    "gpt-4o":               {"input_price": 2.5, "output_price": 10},
+    "gpt-4o-mini":          {"input_price": 0.15, "output_price": 0.6},
+
+    "kimi-k2.5":            {"input_price": 0.6, "output_price": 3, "cache_hit_price": 0.1},
+
+    "glm-4.7":  {"input_price": 2, "output_price": 2},
+    "glm-4.6":  {"input_price": 2, "output_price": 2},
+    "glm-4.5":  {"input_price": 2, "output_price": 2},
+    "glm-4.6v": {"input_price": 2, "output_price": 2},
+    "glm-x-preview": {"input_price": 2, "output_price": 2},
+    "glm-5":    {"input_price": 1, "output_price": 3.2, "cache_hit_price": 0.2},
+
+    "MiniMax-M2.5":           {"input_price": 0.3, "output_price": 1.2, "cache_hit_price": 0.03},
+    "MiniMax-M2.5-lightning": {"input_price": 0.3, "output_price": 2.4, "cache_hit_price": 0.03},
+
+    "deepseek-v3-0324":      {"input_price": 0.282, "output_price": 1.128, "cache_hit_price": 0.1128},
+    "deepseek-r1-0528":      {"input_price": 0.564, "output_price": 2.256, "cache_hit_price": 0.2256},
+    "deepseek-v3.1-terminus": {"input_price": 0.564, "output_price": 1.692, "cache_hit_price": 0.2256},
+    "deepseek-v3.2":         {"input_price": 0.282, "output_price": 0.423, "cache_hit_price": 0.0282},
+
+    "_comment_per_call": "以下为按次计费模型，per_call_price 单位 USD/次",
+
+    "sora":                          {"per_call_price": 0.1},
+    "sora-2":                        {"per_call_price": 0.1},
+    "sora-2-pro":                    {"per_call_price": 0.3},
+    "kling-v3":                      {"per_call_price": 0.084},
+    "kling-v3-omni":                 {"per_call_price": 0.084},
+    "kling-video-o1":                {"per_call_price": 0.084},
+    "kling-v2-6":                    {"per_call_price": 0.07},
+    "kling-v2-5-turbo":              {"per_call_price": 0.042},
+    "kling-v2-1":                    {"per_call_price": 0.056},
+    "kling-v2-1-master":             {"per_call_price": 0.28},
+    "kling-v2-master":               {"per_call_price": 0.28},
+    "kling-v1-6":                    {"per_call_price": 0.056},
+    "kling-v1-5":                    {"per_call_price": 0.056},
+    "kling-v1":                      {"per_call_price": 0.028},
+    "kling-multi-elements":          {"per_call_price": 0.084},
+    "kling-video-extend":            {"per_call_price": 0.14},
+    "kling-lip-sync":                {"per_call_price": 0.0194},
+    "kling-identify-face":           {"per_call_price": 0.0194},
+    "kling-tts":                     {"per_call_price": 0.0194},
+    "seedream-4-5-251128":           {"per_call_price": 0.04},
+    "seedream-4-0-250828":           {"per_call_price": 0.03},
+    "seededit-3-0-i2i-250628":       {"per_call_price": 0.03},
+    "bytedance-seedream-4.5":        {"per_call_price": 0.04},
+    "bytedance-seedream-4.0":        {"per_call_price": 0.03},
+    "bytedance-seedEdit-3.0-i2i":    {"per_call_price": 0.03},
+    "vidu2.0":                       {"per_call_price": 0.5},
+    "viduq1":                        {"per_call_price": 0.4},
+    "viduq2":                        {"per_call_price": 0.35},
+    "viduq2-pro":                    {"per_call_price": 0.65},
+    "viduq2-pro-fast":               {"per_call_price": 0.18},
+    "viduq2-turbo":                  {"per_call_price": 0.43},
+    "viduq3-pro":                    {"per_call_price": 0.8},
+
+    "seedance-1-5-pro-251215":       {"per_call_price": 1.2},
+    "seedance-1-0-pro-fast-251015":  {"per_call_price": 0.5},
+    "seedance-1-0-pro-250528":       {"per_call_price": 1.25},
+    "seedance-1-0-lite-i2v-250428":  {"per_call_price": 0.9},
+    "seedance-1-0-lite-t2v-250428":  {"per_call_price": 0.9}
+  },
+  "web_search": {
+    "claude": 10.0,
+    "openai_high": 25.0,
+    "openai_normal": 10.0,
+    "_openai_normal_models": "o3, o4, gpt-5 系列使用 normal 价格，其余使用 high 价格"
+  }
+}

@@ -263,6 +263,12 @@ func InitResources() error {
 		return err
 	}
 
+	err = model.InitDualWriteDB()
+	if err != nil {
+		common.FatalLog("failed to initialize dual-write database: " + err.Error())
+		return err
+	}
+
 	model.CheckSetup()
 
 	// Initialize options, should after model.InitDB()
