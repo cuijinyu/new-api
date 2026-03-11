@@ -50,6 +50,10 @@ const (
 	LogTypeRefund  = 6
 )
 
+// ConsumeLogHook is called after a consume log is written to the database.
+// Set by external packages (e.g. service) to enable async S3 upload.
+var ConsumeLogHook func(c *gin.Context, log *Log, other map[string]interface{})
+
 func formatUserLogs(logs []*Log) {
 	for i := range logs {
 		logs[i].ChannelName = ""
@@ -227,6 +231,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	}
+	if ConsumeLogHook != nil {
+		hook := ConsumeLogHook
+		otherCopy := params.Other
+		logCopy := *log
+		gopool.Go(func() {
+			hook(c, &logCopy, otherCopy)
+		})
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {

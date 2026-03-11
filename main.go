@@ -54,11 +54,37 @@ func main() {
 	}
 
 	defer func() {
+		service.ShutdownUsageLogUploader()
+		service.ShutdownRawLogUploader()
 		err := model.CloseDB()
 		if err != nil {
 			common.FatalLog("failed to close database: " + err.Error())
 		}
 	}()
+
+	if service.UsageLogS3Enabled() {
+		model.ConsumeLogHook = func(c *gin.Context, l *model.Log, other map[string]interface{}) {
+			service.EnqueueUsageLog(c, service.UsageLogPayload{
+				RequestID:        c.GetString(common.RequestIdKey),
+				CreatedAt:        l.CreatedAt,
+				UserID:           l.UserId,
+				Username:         l.Username,
+				ChannelID:        l.ChannelId,
+				ModelName:        l.ModelName,
+				TokenName:        l.TokenName,
+				TokenID:          l.TokenId,
+				Group:            l.Group,
+				PromptTokens:     l.PromptTokens,
+				CompletionTokens: l.CompletionTokens,
+				Quota:            l.Quota,
+				Content:          l.Content,
+				UseTimeSeconds:   l.UseTime,
+				IsStream:         l.IsStream,
+				Ip:               l.Ip,
+				Other:            other,
+			})
+		}
+	}
 
 	if common.RedisEnabled {
 		// for compatibility with old versions
