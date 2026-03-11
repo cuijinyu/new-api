@@ -83,6 +83,8 @@ def parse_args():
                    help="并发下载线程数，默认 10")
     p.add_argument("--processes", type=int, default=0,
                    help="并发进程数，默认 0（禁用；建议大量小文件时设置为 CPU 核数）")
+    p.add_argument("--process-threads", type=int, default=4,
+                   help="每个进程内部的下载线程数，默认 4")
     p.add_argument("--cache-dir", type=str, default=".cache",
                    help="本地缓存目录，缓存已下载的 S3 文件（默认 .cache）")
     p.add_argument("--no-cache", action="store_true",
@@ -711,9 +713,85 @@ def _chunk_keys(keys, chunk_size):
         yield keys[i:i + chunk_size]
 
 
+def prioritize_cached_keys(keys, cache_dir=None):
+    if not cache_dir:
+        return list(keys), 0
+
+    cached_keys = []
+    uncached_keys = []
+    for key in keys:
+        if os.path.exists(_get_cache_path(cache_dir, key)):
+            cached_keys.append(key)
+        else:
+            uncached_keys.append(key)
+    return cached_keys + uncached_keys, len(cached_keys)
+
+
 def _process_key_batch(region, endpoint, bucket, keys, cache_dir, date_str, pricing_cfg, group_by,
                        filter_user_ids=None, filter_models=None, filter_channel_ids=None,
-                       time_from=None, time_to=None, collect_details=True):
+                       time_from=None, time_to=None, collect_details=True, download_workers=1):
+    stats = defaultdict(new_stat_bucket)
+    details = []
+    total_records = 0
+    filtered_out = 0
+    parse_failures = 0
+    error_categories = Counter()
+    download_errors = 0
+
+    def merge_batch(records):
+        nonlocal total_records, filtered_out, parse_failures
+        batch_stats, batch_details, batch_total, batch_parse_failures, batch_filtered_out, batch_errors = process_records(
+            records, date_str, pricing_cfg, group_by,
+            filter_user_ids=filter_user_ids, filter_models=filter_models,
+            filter_channel_ids=filter_channel_ids, time_from=time_from, time_to=time_to,
+            collect_details=collect_details,
+        )
+        merge_stats(stats, batch_stats)
+        if collect_details and batch_details:
+            details.extend(batch_details)
+        total_records += batch_total
+        filtered_out += batch_filtered_out
+        parse_failures += batch_parse_failures
+        error_categories.update(batch_errors)
+
+    if len(keys) <= 1 or download_workers <= 1:
+        client = get_s3_client(region, endpoint)
+        for key in keys:
+            try:
+                records = download_and_parse(client, bucket, key, cache_dir=cache_dir)
+            except Exception:
+                download_errors += 1
+                continue
+            merge_batch(records)
+    else:
+        actual_workers = min(download_workers, len(keys))
+        with ThreadPoolExecutor(max_workers=actual_workers) as pool:
+            future_to_key = {
+                pool.submit(_download_one, region, endpoint, bucket, key, cache_dir): key
+                for key in keys
+            }
+            for future in as_completed(future_to_key):
+                try:
+                    records = future.result()
+                except Exception:
+                    download_errors += 1
+                    continue
+                merge_batch(records)
+
+    return {
+        "stats": {k: dict(v) for k, v in stats.items()},
+        "details": details,
+        "total_records": total_records,
+        "filtered_out": filtered_out,
+        "parse_failures": parse_failures,
+        "error_categories": dict(error_categories),
+        "download_errors": download_errors,
+    }
+
+
+def _process_key_batch_serial(region, endpoint, bucket, keys, cache_dir, date_str, pricing_cfg, group_by,
+                              filter_user_ids=None, filter_models=None, filter_channel_ids=None,
+                              time_from=None, time_to=None, collect_details=True):
     client = get_s3_client(region, endpoint)
     stats = defaultdict(new_stat_bucket)
     details = []
@@ -726,7 +804,7 @@ def _process_key_batch(region, endpoint, bucket, keys, cache_dir, date_str, pric
     for key in keys:
         try:
             records = download_and_parse(client, bucket, key, cache_dir=cache_dir)
-        except Exception as exc:
+        except Exception:
             download_errors += 1
             continue
 
@@ -773,7 +851,8 @@ def _download_one(region, endpoint, bucket, key, cache_dir=None):
 def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
                  filter_user_ids=None, filter_models=None, filter_channel_ids=None,
                  workers=10, region="", endpoint="", cache_dir=None,
-                 time_from=None, time_to=None, processes=0, collect_details=True):
+                 time_from=None, time_to=None, processes=0, collect_details=True,
+                 process_threads=4):
     """处理单天数据，返回汇总结果和明细"""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     s3_prefix = f"{prefix}/{dt.strftime('%Y/%m/%d')}/"
@@ -792,14 +871,11 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
 
     t0 = time.time()
 
-    # 统计缓存命中
-    cache_hits = 0
-    if cache_dir:
-        for key in keys:
-            if os.path.exists(_get_cache_path(cache_dir, key)):
-                cache_hits += 1
-        if verbose and cache_hits:
-            print(f"  [{date_str}] 缓存命中: {cache_hits}/{len(keys)} 文件")
+    # 优先处理已缓存对象，让前半段快速完成
+    keys, cache_hits = prioritize_cached_keys(keys, cache_dir=cache_dir)
+    if verbose and cache_hits:
+        print(f"  [{date_str}] 缓存命中: {cache_hits}/{len(keys)} 文件")
+        print(f"  [{date_str}] 已按缓存优先排序")
     progress = ProgressBar(len(keys), date_str)
 
     def merge_result(result):
@@ -842,14 +918,14 @@ def process_date(s3, bucket, prefix, date_str, pricing_cfg, group_by, verbose,
         actual_processes = min(processes, len(keys))
         chunk_size = max(200, min(1000, len(keys) // (actual_processes * 4) or 1))
         if verbose:
-            print(f"  [{date_str}] 多进程处理: {actual_processes} 进程, 分块 {chunk_size} 文件")
+            print(f"  [{date_str}] 多进程处理: {actual_processes} 进程, 每进程 {process_threads} 下载线程, 分块 {chunk_size} 文件")
         with ProcessPoolExecutor(max_workers=actual_processes) as pool:
             future_to_count = {
                 pool.submit(
                     _process_key_batch,
                     region, endpoint, bucket, key_batch, cache_dir, date_str, pricing_cfg, group_by,
                     filter_user_ids, filter_models, filter_channel_ids,
-                    time_from, time_to, collect_details,
+                    time_from, time_to, collect_details, process_threads,
                 ): len(key_batch)
                 for key_batch in _chunk_keys(keys, chunk_size)
             }
