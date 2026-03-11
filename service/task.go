@@ -20,6 +20,7 @@ func CoverTaskActionToModelName(platform constant.TaskPlatform, action string) s
 //   - 对口型: kling-lip-sync (官方价格: 每5秒0.5元)
 //   - 人脸识别: kling-identify-face (官方价格: 每次0.05元)
 //   - 语音合成: kling-tts (官方价格: 每次0.05元)
+//   - 主体管理: kling-element (官方返回 final_unit_deduction)
 func GetBillingModelName(platform constant.TaskPlatform, action string, originalModelName string) string {
 	// 可灵平台特殊功能
 	if platform == constant.TaskPlatformKling {
@@ -34,6 +35,12 @@ func GetBillingModelName(platform constant.TaskPlatform, action string, original
 			return "kling-identify-face"
 		case constant.TaskActionTTS:
 			return "kling-tts"
+		case constant.TaskActionElementCreate,
+			constant.TaskActionElementGet,
+			constant.TaskActionElementList,
+			constant.TaskActionElementPresets,
+			constant.TaskActionElementDelete:
+			return "kling-element"
 		}
 	}
 

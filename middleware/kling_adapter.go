@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -14,32 +15,43 @@ import (
 
 func KlingRequestConvert() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		// 判断任务类型（在重写路径之前检测原始路径）
+		originalPath := c.Request.URL.Path
+		isElementCustomElements := strings.Contains(originalPath, "/general/advanced-custom-elements")
+		isElementPresets := strings.Contains(originalPath, "/general/advanced-presets-elements")
+		isElementDelete := strings.Contains(originalPath, "/general/delete-elements")
+		isElementAPI := isElementCustomElements || isElementPresets || isElementDelete
+
 		var originalReq map[string]interface{}
 		if err := common.UnmarshalBodyReusable(c, &originalReq); err != nil {
-			c.Next()
-			return
+			// Element 的 GET 接口没有 body，允许继续转换
+			if !(isElementAPI && c.Request.Method == http.MethodGet) {
+				c.Next()
+				return
+			}
+			originalReq = map[string]interface{}{}
 		}
+		if originalReq == nil {
+			originalReq = map[string]interface{}{}
+		}
+		isOmniVideo := strings.Contains(originalPath, "omni-video")
+		isMotionControl := strings.Contains(originalPath, "motion-control")
+		isMultiImage := strings.Contains(originalPath, "multi-image2video")
+		isIdentifyFace := strings.Contains(originalPath, "identify-face")
+		isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
+		isVideoExtend := strings.Contains(originalPath, "video-extend")
+		isTTS := strings.Contains(originalPath, "/audio/tts")
+		// 数字人端点识别
+		isAvatarImage2Video := strings.Contains(originalPath, "avatar/image2video")
 
-	// 判断任务类型（在重写路径之前检测原始路径）
-	originalPath := c.Request.URL.Path
-	isOmniVideo := strings.Contains(originalPath, "omni-video")
-	isMotionControl := strings.Contains(originalPath, "motion-control")
-	isMultiImage := strings.Contains(originalPath, "multi-image2video")
-	isIdentifyFace := strings.Contains(originalPath, "identify-face")
-	isAdvancedLipSync := strings.Contains(originalPath, "advanced-lip-sync")
-	isVideoExtend := strings.Contains(originalPath, "video-extend")
-	isTTS := strings.Contains(originalPath, "/audio/tts")
-	// 数字人端点识别
-	isAvatarImage2Video := strings.Contains(originalPath, "avatar/image2video")
-
-	// 多模态视频编辑端点识别
-	isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")
-	isMultiElementsAddSelection := strings.Contains(originalPath, "multi-elements/add-selection")
-	isMultiElementsDeleteSelection := strings.Contains(originalPath, "multi-elements/delete-selection")
-	isMultiElementsClearSelection := strings.Contains(originalPath, "multi-elements/clear-selection")
-	isMultiElementsPreview := strings.Contains(originalPath, "multi-elements/preview-selection")
-	// 创建任务端点：POST /v1/videos/multi-elements/ (注意末尾有/)
-	isMultiElementsCreate := strings.HasSuffix(originalPath, "multi-elements") || strings.HasSuffix(originalPath, "multi-elements/")
+		// 多模态视频编辑端点识别
+		isMultiElementsInit := strings.Contains(originalPath, "multi-elements/init-selection")
+		isMultiElementsAddSelection := strings.Contains(originalPath, "multi-elements/add-selection")
+		isMultiElementsDeleteSelection := strings.Contains(originalPath, "multi-elements/delete-selection")
+		isMultiElementsClearSelection := strings.Contains(originalPath, "multi-elements/clear-selection")
+		isMultiElementsPreview := strings.Contains(originalPath, "multi-elements/preview-selection")
+		// 创建任务端点：POST /v1/videos/multi-elements/ (注意末尾有/)
+		isMultiElementsCreate := strings.HasSuffix(originalPath, "multi-elements") || strings.HasSuffix(originalPath, "multi-elements/")
 
 		// Support both model_name and model fields
 		model, _ := originalReq["model_name"].(string)
@@ -54,6 +66,8 @@ func KlingRequestConvert() func(c *gin.Context) {
 				model = "kling-tts" // TTS 专用模型，用于独立计费
 			} else if isAvatarImage2Video {
 				model = "kling-avatar" // 数字人专用模型，用于独立计费
+			} else if isElementAPI {
+				model = "kling-v1-6" // Element 默认模型，用于渠道路由
 			} else if isMultiElementsInit || isMultiElementsAddSelection || isMultiElementsDeleteSelection ||
 				isMultiElementsClearSelection || isMultiElementsPreview ||
 				isIdentifyFace || isAdvancedLipSync || isVideoExtend {
@@ -63,6 +77,19 @@ func KlingRequestConvert() func(c *gin.Context) {
 
 		prompt, _ := originalReq["prompt"].(string)
 		mode, _ := originalReq["mode"].(string)
+
+		// Element 的 GET 接口通常通过 query/path 传参，这里把它们放进 metadata，方便上游 URL 构造与调试
+		if isElementAPI && c.Request.Method == http.MethodGet {
+			metadata := map[string]interface{}{}
+			for k, v := range c.Request.URL.Query() {
+				metadata[k] = v
+			}
+			if elementID := c.Param("element_id"); elementID != "" {
+				metadata["element_id"] = elementID
+			}
+			metadata["_path"] = originalPath
+			originalReq = metadata
+		}
 
 		unifiedReq := map[string]interface{}{
 			"model":    model,
@@ -77,12 +104,32 @@ func KlingRequestConvert() func(c *gin.Context) {
 			return
 		}
 
-		// Rewrite request body and path
+		// Rewrite request body
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
-		c.Request.URL.Path = "/v1/video/generations"
+		// Ensure downstream body parser treats rewritten payload as JSON,
+		// especially for GET Element endpoints that originally have no content-type.
+		if !strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
+			c.Request.Header.Set("Content-Type", "application/json")
+		}
+		// 除了 Element 接口以外，仍然重写路径到统一的 /v1/video/generations，方便 distributor 设置 relay_mode
+		if !isElementAPI {
+			c.Request.URL.Path = "/v1/video/generations"
+		}
 
 		// 设置任务类型
-		if isAvatarImage2Video {
+		if isElementDelete {
+			c.Set("action", constant.TaskActionElementDelete)
+		} else if isElementPresets {
+			c.Set("action", constant.TaskActionElementPresets)
+		} else if isElementCustomElements {
+			if c.Request.Method == http.MethodPost {
+				c.Set("action", constant.TaskActionElementCreate)
+			} else if c.Param("element_id") != "" {
+				c.Set("action", constant.TaskActionElementGet)
+			} else {
+				c.Set("action", constant.TaskActionElementList)
+			}
+		} else if isAvatarImage2Video {
 			c.Set("action", constant.TaskActionAvatarImage2Video)
 		} else if isIdentifyFace {
 			c.Set("action", constant.TaskActionIdentifyFace)

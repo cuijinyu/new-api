@@ -60,6 +60,7 @@ const zhSidebar = [
       { text: '多图生视频状态查询', link: '/kling/multi-image-video-status' },
       { text: 'Omni 全能视频', link: '/kling/omni-video' },
       { text: 'Omni 视频状态查询', link: '/kling/omni-video-status' },
+      { text: '主体 (Element)', link: '/kling/element' },
       { text: '视频续写', link: '/kling/video-extend' },
       { text: '口型同步', link: '/kling/lip-sync' },
       { text: '多元素控制', link: '/kling/multi-elements' },

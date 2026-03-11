@@ -17,8 +17,8 @@ func UnmarshalJsonStr(data string, v any) error {
 func DecodeJson(reader io.Reader, v any) error {
 	return json.NewDecoder(reader).Decode(v)
 }
-
 func Marshal(v any) ([]byte, error) {
+
 	return json.Marshal(v)
 }
 
