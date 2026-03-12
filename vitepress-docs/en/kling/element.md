@@ -82,8 +82,8 @@ curl -X POST "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-element
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "element_name": "local_test_element",
-    "element_description": "local test",
+    "element_name": "your_element_name",
+    "element_description": "your_element_description",
     "reference_type": "image_refer",
     "element_image_list": {
       "frontal_image": "https://example.com/a.png",
@@ -99,7 +99,7 @@ curl -X POST "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-element
   -H "Content-Type: application/json" \
   -d '{
     "element_name": "your_element_name",
-    "element_description": "dadongbei",
+    "element_description": "your_element_description",
     "reference_type": "video_refer",
     "element_video_list": {
       "refer_videos": [
