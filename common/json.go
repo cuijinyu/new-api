@@ -10,6 +10,12 @@ func Unmarshal(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }
 
+func UnmarshalUseNumber(data []byte, v any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode(v)
+}
+
 func UnmarshalJsonStr(data string, v any) error {
 	return json.Unmarshal(StringToByteSlice(data), v)
 }
@@ -17,6 +23,13 @@ func UnmarshalJsonStr(data string, v any) error {
 func DecodeJson(reader io.Reader, v any) error {
 	return json.NewDecoder(reader).Decode(v)
 }
+
+func DecodeJsonUseNumber(reader io.Reader, v any) error {
+	decoder := json.NewDecoder(reader)
+	decoder.UseNumber()
+	return decoder.Decode(v)
+}
+
 func Marshal(v any) ([]byte, error) {
 
 	return json.Marshal(v)

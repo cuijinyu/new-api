@@ -59,6 +59,29 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 	return nil
 }
 
+func UnmarshalBodyReusableUseNumber(c *gin.Context, v any) error {
+	requestBody, err := GetRequestBody(c)
+	if err != nil {
+		return err
+	}
+	contentType := c.Request.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		err = UnmarshalUseNumber(requestBody, v)
+	} else if strings.Contains(contentType, gin.MIMEPOSTForm) {
+		err = parseFormData(requestBody, v)
+	} else if strings.Contains(contentType, gin.MIMEMultipartPOSTForm) {
+		err = parseMultipartFormData(c, requestBody, v)
+	} else {
+		// skip for now
+	}
+	if err != nil {
+		return err
+	}
+	// Reset request body
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+	return nil
+}
+
 func SetContextKey(c *gin.Context, key constant.ContextKey, value any) {
 	c.Set(string(key), value)
 }
