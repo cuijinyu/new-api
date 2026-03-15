@@ -138,6 +138,7 @@ const enSidebar = [
       { text: 'Multi-Image Video Status', link: '/en/kling/multi-image-video-status' },
       { text: 'Omni Video', link: '/en/kling/omni-video' },
       { text: 'Omni Video Status', link: '/en/kling/omni-video-status' },
+      { text: 'Elements', link: '/en/kling/element' },
       { text: 'Video Extension', link: '/en/kling/video-extend' },
       { text: 'Lip Sync', link: '/en/kling/lip-sync' },
       { text: 'Multi-Elements', link: '/en/kling/multi-elements' },

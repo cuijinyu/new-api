@@ -79,12 +79,12 @@ Authorization: Bearer YOUR_API_TOKEN
 ### cURL 示例
 
 ```bash
-curl -X POST "https://ezmodel.cloud/kling/v1/general/advanced-custom-elements" \
+curl -X POST "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-elements" \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "element_name": "local_test_element",
-    "element_description": "local test",
+    "element_name": "your_element_name",
+    "element_description": "your_element_description",
     "reference_type": "image_refer",
     "element_image_list": {
       "frontal_image": "https://example.com/a.png",
@@ -93,7 +93,22 @@ curl -X POST "https://ezmodel.cloud/kling/v1/general/advanced-custom-elements" \
     "tag_list": [{"tag_id": "o_102"}]
   }'
 ```
+```bash
+curl -X POST "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-elements" \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "element_name": "your_element_name",
+    "element_description": "your_element_description",
+    "reference_type": "video_refer",
+    "element_video_list": {
+      "refer_videos": [
+        {"video_url": "https://example.com/video.mp4"}
+      ]
+    }
+  }'
 
+```
 ---
 
 ## 2. 查询自定义主体（单个）
@@ -112,7 +127,7 @@ curl -X POST "https://ezmodel.cloud/kling/v1/general/advanced-custom-elements" \
 
 ```bash
 curl -sS -H "Authorization: Bearer YOUR_API_TOKEN" \
-  "https://ezmodel.cloud/kling/v1/general/advanced-custom-elements/860434405402222626"
+  "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-elements/860434405402222626"
 ```
 
 ---
@@ -132,7 +147,7 @@ curl -sS -H "Authorization: Bearer YOUR_API_TOKEN" \
 
 ```bash
 curl -sS -H "Authorization: Bearer YOUR_API_TOKEN" \
-  "https://ezmodel.cloud/kling/v1/general/advanced-custom-elements?pageNum=1&pageSize=2"
+  "https://www.ezmodel.cloud/kling/v1/general/advanced-custom-elements?pageNum=1&pageSize=2"
 ```
 
 ---
@@ -152,7 +167,7 @@ curl -sS -H "Authorization: Bearer YOUR_API_TOKEN" \
 
 ```bash
 curl -sS -H "Authorization: Bearer YOUR_API_TOKEN" \
-  "https://ezmodel.cloud/kling/v1/general/advanced-presets-elements?pageNum=1&pageSize=2"
+  "https://www.ezmodel.cloud/kling/v1/general/advanced-presets-elements?pageNum=1&pageSize=2"
 ```
 
 ### 实际返回差异说明
