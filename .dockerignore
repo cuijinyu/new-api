@@ -1,9 +1,68 @@
-.github
+# VCS & IDE
 .git
-*.md
+.github
 .vscode
-.gitignore
-Makefile
+.idea
+.zed
+.DS_Store
+
+# Documentation (not needed in image)
+*.md
 docs
+vitepress-docs
+
+# Build artifacts & binaries
+build
+*.exe
+new-api
+ezmodel
+one-api
+/__debug_bin*
+
+# Database dumps & large data files
+*.db
+*.db-journal
+*.sql
+*.sql.gz
+
+# Scripts (dev/analysis only, not needed in image)
+scripts
+demoscripts
+
+# Data & logs (mounted as volumes at runtime)
+data
+logs
+upload
+
+# Frontend dev artifacts (rebuilt in Docker)
+web/node_modules
+web/dist
 .eslintcache
+
+# Go cache
 .gocache
+.cache
+
+# Python artifacts
+__pycache__
+*.pyc
+venv
+.venv
+
+# Local override files
+*_local.py
+*_local.yml
+*_local.jpg
+.env
+
+# Export artifacts
+*.csv
+*.xlsx
+
+# Electron
+electron/node_modules
+electron/dist
+
+# Misc
+tiktoken_cache
+Makefile
