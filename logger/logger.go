@@ -35,6 +35,17 @@ func SetupLogger() {
 	defer func() {
 		setupLogWorking = false
 	}()
+	cloudWatchWriter, err := newCloudWatchWriterFromEnv()
+	if err != nil {
+		log.Printf("failed to init cloudwatch logger, fallback to local log only: %v", err)
+	}
+
+	stdoutWriter := io.Writer(os.Stdout)
+	stderrWriter := io.Writer(os.Stderr)
+	if cloudWatchWriter != nil {
+		stdoutWriter = io.MultiWriter(stdoutWriter, cloudWatchWriter)
+		stderrWriter = io.MultiWriter(stderrWriter, cloudWatchWriter)
+	}
 	if *common.LogDir != "" {
 		ok := setupLogLock.TryLock()
 		if !ok {
@@ -49,9 +60,13 @@ func SetupLogger() {
 		if err != nil {
 			log.Fatal("failed to open log file")
 		}
-		gin.DefaultWriter = io.MultiWriter(os.Stdout, fd)
-		gin.DefaultErrorWriter = io.MultiWriter(os.Stderr, fd)
+		gin.DefaultWriter = io.MultiWriter(stdoutWriter, fd)
+		gin.DefaultErrorWriter = io.MultiWriter(stderrWriter, fd)
+		return
 	}
+
+	gin.DefaultWriter = stdoutWriter
+	gin.DefaultErrorWriter = stderrWriter
 }
 
 func LogInfo(ctx context.Context, msg string) {

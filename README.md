@@ -307,6 +307,10 @@ docker run --name new-api -d --restart always \
 | `STREAMING_TIMEOUT` | 流式超时时间（秒） | `300` |
 | `AZURE_DEFAULT_API_VERSION` | Azure API 版本 | `2025-04-01-preview` |
 | `ERROR_LOG_ENABLED` | 错误日志开关 | `false` |
+| `AWS_REGION` | AWS 区域（启用 CloudWatch 日志时必填） | - |
+| `AWS_LOG_GROUP_NAME` | CloudWatch 日志组名称 | - |
+| `AWS_LOG_STREAM_NAME` | CloudWatch 日志流名称 | - |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` | AWS 凭证（可选，默认使用实例/容器角色） | - |
 
 📖 **完整配置：** [环境变量文档](https://docs.newapi.pro/installation/environment-variables)
 
