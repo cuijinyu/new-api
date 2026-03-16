@@ -73,9 +73,11 @@
     "grok-4-fast-reasoning":       {"input_price": 0.2, "output_price": 0.5},
     "grok-4-fast-non-reasoning":   {"input_price": 0.2, "output_price": 0.5},
     "grok-4-0709":                 {"input_price": 3, "output_price": 15},
+    "x":                           {"input_price": 2, "output_price": 2},
 
     "gemini-3-flash-preview":          {"input_price": 0.5, "output_price": 3},
     "gemini-3-pro-preview":            {"input_price": 2, "output_price": 12},
+    "gemini-3.1-pro-preview":          {"input_price": 2, "output_price": 12},
     "gemini-3-pro-image-preview":      {"input_price": 2, "output_price": 120},
     "gemini-3.1-flash-image-preview":  {"input_price": 0.5, "output_price": 60},
     "gemini-2.5-pro":                  {"input_price": 1.25, "output_price": 10},
@@ -109,6 +111,7 @@
     "MiniMax-M2.5":           {"input_price": 0.3, "output_price": 1.2, "cache_hit_price": 0.03},
     "MiniMax-M2.5-lightning": {"input_price": 0.3, "output_price": 2.4, "cache_hit_price": 0.03},
 
+    "deepseek-v3":           {"input_price": 0.282, "output_price": 1.128, "cache_hit_price": 0.1128},
     "deepseek-v3-0324":      {"input_price": 0.282, "output_price": 1.128, "cache_hit_price": 0.1128},
     "deepseek-r1-0528":      {"input_price": 0.564, "output_price": 2.256, "cache_hit_price": 0.2256},
     "deepseek-v3.1-terminus": {"input_price": 0.564, "output_price": 1.692, "cache_hit_price": 0.2256},
