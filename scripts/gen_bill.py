@@ -22,6 +22,7 @@ REVENUE_DISCOUNT = 0.65   # 我们 → GMICloud（刊例价 × 0.65）
 
 MATECLOUD_BILLS = {
     "2026-01": "reconcile/EZmodel渠道账单/[24-25]MateCloud/Ezmode1月账单-复核后_明细.csv",
+    "2026-02": "reconcile/EZmodel渠道账单/[24-25]MateCloud/Ezmodel2月账单_明细.csv",
 }
 
 # ── 定价表 ────────────────────────────────────────────────────────────────────
