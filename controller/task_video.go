@@ -221,11 +221,33 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 					preConsumedQuota := task.Quota
 					quotaDelta := actualQuota - preConsumedQuota
 
-					logDetail := fmt.Sprintf("任务ID: %s, 类型: %s, 实际时长: %.2fs, 模型%s: %.4f, 动态系数: %.2f, 分组倍率: %.2f, 预扣: %s, 实际: %s",
+					calcProcess := ""
+					adjustmentHint := "预扣和实际一致，无需调整"
+					if quotaDelta > 0 {
+						adjustmentHint = fmt.Sprintf("实际消耗更高，需要补扣 %s", logger.LogQuota(quotaDelta))
+					} else if quotaDelta < 0 {
+						adjustmentHint = fmt.Sprintf("预扣偏高，需要退回 %s", logger.LogQuota(-quotaDelta))
+					}
+
+					if isPrice {
+						calcProcess = fmt.Sprintf(
+							"计费说明（价格模式）：实际额度 = 模型价格(%.4f) × 实际时长(%.2fs) × 单价系数(%.2f) × 分组倍率(%.2f) × QuotaPerUnit(%.0f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							value, actualUsage, dynamicScale, finalGroupRatio, common.QuotaPerUnit,
+							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+						)
+					} else {
+						calcProcess = fmt.Sprintf(
+							"计费说明（倍率模式）：实际额度 = 实际时长(%.2f) × 单价系数(%.2f) × 模型倍率(%.4f) × 分组倍率(%.2f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							actualUsage, dynamicScale, value, finalGroupRatio,
+							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+						)
+					}
+
+					logDetail := fmt.Sprintf("任务ID: %s, 类型: %s, 实际时长: %.2fs, 模型%s: %.4f, 动态系数: %.2f, 分组倍率: %.2f。%s。结论：%s",
 						task.TaskID, task.Action, actualUsage,
 						map[bool]string{true: "价格", false: "倍率"}[isPrice],
 						value, dynamicScale, finalGroupRatio,
-						logger.LogQuota(preConsumedQuota), logger.LogQuota(actualQuota))
+						calcProcess, adjustmentHint)
 
 					if quotaDelta > 0 {
 						logger.LogInfo(ctx, "视频任务补扣费: "+logDetail)
@@ -233,7 +255,21 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 							model.UpdateUserUsedQuota(task.UserId, quotaDelta)
 							model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
 							task.Quota = actualQuota
-							model.RecordLog(task.UserId, model.LogTypeSystem, "视频任务成功补扣费: "+logDetail)
+							model.RecordConsumeLogNoContext(task.UserId, model.RecordConsumeLogParams{
+								ChannelId: task.ChannelId,
+								ModelName: modelName,
+								Quota:     quotaDelta,
+								Content:   "视频任务成功补扣费: " + logDetail,
+								Group:     task.Group,
+								Other: map[string]interface{}{
+									"task_id":        task.TaskID,
+									"action":         task.Action,
+									"actual_usage":   actualUsage,
+									"unit_scale":     dynamicScale,
+									"group_ratio":    finalGroupRatio,
+									"price_or_ratio": value,
+								},
+							})
 						}
 					} else if quotaDelta < 0 {
 						refundQuota := -quotaDelta

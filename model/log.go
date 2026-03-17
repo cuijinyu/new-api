@@ -247,6 +247,54 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 }
 
+// RecordConsumeLogNoContext records a consume log without gin context.
+// This is used by async settlement flows where request context is unavailable.
+func RecordConsumeLogNoContext(userId int, params RecordConsumeLogParams) {
+	if !common.LogConsumeEnabled {
+		return
+	}
+	username, _ := GetUsernameById(userId, false)
+	otherStr := common.MapToJsonStr(params.Other)
+	log := &Log{
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             LogTypeConsume,
+		Content:          params.Content,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		TokenName:        params.TokenName,
+		ModelName:        params.ModelName,
+		Quota:            params.Quota,
+		ChannelId:        params.ChannelId,
+		TokenId:          params.TokenId,
+		UseTime:          params.UseTimeSeconds,
+		IsStream:         params.IsStream,
+		Group:            params.Group,
+		Ip:               "",
+		Other:            otherStr,
+	}
+	err := LOG_DB.Create(log).Error
+	if err != nil {
+		common.SysLog("failed to record consume log: " + err.Error())
+		return
+	}
+	if ConsumeLogHook != nil {
+		hook := ConsumeLogHook
+		otherCopy := params.Other
+		logCopy := *log
+		gopool.Go(func() {
+			safeCtx, _ := gin.CreateTestContext(nil)
+			if otherCopy != nil {
+				if reqID, ok := otherCopy["request_id"].(string); ok && reqID != "" {
+					safeCtx.Set(common.RequestIdKey, reqID)
+				}
+			}
+			hook(safeCtx, &logCopy, otherCopy)
+		})
+	}
+}
+
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
