@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,20 +17,20 @@ import (
 
 func NotifyRootUser(t string, subject string, content string) {
 	user := model.GetRootUser().ToBaseUser()
+	// If TG env is configured, push root notifications to TG group/chat.
+	// If env is missing, keep current logic (NotifyUser -> email/webhook/bark/gotify).
+	botToken := strings.TrimSpace(os.Getenv("TG_BOT_TOKEN"))
+	chatID := strings.TrimSpace(os.Getenv("TG_CHAT_ID"))
+	if botToken != "" && chatID != "" {
+		if ok := SendChannelProbeTelegramAlert(t, subject, content); !ok {
+			common.SysError("tg root notify failed (tg env configured but send failed)")
+		}
+		return
+	}
+
 	err := NotifyUser(user.Id, user.Email, user.GetSetting(), dto.NewNotify(t, subject, content, nil))
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to notify admin user: %s", err.Error()))
-	}
-}
-
-func NotifyAdminUsers(t string, subject string, content string) {
-	users := model.GetAdminUser()
-	for _, user := range users {
-		baesUser := user.ToBaseUser()
-		err := NotifyUser(baesUser.Id, baesUser.Email, user.GetSetting(), dto.NewNotify(t, subject, content, nil))
-		if err != nil {
-			common.SysLog(fmt.Sprintf("failed to notify admin user: %s", err.Error()))
-		}
 	}
 }
 
