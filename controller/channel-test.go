@@ -601,7 +601,6 @@ func testAllChannels(notify bool) error {
 
 		if notify {
 			service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
-			service.NotifyAdminUsers(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 		}
 	})
 	return nil
