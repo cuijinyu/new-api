@@ -26,10 +26,12 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 
 	"github.com/gin-gonic/gin"
 )
@@ -354,7 +356,43 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	info.PromptTokens = usage.PromptTokens
 
 	quota := 0
-	if !priceData.UsePrice {
+	calculatedModelPrice := priceData.ModelPrice
+	if priceData.UseTieredPricing && priceData.TieredPricingData != nil {
+		tieredData := priceData.TieredPricingData
+		inputTokensK := usage.PromptTokens / 1000
+		if priceTier, found := ratio_setting.GetPriceTierForTokens(info.OriginModelName, inputTokensK); found {
+			tieredData = &types.TieredPricingInfo{
+				InputPrice:        priceTier.InputPrice,
+				OutputPrice:       priceTier.OutputPrice,
+				CacheHitPrice:     priceTier.CacheHitPrice,
+				CacheStorePrice:   priceTier.CacheStorePrice,
+				CacheStorePrice5m: priceTier.CacheStorePrice5m,
+				CacheStorePrice1h: priceTier.CacheStorePrice1h,
+				TierMinTokens:     priceTier.MinTokens,
+				TierMaxTokens:     priceTier.MaxTokens,
+			}
+		}
+		priceData.TieredPricingData = tieredData
+
+		dInputTokens := decimal.NewFromInt(int64(usage.PromptTokens))
+		dOutputTokens := decimal.NewFromInt(int64(usage.CompletionTokens))
+		dInputPrice := decimal.NewFromFloat(tieredData.InputPrice)
+		dOutputPrice := decimal.NewFromFloat(tieredData.OutputPrice)
+		dMillion := decimal.NewFromInt(1000000)
+		dGroupRatio := decimal.NewFromFloat(priceData.GroupRatioInfo.GroupRatio)
+		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+
+		inputCost := dInputTokens.Mul(dInputPrice).Div(dMillion)
+		outputCost := dOutputTokens.Mul(dOutputPrice).Div(dMillion)
+		modelPriceDecimal := inputCost.Add(outputCost)
+		calculatedModelPrice = modelPriceDecimal.InexactFloat64()
+
+		quotaDecimal := modelPriceDecimal.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quota = int(quotaDecimal.Round(0).IntPart())
+		if (usage.PromptTokens > 0 || usage.CompletionTokens > 0) && quota <= 0 {
+			quota = 1
+		}
+	} else if !priceData.UsePrice {
 		quota = usage.PromptTokens + int(math.Round(float64(usage.CompletionTokens)*priceData.CompletionRatio))
 		quota = int(math.Round(float64(quota) * priceData.ModelRatio))
 		if priceData.ModelRatio != 0 && quota <= 0 {
@@ -367,7 +405,18 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
-		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, calculatedModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+	if priceData.UseTieredPricing && priceData.TieredPricingData != nil {
+		tieredData := priceData.TieredPricingData
+		other["tiered_pricing"] = true
+		other["tiered_input_price"] = tieredData.InputPrice
+		other["tiered_output_price"] = tieredData.OutputPrice
+		other["tiered_cache_hit_price"] = tieredData.CacheHitPrice
+		other["tiered_cache_store_price"] = tieredData.CacheStorePrice
+		other["tiered_cache_store_price_5m"] = tieredData.CacheStorePrice5m
+		other["tiered_cache_store_price_1h"] = tieredData.CacheStorePrice1h
+		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", tieredData.TierMinTokens, tieredData.TierMaxTokens)
+	}
 	model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
