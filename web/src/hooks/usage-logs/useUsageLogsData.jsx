@@ -67,6 +67,7 @@ export const useLogsData = () => {
   const [showStat, setShowStat] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingStat, setLoadingStat] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [logCount, setLogCount] = useState(0);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
@@ -634,6 +635,59 @@ export const useLogsData = () => {
       });
   };
 
+  // Export function
+  const exportLogs = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const {
+        username,
+        token_name,
+        model_name,
+        start_timestamp,
+        end_timestamp,
+        channel,
+        group,
+        logType: formLogType,
+      } = getFormValues();
+      const currentLogType = formLogType !== undefined ? formLogType : logType;
+      let localStartTimestamp = Date.parse(start_timestamp) / 1000;
+      let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+
+      if (!localStartTimestamp || !localEndTimestamp) {
+        showError(t('请选择时间范围'));
+        setExporting(false);
+        return;
+      }
+
+      let url;
+      if (isAdminUser) {
+        url = `/api/log/export?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+      } else {
+        url = `/api/log/self/export?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
+      }
+      url = encodeURI(url);
+      const res = await API.get(url, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      const disposition = res.headers['content-disposition'];
+      const filename = disposition
+        ? disposition.split('filename=')[1]?.replace(/"/g, '')
+        : 'logs_export.csv';
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+      showSuccess(t('导出成功'));
+    } catch (err) {
+      showError(err.message || t('导出失败'));
+    }
+    setExporting(false);
+  };
+
   // Refresh function
   const refresh = async () => {
     setActivePage(1);
@@ -726,6 +780,8 @@ export const useLogsData = () => {
     setLogsFormat,
     hasExpandableRows,
     setLogType,
+    exportLogs,
+    exporting,
 
     // Translation
     t,

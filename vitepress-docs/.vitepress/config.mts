@@ -9,6 +9,7 @@ const zhSidebar = [
       { text: '快速开始', link: '/guide/getting-started' },
       { text: '代码示例', link: '/guide/examples' },
       { text: 'API 参考', link: '/guide/reference' },
+      { text: '日志查询与导出', link: '/guide/data-export' },
     ]
   },
   {
@@ -87,6 +88,7 @@ const enSidebar = [
       { text: 'Quick Start', link: '/en/guide/getting-started' },
       { text: 'Code Examples', link: '/en/guide/examples' },
       { text: 'API Reference', link: '/en/guide/reference' },
+      { text: 'Log Query & Export', link: '/en/guide/data-export' },
     ]
   },
   {

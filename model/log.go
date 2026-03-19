@@ -68,17 +68,120 @@ func formatUserLogs(logs []*Log) {
 	}
 }
 
-func GetLogByKey(key string) (logs []*Log, err error) {
+func getTokenIdByKey(key string) (int, error) {
+	cleanKey := strings.TrimPrefix(key, "sk-")
 	if os.Getenv("LOG_SQL_DSN") != "" {
 		var tk Token
-		if err = DB.Model(&Token{}).Where(logKeyCol+"=?", strings.TrimPrefix(key, "sk-")).First(&tk).Error; err != nil {
-			return nil, err
+		if err := DB.Model(&Token{}).Where(logKeyCol+"=?", cleanKey).First(&tk).Error; err != nil {
+			return 0, err
 		}
-		err = LOG_DB.Model(&Log{}).Where("token_id=?", tk.Id).Find(&logs).Error
+		return tk.Id, nil
+	}
+	var tk Token
+	if err := DB.Model(&Token{}).Where(logKeyCol+"=?", cleanKey).First(&tk).Error; err != nil {
+		return 0, err
+	}
+	return tk.Id, nil
+}
+
+func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int64, modelName string, startIdx int, num int) (logs []*Log, total int64, err error) {
+	tokenId, err := getTokenIdByKey(key)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	tx := LOG_DB.Where("token_id = ?", tokenId)
+	if logType != LogTypeUnknown {
+		tx = tx.Where("type = ?", logType)
+	}
+	if modelName != "" {
+		tx = tx.Where("model_name like ?", modelName)
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+
+	err = tx.Model(&Log{}).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	err = tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	formatUserLogs(logs)
+	return logs, total, err
+}
+
+const ExportMaxRows = 5000
+
+func ExportLogsByUser(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, group string) ([]*Log, error) {
+	var tx *gorm.DB
+	if logType == LogTypeUnknown {
+		tx = LOG_DB.Where("user_id = ?", userId)
 	} else {
-		err = LOG_DB.Joins("left join tokens on tokens.id = logs.token_id").Where("tokens.key = ?", strings.TrimPrefix(key, "sk-")).Find(&logs).Error
+		tx = LOG_DB.Where("user_id = ? and type = ?", userId, logType)
+	}
+	if modelName != "" {
+		tx = tx.Where("model_name like ?", modelName)
+	}
+	if tokenName != "" {
+		tx = tx.Where("token_name = ?", tokenName)
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+	if group != "" {
+		tx = tx.Where(logGroupCol+" = ?", group)
+	}
+
+	var logs []*Log
+	err := tx.Order("id desc").Limit(ExportMaxRows).Find(&logs).Error
+	if err != nil {
+		return nil, err
 	}
 	formatUserLogs(logs)
+	return logs, nil
+}
+
+func ExportAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) ([]*Log, error) {
+	var tx *gorm.DB
+	if logType == LogTypeUnknown {
+		tx = LOG_DB.Session(&gorm.Session{})
+	} else {
+		tx = LOG_DB.Where("type = ?", logType)
+	}
+	if modelName != "" {
+		tx = tx.Where("model_name like ?", modelName)
+	}
+	if username != "" {
+		tx = tx.Where("username = ?", username)
+	}
+	if tokenName != "" {
+		tx = tx.Where("token_name = ?", tokenName)
+	}
+	if startTimestamp != 0 {
+		tx = tx.Where("created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("created_at <= ?", endTimestamp)
+	}
+	if channel != 0 {
+		tx = tx.Where("channel_id = ?", channel)
+	}
+	if group != "" {
+		tx = tx.Where(logGroupCol+" = ?", group)
+	}
+
+	var logs []*Log
+	err := tx.Order("id desc").Limit(ExportMaxRows).Find(&logs).Error
 	return logs, err
 }
 

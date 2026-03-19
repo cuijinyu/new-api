@@ -99,6 +99,10 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		if channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(testModel, "seedream") {
 			requestPath = "/v1/images/generations"
 		}
+
+		if common.IsOpenAIResponseOnlyModel(testModel) {
+			requestPath = "/v1/responses"
+		}
 	}
 
 	c.Request = &http.Request{

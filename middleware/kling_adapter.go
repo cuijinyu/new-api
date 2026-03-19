@@ -23,7 +23,7 @@ func KlingRequestConvert() func(c *gin.Context) {
 		isElementAPI := isElementCustomElements || isElementPresets || isElementDelete
 
 		var originalReq map[string]interface{}
-		if err := common.UnmarshalBodyReusable(c, &originalReq); err != nil {
+		if err := common.UnmarshalBodyReusableUseNumber(c, &originalReq); err != nil {
 			// Element 的 GET 接口没有 body，允许继续转换
 			if !(isElementAPI && c.Request.Method == http.MethodGet) {
 				c.Next()

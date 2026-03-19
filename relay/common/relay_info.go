@@ -523,14 +523,14 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 		var metadataStr string
 		if err := common.Unmarshal(aux.Metadata, &metadataStr); err == nil && metadataStr != "" {
 			var metadataObj map[string]interface{}
-			if err := common.Unmarshal([]byte(metadataStr), &metadataObj); err == nil {
+			if err := common.UnmarshalUseNumber([]byte(metadataStr), &metadataObj); err == nil {
 				t.Metadata = metadataObj
 				return nil
 			}
 		}
 
 		var metadataObj map[string]interface{}
-		if err := common.Unmarshal(aux.Metadata, &metadataObj); err == nil {
+		if err := common.UnmarshalUseNumber(aux.Metadata, &metadataObj); err == nil {
 			t.Metadata = metadataObj
 		}
 	}
@@ -553,13 +553,13 @@ func (t *TaskSubmitReq) UnmarshalMetadata(v any) error {
 }
 
 type TaskInfo struct {
-	Code             int    `json:"code"`
-	TaskID           string `json:"task_id"`
-	Status           string `json:"status"`
-	Reason           string `json:"reason,omitempty"`
-	Url              string `json:"url,omitempty"`
-	RemoteUrl        string `json:"remote_url,omitempty"`
-	Progress         string `json:"progress,omitempty"`
+	Code             int     `json:"code"`
+	TaskID           string  `json:"task_id"`
+	Status           string  `json:"status"`
+	Reason           string  `json:"reason,omitempty"`
+	Url              string  `json:"url,omitempty"`
+	RemoteUrl        string  `json:"remote_url,omitempty"`
+	Progress         string  `json:"progress,omitempty"`
 	CompletionTokens int     `json:"completion_tokens,omitempty"` // 用于按倍率计费
 	TotalTokens      int     `json:"total_tokens,omitempty"`      // 用于按倍率计费
 	Duration         float64 `json:"duration,omitempty"`          // 视频实际时长（秒）
