@@ -211,6 +211,61 @@ type ClaudeRequest struct {
 	ServiceTier string `json:"service_tier,omitempty"`
 }
 
+// SanitizeThinkingBlocks removes thinking/redacted_thinking blocks with invalid
+// signatures from assistant messages. Anthropic requires that thinking blocks
+// replayed in multi-turn conversations carry the exact original signature;
+// blocks with placeholder, empty, or otherwise invalid signatures cause 400 errors.
+// Blocks with valid signatures are left untouched.
+func (c *ClaudeRequest) SanitizeThinkingBlocks() {
+	for i, message := range c.Messages {
+		if message.Role != "assistant" {
+			continue
+		}
+		contentArr, ok := message.Content.([]any)
+		if !ok {
+			continue
+		}
+		filtered := make([]any, 0, len(contentArr))
+		for _, block := range contentArr {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				filtered = append(filtered, block)
+				continue
+			}
+			blockType, _ := blockMap["type"].(string)
+			if blockType != "thinking" && blockType != "redacted_thinking" {
+				filtered = append(filtered, block)
+				continue
+			}
+			sig, _ := blockMap["signature"].(string)
+			if isValidThinkingSignature(sig) {
+				filtered = append(filtered, block)
+			}
+			// invalid signature → drop the entire thinking block
+		}
+		if len(filtered) != len(contentArr) {
+			if len(filtered) == 0 {
+				c.Messages[i].Content = ""
+			} else {
+				c.Messages[i].Content = filtered
+			}
+		}
+	}
+}
+
+// isValidThinkingSignature checks whether a thinking block signature looks
+// like a genuine Anthropic-issued signature (base64-encoded, typically 200+ chars).
+func isValidThinkingSignature(sig string) bool {
+	if len(sig) < 100 {
+		return false
+	}
+	switch sig {
+	case "placeholder_signature", "sig-theta":
+		return false
+	}
+	return true
+}
+
 func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	var tokenCountMeta = types.TokenCountMeta{
 		TokenType: types.TokenTypeTokenizer,

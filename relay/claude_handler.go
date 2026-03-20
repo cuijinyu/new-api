@@ -98,6 +98,10 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
+	// Strip thinking blocks with invalid signatures to prevent upstream 400 errors.
+	// Clients (AI IDEs) often replay thinking blocks with placeholder or empty signatures.
+	request.SanitizeThinkingBlocks()
+
 	var requestBody io.Reader
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
 		body, err := common.GetRequestBody(c)
