@@ -8,6 +8,8 @@
 """
 
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta
 
@@ -43,6 +45,30 @@ def _build_filter_desc(args, time_from, time_to):
     if time_to:
         parts.append(f"to={time_to}")
     return ", ".join(parts) if parts else None
+
+
+def _prefetch_with_node(dates, args, cache_dir):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    mjs = os.path.join(script_dir, "s3_download.mjs")
+    if not os.path.exists(mjs):
+        return
+
+    cmd = ["node", mjs, "--bucket", args.bucket, "--region", args.region,
+           "--prefix", args.prefix, "--cache-dir", os.path.relpath(cache_dir, script_dir)]
+    if args.endpoint:
+        cmd += ["--endpoint", args.endpoint]
+    if len(dates) == 1:
+        cmd += ["--date", dates[0]]
+    else:
+        cmd += ["--date-range", dates[0], dates[-1]]
+
+    print(f"  [Node.js] 启动高速 S3 下载器预热缓存 ...")
+    try:
+        subprocess.run(cmd, cwd=script_dir, check=True)
+    except FileNotFoundError:
+        print("  [Node.js] node 未找到，回退到 Python 下载", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"  [Node.js] 下载器退出码 {e.returncode}，回退到 Python 下载", file=sys.stderr)
 
 
 def _run_reconcile(args):
@@ -95,6 +121,9 @@ def _run_reconcile(args):
     grand_filtered_out = 0
     grand_error_categories = Counter()
     collect_details = bool(args.output or args.bill)
+
+    if cache_dir and shutil.which("node"):
+        _prefetch_with_node(dates, args, cache_dir)
 
     if args.workers > 1:
         print(f"  并发下载: {args.workers} 线程")
