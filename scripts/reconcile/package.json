@@ -1,0 +1,17 @@
+{
+  "name": "reconcile",
+  "version": "1.0.0",
+  "description": "从 S3 原始日志中提取 token 用量，按模型价格配置独立计算费用。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1013.0",
+    "@smithy/node-http-handler": "^4.5.0"
+  }
+}
