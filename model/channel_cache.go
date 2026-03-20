@@ -222,6 +222,27 @@ func CacheGetChannelInfo(id int) (*ChannelInfo, error) {
 	return &c.ChannelInfo, nil
 }
 
+// IsChannelEnabledForGroupModel checks if a specific channel is enabled and available for the given group and model.
+func IsChannelEnabledForGroupModel(group string, model string, channelId int) bool {
+	if !common.MemoryCacheEnabled {
+		return false
+	}
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channels, ok := group2model2channels[group][model]
+	if !ok {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channels = group2model2channels[group][normalizedModel]
+	}
+	for _, id := range channels {
+		if id == channelId {
+			return true
+		}
+	}
+	return false
+}
+
 func CacheUpdateChannelStatus(id int, status int) {
 	if !common.MemoryCacheEnabled {
 		return

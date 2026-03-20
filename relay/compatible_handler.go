@@ -199,6 +199,8 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		}
 		extraContent += "（可能是请求出错）"
 	}
+	service.ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, relayInfo.RelayFormat)
+
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	promptTokens := usage.PromptTokens
 	cacheTokens := usage.PromptTokensDetails.CachedTokens
