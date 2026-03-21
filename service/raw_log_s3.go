@@ -137,15 +137,15 @@ func initRawLogUploader() *rawLogUploader {
 	if retries < 0 {
 		retries = 0
 	}
-	batchSize := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_SIZE", 2000)
+	batchSize := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_SIZE", 10000)
 	if batchSize < 1 {
 		batchSize = 1
 	}
-	batchBytes := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_BYTES", 50*1024*1024)
+	batchBytes := common.GetEnvOrDefault("RAW_LOG_S3_BATCH_BYTES", 200*1024*1024)
 	if batchBytes < 1 {
-		batchBytes = 50 * 1024 * 1024
+		batchBytes = 200 * 1024 * 1024
 	}
-	flushSec := common.GetEnvOrDefault("RAW_LOG_S3_FLUSH_INTERVAL", 60)
+	flushSec := common.GetEnvOrDefault("RAW_LOG_S3_FLUSH_INTERVAL", 120)
 	if flushSec < 1 {
 		flushSec = 1
 	}
@@ -203,15 +203,15 @@ func initErrorLogUploader() *rawLogUploader {
 	if retries < 0 {
 		retries = 0
 	}
-	batchSize := common.GetEnvOrDefault("ERROR_LOG_S3_BATCH_SIZE", 1000)
+	batchSize := common.GetEnvOrDefault("ERROR_LOG_S3_BATCH_SIZE", 5000)
 	if batchSize < 1 {
 		batchSize = 1
 	}
-	batchBytes := common.GetEnvOrDefault("ERROR_LOG_S3_BATCH_BYTES", 20*1024*1024)
+	batchBytes := common.GetEnvOrDefault("ERROR_LOG_S3_BATCH_BYTES", 100*1024*1024)
 	if batchBytes < 1 {
-		batchBytes = 20 * 1024 * 1024
+		batchBytes = 100 * 1024 * 1024
 	}
-	flushSec := common.GetEnvOrDefault("ERROR_LOG_S3_FLUSH_INTERVAL", 60)
+	flushSec := common.GetEnvOrDefault("ERROR_LOG_S3_FLUSH_INTERVAL", 120)
 	if flushSec < 1 {
 		flushSec = 1
 	}
