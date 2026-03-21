@@ -54,6 +54,7 @@ func main() {
 	}
 
 	defer func() {
+		logger.ShutdownCloudWatch()
 		service.ShutdownUsageLogUploader()
 		service.ShutdownRawLogUploader()
 		service.ShutdownErrorLogUploader()
@@ -247,6 +248,10 @@ func InitResources() error {
 
 	// 加载环境变量
 	common.InitEnv()
+
+	if err := logger.InitCloudWatch(); err != nil {
+		return err
+	}
 
 	logger.SetupLogger()
 

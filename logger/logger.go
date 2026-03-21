@@ -35,6 +35,7 @@ func SetupLogger() {
 	defer func() {
 		setupLogWorking = false
 	}()
+	var file *os.File
 	if *common.LogDir != "" {
 		ok := setupLogLock.TryLock()
 		if !ok {
@@ -49,9 +50,24 @@ func SetupLogger() {
 		if err != nil {
 			log.Fatal("failed to open log file")
 		}
-		gin.DefaultWriter = io.MultiWriter(os.Stdout, fd)
-		gin.DefaultErrorWriter = io.MultiWriter(os.Stderr, fd)
+		file = fd
 	}
+	applyGinWriters(file)
+}
+
+func applyGinWriters(logFile *os.File) {
+	outW := []io.Writer{os.Stdout}
+	errW := []io.Writer{os.Stderr}
+	if cloudWatchSink != nil {
+		outW = append(outW, cloudWatchSink)
+		errW = append(errW, cloudWatchSink)
+	}
+	if logFile != nil {
+		outW = append(outW, logFile)
+		errW = append(errW, logFile)
+	}
+	gin.DefaultWriter = io.MultiWriter(outW...)
+	gin.DefaultErrorWriter = io.MultiWriter(errW...)
 }
 
 func LogInfo(ctx context.Context, msg string) {
