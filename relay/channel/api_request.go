@@ -61,6 +61,19 @@ func processHeaderOverride(info *common.RelayInfo) (map[string]string, error) {
 	return headerOverride, nil
 }
 
+// applyPassHeaders copies specified client request headers to the upstream request.
+func applyPassHeaders(c *gin.Context, info *common.RelayInfo, target *http.Header) {
+	if info == nil || len(info.ParamOverride) == 0 {
+		return
+	}
+	headerNames := common.ExtractPassHeaders(info.ParamOverride)
+	for _, name := range headerNames {
+		if val := c.Request.Header.Get(name); val != "" {
+			target.Set(name, val)
+		}
+	}
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
@@ -84,6 +97,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	for key, value := range headerOverride {
 		headers.Set(key, value)
 	}
+	applyPassHeaders(c, info, &headers)
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
@@ -120,6 +134,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	for key, value := range headerOverride {
 		headers.Set(key, value)
 	}
+	applyPassHeaders(c, info, &headers)
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
@@ -144,6 +159,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	for key, value := range headerOverride {
 		targetHeader.Set(key, value)
 	}
+	applyPassHeaders(c, info, &targetHeader)
 	err = a.SetupRequestHeader(c, &targetHeader, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)

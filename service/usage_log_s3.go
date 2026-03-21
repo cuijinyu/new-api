@@ -323,3 +323,9 @@ func ShutdownRawLogUploader() {
 	u := getRawLogUploader()
 	u.Shutdown()
 }
+
+// ShutdownErrorLogUploader drains the error log queue and waits for all workers to finish.
+func ShutdownErrorLogUploader() {
+	u := getErrorLogUploader()
+	u.Shutdown()
+}

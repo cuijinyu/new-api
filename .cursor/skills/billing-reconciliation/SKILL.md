@@ -4,9 +4,11 @@ description: >-
   Generate billing reports and reconcile accounts for the LLM API platform.
   Covers: GMICloud monthly bills (gen_bill.py), daily S3 log reconciliation
   (reconcile.py), DB anomaly checks (duplicate/failed billing), raw log error
-  scanning, and stream interrupt detection. Use when the user mentions 账单,
-  对账, reconcile, billing, GMI, MateCloud, 月账单, 费用, 异常检查, 重复计费,
-  失败计费, stream 中断, or asks to generate/check/export any billing data.
+  scanning, stream interrupt detection, and error log downloading
+  (s3_download_errors.mjs). Use when the user mentions 账单, 对账, reconcile,
+  billing, GMI, MateCloud, 月账单, 费用, 异常检查, 重复计费, 失败计费,
+  stream 中断, 错误日志, error log, 下载错误, download errors, or asks to
+  generate/check/export any billing data.
 ---
 
 # 账单与对账工具体系
@@ -182,6 +184,97 @@ python find_suspect_stream_interrupts.py --bucket $S3_BUCKET \
 
 ---
 
+## 六、错误日志下载 (`s3_download_errors.mjs`)
+
+**用途：** 从 S3 独立的错误日志路径（`llm-error-logs/`）批量下载错误请求原文（含请求体和响应体），支持按日期和小时时间段过滤。
+
+错误日志由 Go 服务在上游返回非 2xx 状态码时自动写入，与正常 raw log（`llm-raw-logs/`）分开存储，便于快速定位和分析错误。
+
+### 常用命令
+
+```bash
+cd scripts/reconcile
+
+# 下载昨天的错误日志（默认）
+node s3_download_errors.mjs --bucket $S3_BUCKET
+
+# 下载指定日期
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19
+
+# 下载指定日期的特定时间段（UTC 小时，08:00-14:59）
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19 --hour-range 08 14
+
+# 下载日期范围
+node s3_download_errors.mjs --bucket $S3_BUCKET --date-range 2026-03-01 2026-03-10
+
+# 高并发下载
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19 --concurrency 300
+
+# 自定义 S3 前缀（如果修改了 ERROR_LOG_S3_PREFIX）
+node s3_download_errors.mjs --bucket $S3_BUCKET --prefix my-custom-error-logs
+```
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--date` | 指定日期 (YYYY-MM-DD) | 昨天 |
+| `--date-range` | 日期范围（两个日期） | - |
+| `--hour-range` | UTC 小时范围（两个整数 0-23） | 全天 |
+| `--bucket` | S3 桶名 | `$RAW_LOG_S3_BUCKET` |
+| `--prefix` | S3 错误日志前缀 | `llm-error-logs` |
+| `--concurrency` | 并发下载数 | 200 |
+| `--cache-dir` | 本地缓存目录 | `.cache` |
+
+### 环境变量
+
+复用 raw log 的 S3 凭证配置，prefix 独立：
+
+| 变量 | 回退 | 说明 |
+|------|------|------|
+| `ERROR_LOG_S3_PREFIX` | `S3_ERROR_PREFIX` | 错误日志前缀，默认 `llm-error-logs` |
+| `RAW_LOG_S3_BUCKET` | `S3_BUCKET` | S3 桶名（必填） |
+| `RAW_LOG_S3_REGION` | `S3_REGION` | AWS 区域 |
+| `RAW_LOG_S3_ENDPOINT` | `S3_ENDPOINT` | 自定义端点 |
+| `RAW_LOG_S3_ACCESS_KEY_ID` | `AWS_ACCESS_KEY_ID` | AK |
+| `RAW_LOG_S3_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` | SK |
+
+### 日志格式
+
+每个 `.ndjson.gz` 文件包含多行 JSON，每行一条错误请求记录：
+
+```json
+{
+  "request_id": "...",
+  "created_at": "2026-03-19T08:30:00.123Z",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "url": "https://upstream-api/v1/chat/completions",
+  "status_code": 429,
+  "request_headers": { "Content-Type": "application/json", "Authorization": "***" },
+  "request_body": "{\"model\":\"claude-sonnet-4-6\",\"messages\":[...]}",
+  "response_body": "{\"error\":{\"message\":\"rate limit exceeded\"}}",
+  "channel_id": 42,
+  "channel_name": "my-channel",
+  "user_id": 123,
+  "model": "claude-sonnet-4-6"
+}
+```
+
+### 与 analyze_errors 脚本配合
+
+下载后可直接使用 `analyze_errors.py` / `analyze_errors_v2.py` 分析错误分布：
+
+```bash
+# 先下载错误日志
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19
+
+# 然后分析（修改脚本中的 CACHE_DIR 指向 .cache/llm-error-logs/）
+python analyze_errors_v2.py
+```
+
+---
+
 ## 关键文件索引
 
 | 文件 | 用途 |
@@ -199,6 +292,7 @@ python find_suspect_stream_interrupts.py --bucket $S3_BUCKET \
 | `scripts/reconcile/cli.py` | 命令行参数定义 |
 | `scripts/reconcile/scan_errors.py` | 错误快速扫描 |
 | `scripts/reconcile/scan_errors_detail.py` | 错误深入分析 |
+| `scripts/reconcile/s3_download_errors.mjs` | S3 错误日志下载（Node.js，支持日期/时间段） |
 | `scripts/reconcile/find_suspect_stream_interrupts.py` | Stream 中断检测 |
 | `scripts/reconcile/EZmodel渠道账单/[24-25]MateCloud/` | MateCloud 账单 CSV |
 | `scripts/reconcile/GMICloud_bill_*.xlsx` | 生成的 GMI 账单 |
