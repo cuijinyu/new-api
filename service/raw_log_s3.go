@@ -31,17 +31,18 @@ var sensitiveHeaders = []string{
 }
 
 type rawLogUploader struct {
-	enabled         bool
-	bucket          string
-	prefix          string
-	region          string
-	endpoint        string
-	maxBytes        int
-	retries         int
-	batchSize       int
-	batchBytes      int
-	flushSec        int
-	enqueueTimeout  time.Duration
+	enabled        bool
+	bucket         string
+	prefix         string
+	region         string
+	endpoint       string
+	maxBytes       int
+	retries        int
+	batchSize      int
+	batchBytes     int
+	flushSec       int
+	minFlushBytes  int
+	enqueueTimeout time.Duration
 
 	credentials aws.Credentials
 	signer      *v4.Signer
@@ -149,10 +150,15 @@ func initRawLogUploader() *rawLogUploader {
 	if flushSec < 1 {
 		flushSec = 1
 	}
+	minFlushBytes := common.GetEnvOrDefault("RAW_LOG_S3_MIN_FLUSH_BYTES", 1024*1024)
+	if minFlushBytes < 0 {
+		minFlushBytes = 0
+	}
 	enqueueTimeoutSec := common.GetEnvOrDefault("RAW_LOG_S3_ENQUEUE_TIMEOUT", 5)
 	if enqueueTimeoutSec < 0 {
 		enqueueTimeoutSec = 0
 	}
+	queueSize := common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 50000)
 
 	u := &rawLogUploader{
 		enabled:        true,
@@ -165,24 +171,20 @@ func initRawLogUploader() *rawLogUploader {
 		batchSize:      batchSize,
 		batchBytes:     batchBytes,
 		flushSec:       flushSec,
+		minFlushBytes:  minFlushBytes,
 		enqueueTimeout: time.Duration(enqueueTimeoutSec) * time.Second,
 		credentials:    aws.Credentials{AccessKeyID: cfg.accessKey, SecretAccessKey: cfg.secretKey, SessionToken: cfg.sessionToken},
 		signer:         v4.NewSigner(),
 		httpClient:     GetHttpClient(),
-		queue:          make(chan []byte, common.GetEnvOrDefault("RAW_LOG_S3_QUEUE_SIZE", 50000)),
+		queue:          make(chan []byte, queueSize),
 		stopCh:         make(chan struct{}),
 	}
-	workerNum := common.GetEnvOrDefault("RAW_LOG_S3_WORKERS", 4)
-	if workerNum < 1 {
-		workerNum = 1
-	}
-	for i := 0; i < workerNum; i++ {
-		u.wg.Add(1)
-		go u.batchWorker()
-	}
+
+	u.wg.Add(1)
+	go u.batchWorker()
 	go u.reportDropStats()
-	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, workers=%d, queue=%d, enqueue_timeout=%ds, gzip=on",
-		cfg.region, cfg.bucket, batchSize, flushSec, workerNum, cap(u.queue), enqueueTimeoutSec))
+	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, minFlushBytes=%d, queue=%d, enqueue_timeout=%ds, gzip=on",
+		cfg.region, cfg.bucket, batchSize, flushSec, minFlushBytes, queueSize, enqueueTimeoutSec))
 	return u
 }
 
@@ -215,6 +217,10 @@ func initErrorLogUploader() *rawLogUploader {
 	if flushSec < 1 {
 		flushSec = 1
 	}
+	minFlushBytes := common.GetEnvOrDefault("ERROR_LOG_S3_MIN_FLUSH_BYTES", 512*1024)
+	if minFlushBytes < 0 {
+		minFlushBytes = 0
+	}
 	enqueueTimeoutSec := common.GetEnvOrDefault("ERROR_LOG_S3_ENQUEUE_TIMEOUT", 5)
 	if enqueueTimeoutSec < 0 {
 		enqueueTimeoutSec = 0
@@ -232,6 +238,7 @@ func initErrorLogUploader() *rawLogUploader {
 		batchSize:      batchSize,
 		batchBytes:     batchBytes,
 		flushSec:       flushSec,
+		minFlushBytes:  minFlushBytes,
 		enqueueTimeout: time.Duration(enqueueTimeoutSec) * time.Second,
 		credentials:    aws.Credentials{AccessKeyID: cfg.accessKey, SecretAccessKey: cfg.secretKey, SessionToken: cfg.sessionToken},
 		signer:         v4.NewSigner(),
@@ -239,17 +246,12 @@ func initErrorLogUploader() *rawLogUploader {
 		queue:          make(chan []byte, queueSize),
 		stopCh:         make(chan struct{}),
 	}
-	workerNum := common.GetEnvOrDefault("ERROR_LOG_S3_WORKERS", 2)
-	if workerNum < 1 {
-		workerNum = 1
-	}
-	for i := 0; i < workerNum; i++ {
-		u.wg.Add(1)
-		go u.batchWorker()
-	}
+
+	u.wg.Add(1)
+	go u.batchWorker()
 	go u.reportDropStats()
-	common.SysLog(fmt.Sprintf("error log s3 uploader enabled, region=%s, bucket=%s, prefix=%s, batch=%d, flush=%ds, workers=%d, queue=%d",
-		cfg.region, cfg.bucket, prefix, batchSize, flushSec, workerNum, queueSize))
+	common.SysLog(fmt.Sprintf("error log s3 uploader enabled, region=%s, bucket=%s, prefix=%s, batch=%d, flush=%ds, minFlushBytes=%d, queue=%d",
+		cfg.region, cfg.bucket, prefix, batchSize, flushSec, minFlushBytes, queueSize))
 	return u
 }
 
@@ -261,8 +263,10 @@ func (u *rawLogUploader) batchWorker() {
 
 	batch := make([][]byte, 0, u.batchSize)
 	batchLen := 0
+	ticksSinceFlush := 0
+	maxDeferTicks := 5
 
-	flush := func() {
+	forceFlush := func() {
 		if len(batch) == 0 {
 			return
 		}
@@ -271,23 +275,27 @@ func (u *rawLogUploader) batchWorker() {
 		}
 		batch = make([][]byte, 0, u.batchSize)
 		batchLen = 0
+		ticksSinceFlush = 0
 	}
 
 	for {
 		select {
 		case line, ok := <-u.queue:
 			if !ok {
-				flush()
+				forceFlush()
 				return
 			}
 			batch = append(batch, line)
 			batchLen += len(line)
 			if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
-				flush()
+				forceFlush()
 			}
 
 		case <-ticker.C:
-			flush()
+			ticksSinceFlush++
+			if batchLen >= u.minFlushBytes || ticksSinceFlush >= maxDeferTicks {
+				forceFlush()
+			}
 
 		case <-u.stopCh:
 			for {
@@ -296,10 +304,10 @@ func (u *rawLogUploader) batchWorker() {
 					batch = append(batch, line)
 					batchLen += len(line)
 					if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
-						flush()
+						forceFlush()
 					}
 				default:
-					flush()
+					forceFlush()
 					return
 				}
 			}
