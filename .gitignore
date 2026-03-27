@@ -38,4 +38,4 @@ electron/dist
 *.xlsx
 scripts/reconcile/EZmodel渠道账单/
 scripts/reconcile/billing_reconciliation_report_claude_only.txt
-scripts/reconcile/billing_reconciliation_report.txt
+scripts/reconcile/billing_reconciliation_report.txtscripts/reconcile/node_modules/
