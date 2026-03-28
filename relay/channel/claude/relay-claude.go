@@ -375,12 +375,24 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 							claudeMediaMessage.Source.MediaType = fileData.MimeType
 							claudeMediaMessage.Source.Data = fileData.Base64Data
 						} else {
-							_, format, base64String, err := service.DecodeBase64ImageData(imageUrl.Url)
-							if err != nil {
-								return nil, err
+							cacheKey := fmt.Sprintf("img_decode_%s", common.GenerateHMAC(imageUrl.Url))
+							if cached, ok := c.Get(cacheKey); ok {
+								data := cached.(*types.LocalFileData)
+								claudeMediaMessage.Source.MediaType = data.MimeType
+								claudeMediaMessage.Source.Data = data.Base64Data
+							} else {
+								_, format, base64String, err := service.DecodeBase64ImageData(imageUrl.Url)
+								if err != nil {
+									return nil, err
+								}
+								mimeType := "image/" + format
+								c.Set(cacheKey, &types.LocalFileData{
+									MimeType:   mimeType,
+									Base64Data: base64String,
+								})
+								claudeMediaMessage.Source.MediaType = mimeType
+								claudeMediaMessage.Source.Data = base64String
 							}
-							claudeMediaMessage.Source.MediaType = "image/" + format
-							claudeMediaMessage.Source.Data = base64String
 						}
 					}
 					claudeMediaMessages = append(claudeMediaMessages, claudeMediaMessage)

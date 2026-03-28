@@ -54,8 +54,12 @@ func main() {
 	}
 
 	defer func() {
+		logger.StopAggregator()
+		logger.StopRuntimeCollector()
+		logger.ShutdownCloudWatch()
 		service.ShutdownUsageLogUploader()
 		service.ShutdownRawLogUploader()
+		service.ShutdownErrorLogUploader()
 		err := model.CloseDB()
 		if err != nil {
 			common.FatalLog("failed to close database: " + err.Error())
@@ -181,6 +185,11 @@ func main() {
 
 	// 设置路由
 	router.SetRouter(server, buildFS, indexPage)
+
+	logger.SetActiveConnectionsProvider(middleware.GetActiveConnections)
+	logger.StartAggregator()
+	logger.StartRuntimeCollector()
+
 	var port = os.Getenv("PORT")
 	if port == "" {
 		port = strconv.Itoa(*common.Port)
@@ -247,6 +256,11 @@ func InitResources() error {
 	// 加载环境变量
 	common.InitEnv()
 
+	if err := logger.InitCloudWatch(); err != nil {
+		return err
+	}
+	logger.InitMetrics()
+
 	logger.SetupLogger()
 
 	// Initialize model settings
@@ -261,6 +275,11 @@ func InitResources() error {
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
+	}
+
+	if logger.MetricsEnabled() {
+		model.DBMetricsEmitter = middleware.EmitDBMetrics
+		model.RegisterDBMetricsCallbacks(model.DB)
 	}
 
 	err = model.InitDualWriteDB()
@@ -283,10 +302,20 @@ func InitResources() error {
 		return err
 	}
 
+	if logger.MetricsEnabled() && model.LOG_DB != model.DB {
+		model.RegisterDBMetricsCallbacks(model.LOG_DB)
+	}
+
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {
 		return err
 	}
+
+	if logger.MetricsEnabled() && common.RedisEnabled {
+		common.RedisMetricsEmitter = middleware.EmitRedisMetrics
+		common.RDB.AddHook(common.NewRedisMetricsHook())
+	}
+
 	return nil
 }

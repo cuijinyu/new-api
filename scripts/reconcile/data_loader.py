@@ -1,8 +1,12 @@
 import gzip
 import os
+import threading
 
 import boto3
+import botocore.config
 import orjson
+
+_thread_local = threading.local()
 
 
 def get_s3_client(region, endpoint):
@@ -14,7 +18,24 @@ def get_s3_client(region, endpoint):
     if ak and sk:
         kwargs["aws_access_key_id"] = ak
         kwargs["aws_secret_access_key"] = sk
+    kwargs["config"] = botocore.config.Config(
+        max_pool_connections=50,
+        retries={"max_attempts": 3, "mode": "adaptive"},
+    )
     return boto3.client("s3", **kwargs)
+
+
+def _get_thread_client(region, endpoint):
+    key = f"{region}|{endpoint}"
+    clients = getattr(_thread_local, "s3_clients", None)
+    if clients is None:
+        _thread_local.s3_clients = {}
+        clients = _thread_local.s3_clients
+    client = clients.get(key)
+    if client is None:
+        client = get_s3_client(region, endpoint)
+        clients[key] = client
+    return client
 
 
 def list_s3_objects(s3, bucket, prefix):
@@ -89,5 +110,5 @@ def download_one(region, endpoint, bucket, key, cache_dir=None):
         if os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
                 return _parse_gzip_data(f.read())
-    client = get_s3_client(region, endpoint)
+    client = _get_thread_client(region, endpoint)
     return download_and_parse(client, bucket, key, cache_dir=cache_dir)

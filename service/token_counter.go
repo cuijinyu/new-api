@@ -81,6 +81,58 @@ func getTokenNum(tokenEncoder tokenizer.Codec, text string) int {
 	return tkm
 }
 
+func calcPatchBasedTokens(width, height int, multiplier float64) int {
+	ceilDiv := func(a, b int) int { return (a + b - 1) / b }
+	rawPatchesW := ceilDiv(width, 32)
+	rawPatchesH := ceilDiv(height, 32)
+	rawPatches := rawPatchesW * rawPatchesH
+	if rawPatches > 1536 {
+		area := float64(width * height)
+		r := math.Sqrt(float64(32*32*1536) / area)
+		wScaled := float64(width) * r
+		hScaled := float64(height) * r
+		adjW := math.Floor(wScaled/32.0) / (wScaled / 32.0)
+		adjH := math.Floor(hScaled/32.0) / (hScaled / 32.0)
+		adj := math.Min(adjW, adjH)
+		if !math.IsNaN(adj) && adj > 0 {
+			r = r * adj
+		}
+		wScaled = float64(width) * r
+		hScaled = float64(height) * r
+		patchesW := math.Ceil(wScaled / 32.0)
+		patchesH := math.Ceil(hScaled / 32.0)
+		imageTokens := int(patchesW * patchesH)
+		if imageTokens > 1536 {
+			imageTokens = 1536
+		}
+		return int(math.Round(float64(imageTokens) * multiplier))
+	}
+	return int(math.Round(float64(rawPatches) * multiplier))
+}
+
+func calcTileBasedTokens(width, height, baseTokens, tileTokens int, detail string) int {
+	maxSide := math.Max(float64(width), float64(height))
+	fitScale := 1.0
+	if maxSide > 2048 {
+		fitScale = maxSide / 2048.0
+	}
+	fitW := int(math.Round(float64(width) / fitScale))
+	fitH := int(math.Round(float64(height) / fitScale))
+
+	minSide := math.Min(float64(fitW), float64(fitH))
+	if minSide == 0 {
+		return baseTokens
+	}
+	shortScale := 768.0 / minSide
+	finalW := int(math.Round(float64(fitW) * shortScale))
+	finalH := int(math.Round(float64(fitH) * shortScale))
+
+	tilesW := (finalW + 512 - 1) / 512
+	tilesH := (finalH + 512 - 1) / 512
+	tiles := tilesW * tilesH
+	return tiles*tileTokens + baseTokens
+}
+
 func getImageToken(fileMeta *types.FileMeta, model string, stream bool) (int, error) {
 	if fileMeta == nil {
 		return 0, fmt.Errorf("image_url_is_nil")
@@ -157,6 +209,19 @@ func getImageToken(fileMeta *types.FileMeta, model string, stream bool) (int, er
 		fileMeta.Detail = "high"
 	}
 
+	// Use cached dimensions if available
+	if fileMeta.ParsedData != nil && fileMeta.ParsedData.Width > 0 && fileMeta.ParsedData.Height > 0 {
+		width := fileMeta.ParsedData.Width
+		height := fileMeta.ParsedData.Height
+		format := fileMeta.MimeType
+		log.Printf("cached image: format=%s, width=%d, height=%d", format, width, height)
+
+		if isPatchBased {
+			return calcPatchBasedTokens(width, height, multiplier), nil
+		}
+		return calcTileBasedTokens(width, height, baseTokens, tileTokens, fileMeta.Detail), nil
+	}
+
 	// Decode image to get dimensions
 	var config image.Config
 	var err error
@@ -169,7 +234,6 @@ func getImageToken(fileMeta *types.FileMeta, model string, stream bool) (int, er
 		if strings.HasPrefix(fileMeta.OriginData, "http") {
 			config, format, err = DecodeUrlImageData(fileMeta.OriginData)
 		} else {
-			common.SysLog(fmt.Sprintf("decoding image"))
 			config, format, b64str, err = DecodeBase64ImageData(fileMeta.OriginData)
 		}
 		fileMeta.MimeType = format
@@ -180,12 +244,23 @@ func getImageToken(fileMeta *types.FileMeta, model string, stream bool) (int, er
 	}
 
 	if config.Width == 0 || config.Height == 0 {
-		// not an image
 		if format != "" && b64str != "" {
-			// file type
 			return 3 * baseTokens, nil
 		}
 		return 0, errors.New(fmt.Sprintf("fail to decode base64 config: %s", fileMeta.OriginData))
+	}
+
+	// Cache decoded dimensions into ParsedData for reuse
+	if fileMeta.ParsedData == nil {
+		fileMeta.ParsedData = &types.LocalFileData{}
+	}
+	fileMeta.ParsedData.Width = config.Width
+	fileMeta.ParsedData.Height = config.Height
+	if fileMeta.ParsedData.Base64Data == "" && b64str != "" {
+		fileMeta.ParsedData.Base64Data = b64str
+	}
+	if fileMeta.ParsedData.MimeType == "" && format != "" {
+		fileMeta.ParsedData.MimeType = "image/" + format
 	}
 
 	width := config.Width
@@ -193,68 +268,9 @@ func getImageToken(fileMeta *types.FileMeta, model string, stream bool) (int, er
 	log.Printf("format: %s, width: %d, height: %d", format, width, height)
 
 	if isPatchBased {
-		// 32x32 patch-based calculation with 1536 cap and model multiplier
-		ceilDiv := func(a, b int) int { return (a + b - 1) / b }
-		rawPatchesW := ceilDiv(width, 32)
-		rawPatchesH := ceilDiv(height, 32)
-		rawPatches := rawPatchesW * rawPatchesH
-		if rawPatches > 1536 {
-			// scale down
-			area := float64(width * height)
-			r := math.Sqrt(float64(32*32*1536) / area)
-			wScaled := float64(width) * r
-			hScaled := float64(height) * r
-			// adjust to fit whole number of patches after scaling
-			adjW := math.Floor(wScaled/32.0) / (wScaled / 32.0)
-			adjH := math.Floor(hScaled/32.0) / (hScaled / 32.0)
-			adj := math.Min(adjW, adjH)
-			if !math.IsNaN(adj) && adj > 0 {
-				r = r * adj
-			}
-			wScaled = float64(width) * r
-			hScaled = float64(height) * r
-			patchesW := math.Ceil(wScaled / 32.0)
-			patchesH := math.Ceil(hScaled / 32.0)
-			imageTokens := int(patchesW * patchesH)
-			if imageTokens > 1536 {
-				imageTokens = 1536
-			}
-			return int(math.Round(float64(imageTokens) * multiplier)), nil
-		}
-		// below cap
-		imageTokens := rawPatches
-		return int(math.Round(float64(imageTokens) * multiplier)), nil
+		return calcPatchBasedTokens(width, height, multiplier), nil
 	}
-
-	// Tile-based calculation for 4o/4.1/4.5/o1/o3/etc.
-	// Step 1: fit within 2048x2048 square
-	maxSide := math.Max(float64(width), float64(height))
-	fitScale := 1.0
-	if maxSide > 2048 {
-		fitScale = maxSide / 2048.0
-	}
-	fitW := int(math.Round(float64(width) / fitScale))
-	fitH := int(math.Round(float64(height) / fitScale))
-
-	// Step 2: scale so that shortest side is exactly 768
-	minSide := math.Min(float64(fitW), float64(fitH))
-	if minSide == 0 {
-		return baseTokens, nil
-	}
-	shortScale := 768.0 / minSide
-	finalW := int(math.Round(float64(fitW) * shortScale))
-	finalH := int(math.Round(float64(fitH) * shortScale))
-
-	// Count 512px tiles
-	tilesW := (finalW + 512 - 1) / 512
-	tilesH := (finalH + 512 - 1) / 512
-	tiles := tilesW * tilesH
-
-	if common.DebugEnabled {
-		log.Printf("scaled to: %dx%d, tiles: %d", finalW, finalH, tiles)
-	}
-
-	return tiles*tileTokens + baseTokens, nil
+	return calcTileBasedTokens(width, height, baseTokens, tileTokens, fileMeta.Detail), nil
 }
 
 func CountRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relaycommon.RelayInfo) (int, error) {

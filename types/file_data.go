@@ -5,4 +5,6 @@ type LocalFileData struct {
 	Base64Data string
 	Url        string
 	Size       int64
+	Width      int
+	Height     int
 }

@@ -109,3 +109,31 @@ python reconcile.py --bucket my-bucket --verbose
 3. **普通模型**：直接使用基础价格
 
 缓存写入费用按 TTL 区分：5m 使用 `cache_write_price`，1h 使用 `cache_write_price_1h`（未配置时回退）。
+
+## 错误日志下载
+
+Go 服务在上游返回非 2xx 状态码时，会将请求/响应原文写入独立的 S3 路径（默认 `llm-error-logs/`），与正常 raw log 分开存储。
+
+使用 `s3_download_errors.mjs` 批量下载错误日志，支持按日期和 UTC 小时时间段过滤：
+
+```bash
+# 下载昨天的错误日志
+node s3_download_errors.mjs --bucket $S3_BUCKET
+
+# 下载指定日期
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19
+
+# 下载指定日期的特定时间段（UTC 08:00-14:59）
+node s3_download_errors.mjs --bucket $S3_BUCKET --date 2026-03-19 --hour-range 08 14
+
+# 下载日期范围
+node s3_download_errors.mjs --bucket $S3_BUCKET --date-range 2026-03-01 2026-03-10
+```
+
+错误日志专用环境变量：
+
+| 变量 | 回退 | 说明 | 默认值 |
+|------|------|------|--------|
+| `ERROR_LOG_S3_PREFIX` | `S3_ERROR_PREFIX` | 错误日志前缀 | `llm-error-logs` |
+
+其余 S3 凭证复用 `RAW_LOG_S3_*` 系列配置。

@@ -49,6 +49,7 @@ type usageLogUploader struct {
 	batchSize      int
 	batchBytes     int
 	flushSec       int
+	minFlushBytes  int
 	enqueueTimeout time.Duration
 
 	credentials aws.Credentials
@@ -58,8 +59,9 @@ type usageLogUploader struct {
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 
-	dropCount  atomic.Int64
-	totalCount atomic.Int64
+	dropCount          atomic.Int64
+	totalCount         atomic.Int64
+	uploadFailureCount atomic.Int64
 }
 
 var (
@@ -97,17 +99,21 @@ func initUsageLogUploader() *usageLogUploader {
 	if retries < 0 {
 		retries = 0
 	}
-	batchSize := common.GetEnvOrDefault("USAGE_LOG_S3_BATCH_SIZE", 500)
+	batchSize := common.GetEnvOrDefault("USAGE_LOG_S3_BATCH_SIZE", 5000)
 	if batchSize < 1 {
 		batchSize = 1
 	}
-	batchBytes := common.GetEnvOrDefault("USAGE_LOG_S3_BATCH_BYTES", 2*1024*1024)
+	batchBytes := common.GetEnvOrDefault("USAGE_LOG_S3_BATCH_BYTES", 10*1024*1024)
 	if batchBytes < 1 {
-		batchBytes = 2 * 1024 * 1024
+		batchBytes = 10 * 1024 * 1024
 	}
-	flushSec := common.GetEnvOrDefault("USAGE_LOG_S3_FLUSH_INTERVAL", 15)
+	flushSec := common.GetEnvOrDefault("USAGE_LOG_S3_FLUSH_INTERVAL", 60)
 	if flushSec < 1 {
 		flushSec = 1
+	}
+	minFlushBytes := common.GetEnvOrDefault("USAGE_LOG_S3_MIN_FLUSH_BYTES", 256*1024)
+	if minFlushBytes < 0 {
+		minFlushBytes = 0
 	}
 	enqueueTimeoutSec := common.GetEnvOrDefault("USAGE_LOG_S3_ENQUEUE_TIMEOUT", 5)
 	if enqueueTimeoutSec < 0 {
@@ -125,6 +131,7 @@ func initUsageLogUploader() *usageLogUploader {
 		batchSize:      batchSize,
 		batchBytes:     batchBytes,
 		flushSec:       flushSec,
+		minFlushBytes:  minFlushBytes,
 		enqueueTimeout: time.Duration(enqueueTimeoutSec) * time.Second,
 		credentials:    aws.Credentials{AccessKeyID: accessKey, SecretAccessKey: secretKey, SessionToken: sessionToken},
 		signer:         v4.NewSigner(),
@@ -133,18 +140,13 @@ func initUsageLogUploader() *usageLogUploader {
 		stopCh:         make(chan struct{}),
 	}
 
-	workerNum := common.GetEnvOrDefault("USAGE_LOG_S3_WORKERS", 2)
-	if workerNum < 1 {
-		workerNum = 1
-	}
-	for i := 0; i < workerNum; i++ {
-		u.wg.Add(1)
-		go u.batchWorker()
-	}
+	// Single collector goroutine to avoid fragmentation from multiple workers
+	u.wg.Add(1)
+	go u.batchWorker()
 	go u.reportDropStats()
 
-	common.SysLog(fmt.Sprintf("usage log s3 uploader enabled, region=%s, bucket=%s, prefix=%s, batch=%d, flush=%ds, workers=%d, queue=%d",
-		region, bucket, prefix, batchSize, flushSec, workerNum, queueSize))
+	common.SysLog(fmt.Sprintf("usage log s3 uploader enabled, region=%s, bucket=%s, prefix=%s, batch=%d, flush=%ds, minFlushBytes=%d, queue=%d",
+		region, bucket, prefix, batchSize, flushSec, minFlushBytes, queueSize))
 	return u
 }
 
@@ -156,32 +158,39 @@ func (u *usageLogUploader) batchWorker() {
 
 	batch := make([][]byte, 0, u.batchSize)
 	batchLen := 0
+	ticksSinceFlush := 0
+	maxDeferTicks := 5
 
-	flush := func() {
+	forceFlush := func() {
 		if len(batch) == 0 {
 			return
 		}
 		if err := u.flushBatch(batch); err != nil {
+			u.uploadFailureCount.Add(1)
 			common.SysError(fmt.Sprintf("failed to flush %d usage logs to s3: %s", len(batch), err.Error()))
 		}
 		batch = make([][]byte, 0, u.batchSize)
 		batchLen = 0
+		ticksSinceFlush = 0
 	}
 
 	for {
 		select {
 		case line, ok := <-u.queue:
 			if !ok {
-				flush()
+				forceFlush()
 				return
 			}
 			batch = append(batch, line)
 			batchLen += len(line)
 			if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
-				flush()
+				forceFlush()
 			}
 		case <-ticker.C:
-			flush()
+			ticksSinceFlush++
+			if batchLen >= u.minFlushBytes || ticksSinceFlush >= maxDeferTicks {
+				forceFlush()
+			}
 		case <-u.stopCh:
 			for {
 				select {
@@ -189,10 +198,10 @@ func (u *usageLogUploader) batchWorker() {
 					batch = append(batch, line)
 					batchLen += len(line)
 					if len(batch) >= u.batchSize || batchLen >= u.batchBytes {
-						flush()
+						forceFlush()
 					}
 				default:
-					flush()
+					forceFlush()
 					return
 				}
 			}
@@ -272,6 +281,7 @@ func (u *usageLogUploader) reportDropStats() {
 		case <-ticker.C:
 			dropped := u.dropCount.Load()
 			total := u.totalCount.Load()
+			failures := u.uploadFailureCount.Load()
 			if dropped > 0 {
 				common.SysError(fmt.Sprintf("usage log s3: dropped %d/%d logs (%.1f%%) in last period, queue_len=%d/%d",
 					dropped, total, float64(dropped)/float64(max(total, 1))*100,
@@ -279,6 +289,8 @@ func (u *usageLogUploader) reportDropStats() {
 				u.dropCount.Store(0)
 				u.totalCount.Store(0)
 			}
+			logger.EmitPipelineMetrics("usage", len(u.queue), failures, dropped)
+			u.uploadFailureCount.Store(0)
 		case <-u.stopCh:
 			return
 		}
@@ -321,5 +333,11 @@ func ShutdownUsageLogUploader() {
 // ShutdownRawLogUploader drains the raw log queue and waits for all workers to finish.
 func ShutdownRawLogUploader() {
 	u := getRawLogUploader()
+	u.Shutdown()
+}
+
+// ShutdownErrorLogUploader drains the error log queue and waits for all workers to finish.
+func ShutdownErrorLogUploader() {
+	u := getErrorLogUploader()
 	u.Shutdown()
 }

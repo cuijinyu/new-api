@@ -20,6 +20,7 @@ tiktoken_cache
 .cache
 __pycache__
 web/bun.lock
+node_modules
 
 electron/node_modules
 electron/dist
@@ -38,3 +39,10 @@ electron/dist
 scripts/reconcile/EZmodel渠道账单/
 scripts/reconcile/billing_reconciliation_report_claude_only.txt
 scripts/reconcile/billing_reconciliation_report.txt
+scripts/reconcile/node_modules/
+credentials.local.json
+
+# 本地数据文件
+data/
+scripts/reconcile/*.xlsx
+scripts/__pycache__/

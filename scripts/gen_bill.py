@@ -1,9 +1,14 @@
 """
-GMICloud 内部账单生成器
+内部账单生成器（支持多客户）
 - 以系统 billed (quota/500000 = 刊例价) 为基准
-- GMI 应付 = 刊例价 × 0.65, 成本 = 刊例价 × 0.41, 利润 = 刊例价 × 0.24
+- 应付 = 刊例价 × revenue_discount, 成本 = 刊例价 × cost_discount
 - pricing.json 重算 + MateCloud 账单 作为交叉校验
 - pandas 向量化 + xlsxwriter + multiprocessing
+
+用法示例:
+  python gen_bill.py                                          # GMICloud 默认账单
+  python gen_bill.py --username 神州数码 --revenue-discount 0.47 --month 2026-03
+  python gen_bill.py --user-id 89 --month 2026-03
 """
 import sqlite3, json, csv, os, sys, time
 from datetime import datetime
@@ -17,8 +22,14 @@ import xlsxwriter
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 DB_PATH       = "logs_analysis.db"
 QUOTA_PER_USD = 500_000
-COST_DISCOUNT    = 0.41   # MateCloud → 我们（刊例价 × 0.41）
-REVENUE_DISCOUNT = 0.65   # 我们 → GMICloud（刊例价 × 0.65）
+
+# 默认折扣（GMICloud）
+DEFAULT_COST_DISCOUNT    = 0.41   # MateCloud → 我们（刊例价 × 0.41）
+DEFAULT_REVENUE_DISCOUNT = 0.65   # 我们 → 客户（刊例价 × 0.65）
+
+# 兼容旧代码的全局引用（make_bill 内部使用局部变量覆盖）
+COST_DISCOUNT    = DEFAULT_COST_DISCOUNT
+REVENUE_DISCOUNT = DEFAULT_REVENUE_DISCOUNT
 
 MATECLOUD_BILLS = {
     "2026-01": "reconcile/EZmodel渠道账单/[24-25]MateCloud/Ezmode1月账单-复核后_明细.csv",
@@ -98,38 +109,100 @@ def parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
     return pd.DataFrame(records, index=other_series.index)
 
 
-def assign_prices(df: pd.DataFrame) -> pd.DataFrame:
-    """按模型和 prompt_tokens 分配价格（向量化）"""
+# flat_tier 降档只作用于这两个模型，其他分段模型仍按实际 prompt_tokens 匹配
+FLAT_TIER_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+
+
+def assign_prices(df: pd.DataFrame, flat_tier: bool = False,
+                   flat_tier_since_ts: int = None) -> pd.DataFrame:
+    """
+    按模型和 prompt_tokens 分配价格（向量化）。
+
+    flat_tier=True: 仅对 FLAT_TIER_MODELS（opus-4-6 / sonnet-4-6）剔除分段计费，
+                    一律使用 min_k=0 低档价；其他分段模型仍按实际 prompt_tokens 匹配。
+    flat_tier_since_ts: 仅对 created_at >= 此时间戳的行启用降档（需要 df 含 created_at 列）。
+                        为 None 时等同于全量降档。
+    """
     df = df.copy()
     for col in ("ip", "op", "chp", "cwp", "cwp_1h"):
         df[col] = np.nan
 
-    # 固定价
+    # 固定价模型
     if not FLAT_DF.empty:
         flat_map = FLAT_DF.set_index("model")
         mask = df["model"].isin(flat_map.index)
         for col in ("ip", "op", "chp", "cwp", "cwp_1h"):
             df.loc[mask, col] = df.loc[mask, "model"].map(flat_map[col])
 
-    # 分段价：先 drop 已有价格列避免 _x/_y 冲突
+    # 分段价模型
     if not TIER_DF.empty:
-        mask = df["model"].isin(TIER_DF["model"].unique())
+        tier_models = TIER_DF["model"].unique()
+        mask = df["model"].isin(tier_models)
         sub = df.loc[mask, [c for c in df.columns
                              if c not in ("ip","op","chp","cwp","cwp_1h")]].copy()
-        sub["pt_k"] = sub["prompt_tokens"] // 1000
         sub = sub.reset_index().rename(columns={"index": "_orig_idx"})
-        merged = sub.merge(TIER_DF, on="model", how="left")
-        in_tier = (merged["pt_k"] >= merged["min_k"]) & \
-                  ((merged["max_k"] == -1) | (merged["pt_k"] < merged["max_k"]))
-        merged = merged[in_tier].groupby("_orig_idx").first()
-        for col in ("ip", "op", "chp", "cwp", "cwp_1h"):
-            df.loc[merged.index, col] = merged[col].values
+
+        if flat_tier:
+            # 判断哪些行需要降档
+            is_flat_model = sub["model"].isin(FLAT_TIER_MODELS)
+            if flat_tier_since_ts is not None and "created_at" in sub.columns:
+                is_after_cutoff = sub["created_at"] >= flat_tier_since_ts
+            else:
+                is_after_cutoff = pd.Series(True, index=sub.index)
+
+            flat_mask = is_flat_model & is_after_cutoff
+            normal_mask = ~flat_mask
+
+            results = []
+
+            # ── 降档部分 ──
+            if flat_mask.any():
+                sub_flat = sub[flat_mask].copy()
+                base_tier = TIER_DF[TIER_DF["min_k"] == 0].copy()
+                m_flat = sub_flat.merge(base_tier, on="model", how="left")
+                m_flat = m_flat.groupby("_orig_idx").first()
+                results.append(m_flat)
+
+            # ── 正常分段部分 ──
+            if normal_mask.any():
+                sub_normal = sub[normal_mask].copy()
+                sub_normal["pt_k"] = sub_normal["prompt_tokens"] // 1000
+                m_normal = sub_normal.merge(TIER_DF, on="model", how="left")
+                in_tier = (m_normal["pt_k"] >= m_normal["min_k"]) & \
+                          ((m_normal["max_k"] == -1) | (m_normal["pt_k"] < m_normal["max_k"]))
+                m_normal = m_normal[in_tier].groupby("_orig_idx").first()
+                results.append(m_normal)
+
+            if results:
+                merged = pd.concat(results)
+                for col in ("ip", "op", "chp", "cwp", "cwp_1h"):
+                    df.loc[merged.index, col] = merged[col].values
+        else:
+            sub["pt_k"] = sub["prompt_tokens"] // 1000
+            merged = sub.merge(TIER_DF, on="model", how="left")
+            in_tier = (merged["pt_k"] >= merged["min_k"]) & \
+                      ((merged["max_k"] == -1) | (merged["pt_k"] < merged["max_k"]))
+            merged = merged[in_tier].groupby("_orig_idx").first()
+            for col in ("ip", "op", "chp", "cwp", "cwp_1h"):
+                df.loc[merged.index, col] = merged[col].values
 
     return df
 
 
-def compute_costs(df: pd.DataFrame) -> pd.DataFrame:
-    """向量化计算所有费用列。以 billed_usd(刊例价) 为基准算折扣价。"""
+def compute_costs(df: pd.DataFrame,
+                  revenue_discount: float = DEFAULT_REVENUE_DISCOUNT,
+                  cost_discount: float    = DEFAULT_COST_DISCOUNT,
+                  flat_tier: bool         = False,
+                  flat_tier_since_ts: int = None) -> pd.DataFrame:
+    """
+    向量化计算所有费用列。
+
+    flat_tier=False（默认）：应付/成本/利润以系统 billed_usd（quota）为基准。
+    flat_tier=True：应付/成本/利润以 expected_usd（低档价重算）为基准，
+                    即剔除 200k 分段溢价后的刊例价。
+    flat_tier_since_ts: 仅对 created_at >= 此时间戳 且属于 FLAT_TIER_MODELS 的行
+                        使用 expected_usd 作为 price_base，其余行仍用 billed_usd。
+    """
     is_new  = df["is_new"]
     chp     = np.where(is_new & df["chp_new"].notna(),    df["chp_new"],    df["chp"])
     cwp_5m  = np.where(is_new & df["cwp_5m_new"].notna(), df["cwp_5m_new"], df["cwp"])
@@ -145,6 +218,18 @@ def compute_costs(df: pd.DataFrame) -> pd.DataFrame:
     cost_cw_1h      = df["cw_1h"]            / 1e6 * cwp_1h
     expected_usd    = cost_input + cost_output + cost_cache_hit + cost_cw_5m + cost_cw_1h
 
+    billed_usd = df["quota"] / QUOTA_PER_USD
+
+    if flat_tier:
+        if flat_tier_since_ts is not None and "created_at" in df.columns:
+            use_expected = (df["model"].isin(FLAT_TIER_MODELS) &
+                           (df["created_at"] >= flat_tier_since_ts))
+            price_base = np.where(use_expected, expected_usd, billed_usd)
+        else:
+            price_base = expected_usd
+    else:
+        price_base = billed_usd
+
     df = df.copy()
     df["net_input"]      = net_input.astype(np.int64)
     df["cw_5m_total"]    = cw_5m_total.astype(np.int64)
@@ -154,26 +239,67 @@ def compute_costs(df: pd.DataFrame) -> pd.DataFrame:
     df["cost_cw_5m"]     = cost_cw_5m
     df["cost_cw_1h"]     = cost_cw_1h
     df["expected_usd"]   = expected_usd
-    df["billed_usd"]     = df["quota"] / QUOTA_PER_USD
-    df["revenue"]        = df["billed_usd"] * REVENUE_DISCOUNT
-    df["cost"]           = df["billed_usd"] * COST_DISCOUNT
+    df["billed_usd"]     = billed_usd
+    df["revenue"]        = price_base * revenue_discount
+    df["cost"]           = price_base * cost_discount
     df["profit"]         = df["revenue"] - df["cost"]
     return df
 
 
-def load_db(ts_start: int, ts_end: int) -> pd.DataFrame:
+def load_db(ts_start: int, ts_end: int,
+            user_id: int = None, username: str = None,
+            channel_id: int = None) -> pd.DataFrame:
+    """
+    按时间范围加载 logs。
+    - user_id: 按 user_id 过滤（不限模型）
+    - username: 按 username 过滤（不限模型，为空时默认 GMICloud 且只取 claude 模型）
+    - channel_id: 额外按 channel_id 过滤
+    - 两者都为 None: 默认 GMICloud + claude 模型（向后兼容）
+    """
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query(
-        """SELECT id, model_name AS model, quota, prompt_tokens, completion_tokens,
-                  other, token_name,
-                  datetime(created_at,'unixepoch','+8 hours') AS cst
-           FROM logs
-           WHERE username='GMICloud' AND type=2
-             AND created_at>=? AND created_at<?
-             AND model_name LIKE '%claude%'
-           ORDER BY created_at""",
-        conn, params=(ts_start, ts_end)
-    )
+
+    base_cols = """id, model_name AS model, quota, prompt_tokens, completion_tokens,
+                      other, token_name, created_at,
+                      datetime(created_at,'unixepoch','+8 hours') AS cst"""
+    ch_clause = " AND channel_id=?" if channel_id is not None else ""
+
+    if user_id is not None:
+        sql = f"""SELECT {base_cols}
+               FROM logs
+               WHERE user_id=? AND type=2
+                 AND created_at>=? AND created_at<?{ch_clause}
+               ORDER BY created_at"""
+        params = [user_id, ts_start, ts_end]
+        if channel_id is not None:
+            params.append(channel_id)
+        df = pd.read_sql_query(sql, conn, params=params)
+    elif username is not None:
+        sql = f"""SELECT {base_cols}
+               FROM logs
+               WHERE username=? AND type=2
+                 AND created_at>=? AND created_at<?{ch_clause}
+               ORDER BY created_at"""
+        params = [username, ts_start, ts_end]
+        if channel_id is not None:
+            params.append(channel_id)
+        df = pd.read_sql_query(sql, conn, params=params)
+    elif channel_id is not None:
+        sql = f"""SELECT {base_cols}
+               FROM logs
+               WHERE channel_id=? AND type=2
+                 AND created_at>=? AND created_at<?
+               ORDER BY created_at"""
+        params = [channel_id, ts_start, ts_end]
+        df = pd.read_sql_query(sql, conn, params=params)
+    else:
+        sql = f"""SELECT {base_cols}
+               FROM logs
+               WHERE username='GMICloud' AND type=2
+                 AND created_at>=? AND created_at<?
+                 AND model_name LIKE '%claude%'
+               ORDER BY created_at"""
+        params = [ts_start, ts_end]
+        df = pd.read_sql_query(sql, conn, params=params)
     conn.close()
     return df
 
@@ -261,23 +387,95 @@ def write_sheet(wb, title, sheet_name, headers, col_widths, data_rows, num_fmts,
 
 # ── 主流程 ────────────────────────────────────────────────────────────────────
 def make_bill(args):
-    month_label, ts_start, ts_end = args
-    t0 = time.time()
-    print(f"[{month_label}] loading...", flush=True)
+    """
+    args 可以是以下格式（均支持）：
+      (month_label, ts_start, ts_end)
+      (month_label, ts_start, ts_end, user_id)
+      (month_label, ts_start, ts_end, user_id, username, revenue_discount, cost_discount)
+    也可以直接传 dict:
+      {"month": ..., "ts_start": ..., "ts_end": ...,
+       "user_id": ..., "username": ...,
+       "revenue_discount": ..., "cost_discount": ...}
+    """
+    if isinstance(args, dict):
+        month_label        = args["month"]
+        ts_start           = args["ts_start"]
+        ts_end             = args["ts_end"]
+        user_id            = args.get("user_id")
+        username           = args.get("username")
+        display_name       = args.get("display_name")
+        revenue_discount   = args.get("revenue_discount", DEFAULT_REVENUE_DISCOUNT)
+        cost_discount      = args.get("cost_discount",    DEFAULT_COST_DISCOUNT)
+        flat_tier          = args.get("flat_tier",        False)
+        flat_tier_since_ts = args.get("flat_tier_since_ts")
+        channel_id         = args.get("channel_id")
+    elif len(args) == 7:
+        month_label, ts_start, ts_end, user_id, username, revenue_discount, cost_discount = args
+        display_name       = None
+        flat_tier          = False
+        flat_tier_since_ts = None
+        channel_id         = None
+    elif len(args) == 4:
+        month_label, ts_start, ts_end, user_id = args
+        username           = None
+        display_name       = None
+        revenue_discount   = DEFAULT_REVENUE_DISCOUNT
+        cost_discount      = DEFAULT_COST_DISCOUNT
+        flat_tier          = False
+        flat_tier_since_ts = None
+        channel_id         = None
+    else:
+        month_label, ts_start, ts_end = args
+        user_id            = None
+        username           = None
+        display_name       = None
+        revenue_discount   = DEFAULT_REVENUE_DISCOUNT
+        cost_discount      = DEFAULT_COST_DISCOUNT
+        flat_tier          = False
+        flat_tier_since_ts = None
+        channel_id         = None
 
-    raw = load_db(ts_start, ts_end)
+    # label 用于日志和文件名（用数据库字段值）
+    # bill_title 用于 Excel 显示（优先 display_name）
+    if display_name:
+        bill_title = display_name
+        label      = display_name
+    elif username:
+        bill_title = username
+        label      = username
+    elif user_id:
+        bill_title = f"User{user_id}"
+        label      = f"user{user_id}"
+    else:
+        bill_title = "GMICloud"
+        label      = "GMICloud"
+
+    ch_label = f" ch={channel_id}" if channel_id else ""
+    t0 = time.time()
+    print(f"[{month_label}/{label}{ch_label}] loading...", flush=True)
+
+    raw = load_db(ts_start, ts_end, user_id=user_id, username=username,
+                  channel_id=channel_id)
     if raw.empty:
         print(f"[{month_label}] no data, skip")
         return
 
-    print(f"[{month_label}] {len(raw):,} rows, parsing other...", flush=True)
+    print(f"[{month_label}/{label}{ch_label}] {len(raw):,} rows, parsing other...", flush=True)
     other_df = parse_other_batch(raw["other"])
     df = pd.concat([raw.drop(columns=["other"]), other_df], axis=1)
 
-    print(f"[{month_label}] pricing + costs...", flush=True)
-    df = assign_prices(df)
+    tier_note = ""
+    if flat_tier:
+        if flat_tier_since_ts:
+            from datetime import datetime as _dt
+            tier_note = f" [降档自 {_dt.fromtimestamp(flat_tier_since_ts).strftime('%m-%d')}]"
+        else:
+            tier_note = " [统一低档价]"
+    print(f"[{month_label}/{label}{ch_label}] pricing + costs{tier_note}...", flush=True)
+    df = assign_prices(df, flat_tier=flat_tier, flat_tier_since_ts=flat_tier_since_ts)
     df = df.dropna(subset=["ip"])
-    df = compute_costs(df)
+    df = compute_costs(df, revenue_discount=revenue_discount, cost_discount=cost_discount,
+                       flat_tier=flat_tier, flat_tier_since_ts=flat_tier_since_ts)
 
     # ── 汇总 ──
     grp = df.groupby("model").agg(
@@ -303,9 +501,14 @@ def make_bill(args):
     grp["diff_pct"] = grp["diff"] / grp["expected_usd"].replace(0, np.nan)
     grp["margin"]   = grp["profit"] / grp["revenue"].replace(0, np.nan)
 
-    print(f"[{month_label}] writing Excel...", flush=True)
-    fname = f"reconcile/GMICloud_bill_{month_label}.xlsx"
+    print(f"[{month_label}/{label}{ch_label}] writing Excel...", flush=True)
+    safe_label = label.replace("/", "_").replace("\\", "_")
+    tier_suffix = "_flattier" if flat_tier else ""
+    ch_suffix = f"_ch{channel_id}" if channel_id else ""
+    fname = f"reconcile/{safe_label}_bill_{month_label}{tier_suffix}{ch_suffix}.xlsx"
     wb = xlsxwriter.Workbook(fname, {"constant_memory": True})
+    # 汇总 Tab 标题附注
+    tier_tag = "（统一低档价，不计 200k 分段）" if flat_tier else ""
 
     USD2 = '"$"#,##0.00'
     USD4 = '"$"#,##0.0000'
@@ -314,16 +517,18 @@ def make_bill(args):
     PCT  = "0.00%"
 
     # ── Tab1: 按模型汇总 ──
+    price_base_label = "低档价" if flat_tier else "刊例"
     s_hdrs = [
         "模型名称", "调用次数",
         "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
         "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
         "输入费用", "输出费用", "缓存命中费用",
         "缓存写入费用\n(5min)", "缓存写入费用\n(1h)",
-        "刊例价合计\n(pricing.json)", "刊例价合计\n(系统 billed)",
+        "刊例价合计\n(pricing.json 低档)" if flat_tier else "刊例价合计\n(pricing.json)",
+        "刊例价合计\n(系统 billed)",
         "pricing 差额", "差额 %",
-        f"GMI 应付\n(刊例 x{REVENUE_DISCOUNT})",
-        f"我方成本\n(刊例 x{COST_DISCOUNT})",
+        f"{bill_title} 应付\n({price_base_label} x{revenue_discount})",
+        f"我方成本\n({price_base_label} x{cost_discount})",
         "利润", "利润率",
     ]
     s_wids = [28, 10, 14, 14, 16, 16, 16,
@@ -367,7 +572,7 @@ def make_bill(args):
         tots["profit"], tot_margin,
     ]
 
-    write_sheet(wb, f"GMICloud API 账单 -- {month_label} (Claude 模型汇总)",
+    write_sheet(wb, f"{bill_title} API 账单 -- {month_label} (模型汇总){tier_tag}",
                 "按模型汇总", s_hdrs, s_wids, s_data, s_fmts,
                 total_row=s_tot, total_fmts=s_fmts)
 
@@ -378,9 +583,10 @@ def make_bill(args):
         "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
         "输入费用", "输出费用", "缓存命中费用",
         "缓存写入费用\n(5min)", "缓存写入费用\n(1h)",
-        "刊例价\n(pricing.json)", "刊例价\n(系统 billed)",
-        f"GMI 应付\n(x{REVENUE_DISCOUNT})",
-        f"成本\n(x{COST_DISCOUNT})",
+        "刊例价\n(pricing.json 低档)" if flat_tier else "刊例价\n(pricing.json)",
+        "刊例价\n(系统 billed)",
+        f"{bill_title} 应付\n({price_base_label} x{revenue_discount})",
+        f"成本\n({price_base_label} x{cost_discount})",
         "利润",
     ]
     d_wids = [12, 20, 28, 18, 14, 14, 16, 16, 16,
@@ -389,6 +595,8 @@ def make_bill(args):
     d_fmts = [TOK, None, None, None, TOK, TOK, TOK, TOK, TOK,
               USD6, USD6, USD6, USD6, USD6,
               USD6, USD6, USD6, USD6, USD6]
+
+    XLSX_MAX_ROWS = 1_048_574  # Excel 行上限减去标题行
 
     d_data = []
     for _, r in df.iterrows():
@@ -403,8 +611,17 @@ def make_bill(args):
             float(r["profit"]),
         ])
 
-    write_sheet(wb, f"GMICloud API 账单 -- {month_label} (调用明细)",
-                "明细", d_hdrs, d_wids, d_data, d_fmts)
+    if len(d_data) <= XLSX_MAX_ROWS:
+        write_sheet(wb, f"{bill_title} API 账单 -- {month_label} (调用明细){tier_tag}",
+                    "明细", d_hdrs, d_wids, d_data, d_fmts)
+    else:
+        n_sheets = (len(d_data) + XLSX_MAX_ROWS - 1) // XLSX_MAX_ROWS
+        for si in range(n_sheets):
+            chunk = d_data[si * XLSX_MAX_ROWS : (si + 1) * XLSX_MAX_ROWS]
+            sname = f"明细_{si+1}" if n_sheets > 1 else "明细"
+            write_sheet(wb, f"{bill_title} API 账单 -- {month_label} (调用明细 {si+1}/{n_sheets}){tier_tag}",
+                        sname, d_hdrs, d_wids, chunk, d_fmts)
+        print(f"  明细数据 {len(d_data):,} 行，分 {n_sheets} 个 sheet 写入", flush=True)
 
     # ── Tab3: 三方对比（有 MateCloud 账单时） ──
     mc = load_matecloud(month_label)
@@ -412,7 +629,7 @@ def make_bill(args):
     if not mc.empty:
         cmp = grp[["model", "count", "expected_usd", "billed_usd", "revenue", "cost", "profit"]].copy()
         cmp = cmp.merge(mc, on="model", how="outer").fillna(0)
-        cmp["mc_cost_41"] = cmp["mc_total"] * COST_DISCOUNT
+        cmp["mc_cost_41"] = cmp["mc_total"] * cost_discount
         cmp["diff_billed_mc"] = cmp["billed_usd"] - cmp["mc_total"]
         cmp["diff_pct_mc"] = cmp["diff_billed_mc"] / cmp["mc_total"].replace(0, np.nan)
         cmp["profit_vs_mc"] = cmp["revenue"] - cmp["mc_cost_41"]
@@ -424,8 +641,8 @@ def make_bill(args):
             "我方记录数", "MC 记录数", "记录差",
             "刊例价\n(pricing.json)", "刊例价\n(系统 billed)", "刊例价\n(MateCloud)",
             "系统-MC 差额", "差额 %",
-            f"GMI 应付\n(x{REVENUE_DISCOUNT})",
-            f"MC 成本\n(MC x{COST_DISCOUNT})",
+            f"{bill_title} 应付\n(x{revenue_discount})",
+            f"MC 成本\n(MC x{cost_discount})",
             "利润\n(vs MC)", "利润率\n(vs MC)",
         ]
         c_wids = [28, 12, 12, 10, 16, 16, 16, 14, 10, 16, 16, 14, 10]
@@ -474,11 +691,11 @@ def make_bill(args):
 
     wb.close()
     elapsed = time.time() - t0
-    print(f"[{month_label}] OK {fname}  {len(df):,} rows / {len(grp)} models  {elapsed:.1f}s",
+    print(f"[{month_label}/{label}{ch_label}] OK {fname}  {len(df):,} rows / {len(grp)} models  {elapsed:.1f}s",
           flush=True)
     print(f"  billed(list)=${tots['billed_usd']:,.2f}  "
-          f"GMI pays=${tots['revenue']:,.2f}  "
-          f"cost=${tots['cost']:,.2f}  "
+          f"revenue(x{revenue_discount})=${tots['revenue']:,.2f}  "
+          f"cost(x{cost_discount})=${tots['cost']:,.2f}  "
           f"profit=${tots['profit']:,.2f}  "
           f"margin={tots['profit']/tots['revenue']*100:.1f}%",
           flush=True)
@@ -486,12 +703,101 @@ def make_bill(args):
         print(mc_info, flush=True)
 
 
+def _month_range(month_str: str):
+    """返回 (ts_start, ts_end) 给定 'YYYY-MM'"""
+    import calendar as _cal
+    y, m = map(int, month_str.split("-"))
+    ts_start = int(datetime(y, m, 1).timestamp())
+    _, last_day = _cal.monthrange(y, m)
+    from datetime import timedelta
+    next_first = datetime(y, m, last_day) + timedelta(days=1)
+    ts_end = int(datetime(next_first.year, next_first.month, 1).timestamp())
+    return ts_start, ts_end
+
+
 if __name__ == "__main__":
-    tasks = [
-        ("2026-01", int(datetime(2026, 1, 1).timestamp()), int(datetime(2026, 2, 1).timestamp())),
-        ("2026-02", int(datetime(2026, 2, 1).timestamp()), int(datetime(2026, 3, 1).timestamp())),
-    ]
-    t0 = time.time()
-    with Pool(min(2, cpu_count())) as pool:
-        pool.map(make_bill, tasks)
-    print(f"全部完成，总耗时 {time.time()-t0:.1f}s")
+    import argparse
+    parser = argparse.ArgumentParser(description="内部账单生成器")
+    parser.add_argument("--user-id",          type=int,   default=None,
+                        help="按 user_id 过滤（与 --username 二选一）")
+    parser.add_argument("--username",          type=str,   default=None,
+                        help="按数据库 username 字段过滤，例如 'Dragon'")
+    parser.add_argument("--display-name",      type=str,   default=None,
+                        help="账单中显示的客户名称（不填则与 --username 相同）")
+    parser.add_argument("--month",             type=str,   default=None,
+                        help="指定月份 YYYY-MM，不填则生成所有默认月份")
+    parser.add_argument("--revenue-discount",  type=float, default=None,
+                        help=f"应付折扣（默认 {DEFAULT_REVENUE_DISCOUNT}，神州数码用 0.47）")
+    parser.add_argument("--cost-discount",     type=float, default=None,
+                        help=f"成本折扣（默认 {DEFAULT_COST_DISCOUNT}）")
+    parser.add_argument("--flat-tier",         action="store_true", default=False,
+                        help="剔除分段计费：分段模型（如 claude-opus/sonnet-4-6）一律按 200k 以内低档价计算")
+    parser.add_argument("--flat-tier-since",   type=str,   default=None,
+                        help="降档起始日期 YYYY-MM-DD（含），之前的仍按正常分段计费。隐含 --flat-tier")
+    parser.add_argument("--channel-id",        type=int,   default=None,
+                        help="按 channel_id 过滤")
+    parser.add_argument("--end-time",          type=str,   default=None,
+                        help="截止时间 'YYYY-MM-DD HH:MM'（北京时间），覆盖月末")
+    args_cli = parser.parse_args()
+
+    rev_disc     = args_cli.revenue_discount if args_cli.revenue_discount is not None else DEFAULT_REVENUE_DISCOUNT
+    cost_disc    = args_cli.cost_discount    if args_cli.cost_discount    is not None else DEFAULT_COST_DISCOUNT
+    display_name = args_cli.display_name
+    flat_tier    = args_cli.flat_tier
+    channel_id   = args_cli.channel_id
+
+    flat_tier_since_ts = None
+    if args_cli.flat_tier_since:
+        flat_tier = True
+        flat_tier_since_ts = int(datetime.strptime(args_cli.flat_tier_since, "%Y-%m-%d").timestamp())
+
+    end_time_override = None
+    if args_cli.end_time:
+        end_time_override = int(datetime.strptime(args_cli.end_time, "%Y-%m-%d %H:%M").timestamp())
+
+    # 默认月份列表（GMICloud 历史账单）
+    default_months = ["2026-01", "2026-02"]
+
+    months = [args_cli.month] if args_cli.month else default_months
+
+    if args_cli.user_id or args_cli.username:
+        for mo in months:
+            ts_s, ts_e = _month_range(mo)
+            if end_time_override:
+                ts_e = end_time_override
+            make_bill({
+                "month":              mo,
+                "ts_start":           ts_s,
+                "ts_end":             ts_e,
+                "user_id":            args_cli.user_id,
+                "username":           args_cli.username,
+                "display_name":       display_name,
+                "revenue_discount":   rev_disc,
+                "cost_discount":      cost_disc,
+                "flat_tier":          flat_tier,
+                "flat_tier_since_ts": flat_tier_since_ts,
+                "channel_id":        channel_id,
+            })
+    else:
+        tasks = []
+        for mo in months:
+            ts_s, ts_e = _month_range(mo)
+            if end_time_override:
+                ts_e = end_time_override
+            tasks.append({
+                "month":              mo,
+                "ts_start":           ts_s,
+                "ts_end":             ts_e,
+                "user_id":            None,
+                "username":           None,
+                "display_name":       display_name,
+                "revenue_discount":   rev_disc,
+                "cost_discount":      cost_disc,
+                "flat_tier":          flat_tier,
+                "flat_tier_since_ts": flat_tier_since_ts,
+                "channel_id":        channel_id,
+            })
+        t0 = time.time()
+        with Pool(min(2, cpu_count())) as pool:
+            pool.map(make_bill, tasks)
+        print(f"全部完成，总耗时 {time.time()-t0:.1f}s")

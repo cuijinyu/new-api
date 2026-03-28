@@ -21,7 +21,7 @@ type ConditionOperation struct {
 
 type ParamOperation struct {
 	Path       string               `json:"path"`
-	Mode       string               `json:"mode"` // delete, set, move, prepend, append
+	Mode       string               `json:"mode"` // delete, set, move, prepend, append, pass_headers
 	Value      interface{}          `json:"value"`
 	KeepOrigin bool                 `json:"keep_origin"`
 	From       string               `json:"from,omitempty"`
@@ -346,6 +346,8 @@ func applyOperations(jsonStr string, operations []ParamOperation, conditionConte
 			result, err = modifyValue(result, opPath, op.Value, op.KeepOrigin, true)
 		case "append":
 			result, err = modifyValue(result, opPath, op.Value, op.KeepOrigin, false)
+		case "pass_headers":
+			continue
 		default:
 			return "", fmt.Errorf("unknown operation: %s", op.Mode)
 		}
@@ -450,6 +452,31 @@ func mergeObjects(jsonStr, path string, value interface{}, keepOrigin bool) (str
 		}
 	}
 	return sjson.Set(jsonStr, path, result)
+}
+
+// ExtractPassHeaders extracts header names from pass_headers operations in paramOverride.
+func ExtractPassHeaders(paramOverride map[string]interface{}) []string {
+	operations, ok := tryParseOperations(paramOverride)
+	if !ok {
+		return nil
+	}
+	var headers []string
+	for _, op := range operations {
+		if op.Mode != "pass_headers" {
+			continue
+		}
+		switch v := op.Value.(type) {
+		case []interface{}:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					headers = append(headers, s)
+				}
+			}
+		case string:
+			headers = append(headers, v)
+		}
+	}
+	return headers
 }
 
 // BuildParamOverrideContext 提供 ApplyParamOverride 可用的上下文信息。
