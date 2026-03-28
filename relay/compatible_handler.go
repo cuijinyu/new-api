@@ -201,6 +201,9 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	}
 	service.ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, relayInfo.RelayFormat)
 
+	ctx.Set("metric_input_tokens", usage.PromptTokens)
+	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	promptTokens := usage.PromptTokens
 	cacheTokens := usage.PromptTokensDetails.CachedTokens
@@ -507,6 +510,9 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		err := service.PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
+			emitBillingMetric(ctx, quotaDelta, true)
+		} else {
+			emitBillingMetric(ctx, quotaDelta, false)
 		}
 	}
 
@@ -612,4 +618,16 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+}
+
+func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
+	if !logger.MetricsEnabled() {
+		return
+	}
+	var failCount int
+	if failed {
+		failCount = 1
+	}
+	channel := ctx.GetString("channel_name")
+	logger.RecordBilling(channel, quota, failCount)
 }

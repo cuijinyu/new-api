@@ -309,8 +309,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	upstreamStart := time.Now()
 	resp, err := client.Do(req)
+	upstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
+
 	if err != nil {
+		isTimeout := errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout")
+		emitUpstreamMetric(c, upstreamLatencyMs, 0, isTimeout)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -318,11 +323,28 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		return nil, errors.New("resp is nil")
 	}
 
+	emitUpstreamMetric(c, upstreamLatencyMs, resp.StatusCode, false)
+
 	service.AttachRawLogCapture(c, info, req, resp)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
 	return resp, nil
+}
+
+func emitUpstreamMetric(c *gin.Context, latencyMs int64, statusCode int, isTimeout bool) {
+	if !logger.MetricsEnabled() {
+		return
+	}
+	channel := c.GetString("channel_name")
+	var errCount, timeoutCount int
+	if statusCode >= 400 || statusCode == 0 {
+		errCount = 1
+	}
+	if isTimeout {
+		timeoutCount = 1
+	}
+	logger.RecordUpstream(channel, latencyMs, errCount, timeoutCount)
 }
 
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {

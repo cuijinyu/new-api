@@ -59,8 +59,9 @@ type usageLogUploader struct {
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 
-	dropCount  atomic.Int64
-	totalCount atomic.Int64
+	dropCount          atomic.Int64
+	totalCount         atomic.Int64
+	uploadFailureCount atomic.Int64
 }
 
 var (
@@ -165,6 +166,7 @@ func (u *usageLogUploader) batchWorker() {
 			return
 		}
 		if err := u.flushBatch(batch); err != nil {
+			u.uploadFailureCount.Add(1)
 			common.SysError(fmt.Sprintf("failed to flush %d usage logs to s3: %s", len(batch), err.Error()))
 		}
 		batch = make([][]byte, 0, u.batchSize)
@@ -279,6 +281,7 @@ func (u *usageLogUploader) reportDropStats() {
 		case <-ticker.C:
 			dropped := u.dropCount.Load()
 			total := u.totalCount.Load()
+			failures := u.uploadFailureCount.Load()
 			if dropped > 0 {
 				common.SysError(fmt.Sprintf("usage log s3: dropped %d/%d logs (%.1f%%) in last period, queue_len=%d/%d",
 					dropped, total, float64(dropped)/float64(max(total, 1))*100,
@@ -286,6 +289,8 @@ func (u *usageLogUploader) reportDropStats() {
 				u.dropCount.Store(0)
 				u.totalCount.Store(0)
 			}
+			logger.EmitPipelineMetrics("usage", len(u.queue), failures, dropped)
+			u.uploadFailureCount.Store(0)
 		case <-u.stopCh:
 			return
 		}

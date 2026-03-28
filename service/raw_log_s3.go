@@ -51,8 +51,11 @@ type rawLogUploader struct {
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 
-	dropCount  atomic.Int64
-	totalCount atomic.Int64
+	dropCount          atomic.Int64
+	totalCount         atomic.Int64
+	uploadFailureCount atomic.Int64
+
+	pipelineName string
 }
 
 type rawLogPayload struct {
@@ -178,6 +181,7 @@ func initRawLogUploader() *rawLogUploader {
 		httpClient:     GetHttpClient(),
 		queue:          make(chan []byte, queueSize),
 		stopCh:         make(chan struct{}),
+		pipelineName:   "raw",
 	}
 
 	u.wg.Add(1)
@@ -245,6 +249,7 @@ func initErrorLogUploader() *rawLogUploader {
 		httpClient:     GetHttpClient(),
 		queue:          make(chan []byte, queueSize),
 		stopCh:         make(chan struct{}),
+		pipelineName:   "error",
 	}
 
 	u.wg.Add(1)
@@ -271,6 +276,7 @@ func (u *rawLogUploader) batchWorker() {
 			return
 		}
 		if err := u.flushBatch(batch); err != nil {
+			u.uploadFailureCount.Add(1)
 			common.SysError(fmt.Sprintf("failed to flush %d raw logs to s3: %s", len(batch), err.Error()))
 		}
 		batch = make([][]byte, 0, u.batchSize)
@@ -375,6 +381,7 @@ func (u *rawLogUploader) reportDropStats() {
 		case <-ticker.C:
 			dropped := u.dropCount.Load()
 			total := u.totalCount.Load()
+			failures := u.uploadFailureCount.Load()
 			if dropped > 0 {
 				common.SysError(fmt.Sprintf("raw log s3: dropped %d/%d logs (%.1f%%) in last period, queue_len=%d/%d",
 					dropped, total, float64(dropped)/float64(max(total, 1))*100,
@@ -382,6 +389,10 @@ func (u *rawLogUploader) reportDropStats() {
 				u.dropCount.Store(0)
 				u.totalCount.Store(0)
 			}
+			if u.pipelineName != "" {
+				logger.EmitPipelineMetrics(u.pipelineName, len(u.queue), failures, dropped)
+			}
+			u.uploadFailureCount.Store(0)
 		case <-u.stopCh:
 			return
 		}
