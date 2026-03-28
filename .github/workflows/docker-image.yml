@@ -9,7 +9,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     env:
-      ECR_REPOSITORY: ezmodel/mass
+      ECR_REPOSITORY: ezmodel/maas
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
