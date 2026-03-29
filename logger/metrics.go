@@ -167,7 +167,7 @@ var (
 	UpstreamDims = [][]string{{"Channel"}}
 
 	BillingMetrics = []MetricDef{
-		{Name: "QuotaConsumed", Unit: UnitCount},
+		{Name: "CostUSD", Unit: UnitNone},
 		{Name: "BillingFailureCount", Unit: UnitCount},
 	}
 	BillingDims = [][]string{{"Channel"}}

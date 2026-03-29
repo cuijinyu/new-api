@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// quotaPerUnitUSD mirrors common.QuotaPerUnit (500_000 quota = $1 USD).
+// Duplicated here to avoid importing common and creating a circular dependency.
+const quotaPerUnitUSD = 500_000.0
+
 // metricValue tracks aggregated statistics for a single metric within a dimension bucket.
 type metricValue struct {
 	Sum   float64
@@ -286,13 +290,14 @@ func RecordChannelFallback(channel string) {
 }
 
 // RecordBilling records billing/quota consumption metrics.
+// quotaConsumed is in internal quota units; it is converted to USD for the metric.
 func RecordBilling(channel string, quotaConsumed int, failCount int) {
 	if aggBilling == nil {
 		return
 	}
 	dims := map[string]string{"Channel": normDim(channel)}
 	aggBilling.record(dims, map[string]float64{
-		"QuotaConsumed":      float64(quotaConsumed),
+		"CostUSD":             float64(quotaConsumed) / quotaPerUnitUSD,
 		"BillingFailureCount": float64(failCount),
 	})
 }
