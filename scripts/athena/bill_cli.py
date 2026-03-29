@@ -74,16 +74,21 @@ def cmd_bill(args):
     month = args.month or _last_month()
     output_dir = args.output or "."
     flat_tier = args.flat_tier or bool(args.flat_tier_since)
-    path = report_builder.generate_monthly_bill(
+    result = report_builder.generate_monthly_bill(
         month, output_dir,
         user_id=args.user_id,
         currency=args.currency,
         exchange_rate=args.exchange_rate,
         flat_tier=flat_tier,
         flat_tier_since=args.flat_tier_since,
+        detail=args.detail,
         no_cache=args.no_cache,
     )
-    print(f"\n  月度账单已生成: {path}")
+    if isinstance(result, list):
+        print(f"\n  月度账单已生成: {result[0]}")
+        print(f"  逐条明细已生成: {result[1]}")
+    else:
+        print(f"\n  月度账单已生成: {result}")
 
 
 def cmd_daily(args):
@@ -314,6 +319,8 @@ def build_parser():
                         help="降档模式：分段模型强制使用低档价")
     p_bill.add_argument("--flat-tier-since", type=str,
                         help="降档起始日期 YYYY-MM-DD（隐含 --flat-tier）")
+    p_bill.add_argument("--detail", action="store_true",
+                        help="同时导出逐条明细 CSV.gz（按天并行查询）")
     p_bill.add_argument("-o", "--output", default=".", help="输出目录")
 
     # daily

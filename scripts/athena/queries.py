@@ -272,6 +272,72 @@ ORDER BY created_at
 
 
 # ---------------------------------------------------------------------------
+# A2. Detail export — per-day row-level with Athena-side json_extract
+# ---------------------------------------------------------------------------
+
+def raw_usage_detail_daily(year_month: str, day: str,
+                           user_id: int = None, channel_id: int = None,
+                           model: str = None) -> str:
+    """Row-level usage_logs for a single day with cache tokens extracted server-side.
+
+    Returns one row per request with all fields needed for pricing.
+    The 'other' JSON is NOT returned — cache tokens are extracted via json_extract.
+    """
+    year, month = _year_month(year_month)
+    where = _partition_filter(year, month, day=day)
+
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
+    if model:
+        where += f" AND model_name = {_q(model)}"
+
+    return f"""
+SELECT
+    request_id,
+    created_at,
+    user_id,
+    username,
+    channel_id,
+    model_name,
+    token_name,
+    prompt_tokens,
+    completion_tokens,
+    quota,
+    ROUND(quota / 500000.0, 6)  AS billed_usd,
+    use_time_seconds,
+    is_stream,
+    COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)
+        AS cache_hit_tokens,
+    COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0)
+        AS cache_write_tokens,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+             CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0)
+        AS cw_5m,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+             CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0)
+        AS cw_1h,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0)
+        AS cw_remaining
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+ORDER BY created_at
+"""
+
+
+def detail_day_list(year_month: str) -> list[str]:
+    """Return list of day strings (01..31) for the given month.
+
+    Used by parallel detail export to generate per-day queries.
+    """
+    import calendar
+    year, month = _year_month(year_month)
+    _, ndays = calendar.monthrange(int(year), int(month))
+    return [f"{d:02d}" for d in range(1, ndays + 1)]
+
+
+# ---------------------------------------------------------------------------
 # B. Anomaly detection (usage_logs)
 # ---------------------------------------------------------------------------
 

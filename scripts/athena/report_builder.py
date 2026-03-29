@@ -4,14 +4,17 @@ Excel 报表生成器 — 月度账单、日报、异常报告、重算报告、
 使用 xlsxwriter 生成带格式的 .xlsx 文件（对齐 gen_bill.py 样式）。
 """
 
+import gzip
 import os
+import sys
+import time
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import xlsxwriter
 
-from athena_engine import run_query_cached, QUOTA_TO_USD
+from athena_engine import run_query_cached, run_queries_parallel, QUOTA_TO_USD
 import queries
 import pricing_engine
 
@@ -108,11 +111,15 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                           exchange_rate: float = 7.3,
                           flat_tier: bool = False,
                           flat_tier_since: str = None,
-                          no_cache: bool = False) -> str:
+                          detail: bool = False,
+                          no_cache: bool = False) -> str | list[str]:
     """Generate monthly bill Excel with xlsxwriter formatting.
 
     Uses fast aggregation queries (monthly_bill_full) with flat-tier applied
     at the summary level. For row-level precision, use generate_recalc_report.
+
+    When detail=True, also exports row-level data as compressed CSV alongside
+    the summary Excel. Returns [xlsx_path, csv_gz_path] in detail mode.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -338,7 +345,168 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                 "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
 
     wb.close()
-    return filepath
+
+    if not detail:
+        return filepath
+
+    detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
+                                     flat_tier=flat_tier,
+                                     flat_tier_since=flat_tier_since)
+    return [filepath, detail_path]
+
+
+# ---------------------------------------------------------------------------
+# Detail CSV export (parallel per-day queries + S3 direct download)
+# ---------------------------------------------------------------------------
+
+def _export_detail_csv(year_month: str, output_dir: str,
+                       user_id: int = None, channel_id: int = None,
+                       model: str = None,
+                       flat_tier: bool = False,
+                       flat_tier_since: str = None) -> str:
+    """Export row-level detail as compressed CSV via parallel daily queries.
+
+    Submits one Athena query per day in parallel, downloads results directly
+    from S3 (bypassing pagination API), applies pricing, and writes CSV.gz.
+    For 2M rows this takes ~5-8 minutes vs 30+ minutes with the old approach.
+    """
+    suffix = f"_user{user_id}" if user_id else ""
+    tier_suffix = "_flattier" if flat_tier else ""
+    csv_filename = f"bill_{year_month}{suffix}{tier_suffix}_detail.csv.gz"
+    csv_path = os.path.join(output_dir, csv_filename)
+
+    days = queries.detail_day_list(year_month)
+    sqls = [
+        queries.raw_usage_detail_daily(year_month, day=d,
+                                       user_id=user_id,
+                                       channel_id=channel_id,
+                                       model=model)
+        for d in days
+    ]
+
+    print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
+    t0 = time.time()
+    dfs = run_queries_parallel(sqls)
+    t_query = time.time() - t0
+    print(f"[detail] 查询完成，耗时 {t_query:.1f}s", file=sys.stderr)
+
+    non_empty = [df for df in dfs if not df.empty]
+    if not non_empty:
+        print("[detail] 无数据", file=sys.stderr)
+        with gzip.open(csv_path, "wt", encoding="utf-8") as f:
+            f.write("no data\n")
+        return csv_path
+
+    df_all = pd.concat(non_empty, ignore_index=True)
+    total_rows = len(df_all)
+    print(f"[detail] 共 {total_rows:,} 行，开始计算定价...", file=sys.stderr)
+
+    df_all = _apply_detail_pricing(df_all, flat_tier=flat_tier,
+                                   flat_tier_since=flat_tier_since)
+
+    print(f"[detail] 写入 CSV.gz: {csv_path}", file=sys.stderr)
+    t1 = time.time()
+    df_all.to_csv(csv_path, index=False, compression="gzip", encoding="utf-8")
+    t_write = time.time() - t1
+    size_mb = os.path.getsize(csv_path) / 1024 / 1024
+    print(f"[detail] 写入完成，{size_mb:.1f} MB，耗时 {t_write:.1f}s", file=sys.stderr)
+    print(f"[detail] 总计 {total_rows:,} 行，总耗时 {time.time()-t0:.1f}s", file=sys.stderr)
+
+    return csv_path
+
+
+def _apply_detail_pricing(df: pd.DataFrame,
+                          flat_tier: bool = False,
+                          flat_tier_since: str = None) -> pd.DataFrame:
+    """Apply pricing to detail DataFrame with Athena-extracted cache tokens.
+
+    Unlike recalc_from_raw which parses JSON locally, this uses the cache token
+    columns already extracted by Athena SQL (cache_hit_tokens, cw_5m, etc.).
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    flat_tier_since_ts = None
+    if flat_tier_since:
+        flat_tier_since_ts = int(datetime.strptime(flat_tier_since, "%Y-%m-%d").timestamp())
+        flat_tier = True
+
+    if "model_name" in df.columns and "model" not in df.columns:
+        df["model"] = df["model_name"]
+
+    # Compute cw_remaining if not already present
+    if "cw_remaining" not in df.columns:
+        cw = df.get("cache_write_tokens", pd.Series(0, index=df.index)).astype(float)
+        cw5 = df.get("cw_5m", pd.Series(0, index=df.index)).astype(float)
+        cw1h = df.get("cw_1h", pd.Series(0, index=df.index)).astype(float)
+        df["cw_remaining"] = np.maximum(cw - cw5 - cw1h, 0)
+
+    df = pricing_engine._assign_prices(df, flat_tier=flat_tier,
+                                       flat_tier_since_ts=flat_tier_since_ts)
+
+    pt = df["prompt_tokens"].astype(float)
+    ct = df["completion_tokens"].astype(float)
+    ch_tok = df.get("cache_hit_tokens", pd.Series(0, index=df.index)).astype(float)
+    cw_tok = df.get("cache_write_tokens", pd.Series(0, index=df.index)).astype(float)
+
+    net_input = np.maximum(pt - ch_tok - cw_tok, 0)
+    cw_5m_total = df["cw_remaining"].astype(float) + df.get("cw_5m", pd.Series(0, index=df.index)).astype(float)
+
+    cost_input = net_input / 1e6 * df["ip"]
+    cost_output = ct / 1e6 * df["op"]
+    cost_cache_hit = ch_tok / 1e6 * df["chp"]
+    cost_cw_5m = cw_5m_total / 1e6 * df["cwp"]
+    cost_cw_1h = df.get("cw_1h", pd.Series(0, index=df.index)).astype(float) / 1e6 * df["cwp_1h"]
+    expected_usd = cost_input + cost_output + cost_cache_hit + cost_cw_5m + cost_cw_1h
+
+    billed_usd = df["quota"].astype(float) / pricing_engine.QUOTA_TO_USD
+
+    if flat_tier:
+        if flat_tier_since_ts is not None and "created_at" in df.columns:
+            use_expected = (df["model"].isin(pricing_engine.FLAT_TIER_MODELS) &
+                           (df["created_at"].astype(int) >= flat_tier_since_ts))
+            price_base = np.where(use_expected, expected_usd, billed_usd)
+        else:
+            price_base = expected_usd
+    else:
+        price_base = billed_usd
+
+    df["expected_usd"] = expected_usd.round(6)
+    df["billed_usd"] = billed_usd.round(6)
+    df["list_price_usd"] = pd.Series(price_base).round(6)
+
+    df["cost_discount"] = df.apply(
+        lambda r: pricing_engine.get_cost_discount(r.get("channel_id", 0), r.get("model", "")),
+        axis=1)
+    df["revenue_discount"] = df.apply(
+        lambda r: pricing_engine.get_revenue_discount(r.get("user_id", 0), r.get("model", "")),
+        axis=1)
+
+    df["cost_usd"] = (pd.Series(price_base) * df["cost_discount"]).round(6)
+    df["revenue_usd"] = (pd.Series(price_base) * df["revenue_discount"]).round(6)
+    df["profit_usd"] = (df["revenue_usd"] - df["cost_usd"]).round(6)
+
+    # Drop internal pricing columns
+    drop_cols = [c for c in ("ip", "op", "chp", "cwp", "cwp_1h", "model")
+                 if c in df.columns and c != "model_name"]
+    df = df.drop(columns=drop_cols, errors="ignore")
+
+    # Reorder columns for readability
+    priority_cols = [
+        "request_id", "created_at", "user_id", "username", "channel_id",
+        "model_name", "token_name", "prompt_tokens", "completion_tokens",
+        "cache_hit_tokens", "cache_write_tokens", "cw_5m", "cw_1h", "cw_remaining",
+        "billed_usd", "expected_usd", "list_price_usd",
+        "cost_discount", "cost_usd", "revenue_discount", "revenue_usd", "profit_usd",
+        "use_time_seconds", "is_stream",
+    ]
+    ordered = [c for c in priority_cols if c in df.columns]
+    remaining = [c for c in df.columns if c not in ordered]
+    df = df[ordered + remaining]
+
+    return df
 
 
 # ---------------------------------------------------------------------------

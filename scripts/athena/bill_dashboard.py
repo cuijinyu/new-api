@@ -653,12 +653,15 @@ with tab_export:
     with exp_col2:
         exp_currency = st.selectbox("币种", ["USD", "CNY"])
 
-    exp_col3, exp_col4 = st.columns(2)
+    exp_col3, exp_col4, exp_col5 = st.columns(3)
     with exp_col3:
         exp_flat_tier = st.checkbox("降档模式", key="exp_flat")
     with exp_col4:
         exp_flat_since = st.text_input("降档起始日期 (YYYY-MM-DD)",
                                        key="exp_flat_since", placeholder="留空=全量降档")
+    with exp_col5:
+        exp_detail = st.checkbox("含逐条明细 (CSV.gz)", key="exp_detail",
+                                 help="同时导出每一条请求的明细数据（按天并行查询，大用户可能需要 5-8 分钟）")
 
     if st.button("生成月度账单 Excel", key="btn_export_bill"):
         import tempfile
@@ -666,20 +669,42 @@ with tab_export:
         _exp_since = exp_flat_since.strip() or None
         with tempfile.TemporaryDirectory() as tmpdir:
             uid = exp_user_id if exp_user_id > 0 else None
-            path = report_builder.generate_monthly_bill(
-                year_month, tmpdir, user_id=uid,
-                currency=exp_currency,
-                flat_tier=_exp_flat, flat_tier_since=_exp_since,
-                no_cache=no_cache)
-            with open(path, "rb") as f:
-                data = f.read()
-            st.download_button(
-                label="📥 下载账单",
-                data=data,
-                file_name=f"bill_{year_month}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            st.success(f"账单已生成，点击上方按钮下载")
+            with st.spinner("正在生成账单..." + (" (含逐条明细，请耐心等待)" if exp_detail else "")):
+                result = report_builder.generate_monthly_bill(
+                    year_month, tmpdir, user_id=uid,
+                    currency=exp_currency,
+                    flat_tier=_exp_flat, flat_tier_since=_exp_since,
+                    detail=exp_detail,
+                    no_cache=no_cache)
+
+            if isinstance(result, list):
+                xlsx_path, csv_path = result
+                with open(xlsx_path, "rb") as f:
+                    st.download_button(
+                        label="📥 下载汇总账单 (Excel)",
+                        data=f.read(),
+                        file_name=f"bill_{year_month}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                with open(csv_path, "rb") as f:
+                    csv_size_mb = os.path.getsize(csv_path) / 1024 / 1024
+                    st.download_button(
+                        label=f"📥 下载逐条明细 (CSV.gz, {csv_size_mb:.1f} MB)",
+                        data=f.read(),
+                        file_name=os.path.basename(csv_path),
+                        mime="application/gzip",
+                    )
+                st.success("账单 + 明细已生成，点击上方按钮下载")
+            else:
+                with open(result, "rb") as f:
+                    data = f.read()
+                st.download_button(
+                    label="📥 下载账单",
+                    data=data,
+                    file_name=f"bill_{year_month}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                st.success(f"账单已生成，点击上方按钮下载")
 
     st.markdown("---")
 
