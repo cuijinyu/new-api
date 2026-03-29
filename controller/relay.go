@@ -189,7 +189,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !shouldRetry(c, newAPIError, common.RetryTimes-i) {
 			break
 		}
-		emitChannelFallbackMetric(channel.Name)
+		emitChannelFallbackMetric(channel.Id)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -492,9 +492,9 @@ func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError,
 	return true
 }
 
-func emitChannelFallbackMetric(channelName string) {
+func emitChannelFallbackMetric(channelId int) {
 	if !logger.MetricsEnabled() {
 		return
 	}
-	logger.RecordChannelFallback(channelName)
+	logger.RecordChannelFallback(fmt.Sprintf("ch%d", channelId))
 }

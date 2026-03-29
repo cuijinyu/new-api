@@ -628,6 +628,6 @@ func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
 	if failed {
 		failCount = 1
 	}
-	channel := ctx.GetString("channel_name")
+	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
 	logger.RecordBilling(channel, quota, failCount)
 }

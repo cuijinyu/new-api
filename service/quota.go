@@ -384,6 +384,9 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 
 	quotaDelta := quota - relayInfo.FinalPreConsumedQuota
 
+	ctx.Set("metric_input_tokens", usage.PromptTokens)
+	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+
 	if quotaDelta > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
 			logger.FormatQuota(quotaDelta),
@@ -402,6 +405,9 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
+			emitBillingMetric(ctx, quotaDelta, true)
+		} else {
+			emitBillingMetric(ctx, quotaDelta, false)
 		}
 	}
 
@@ -542,6 +548,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 
 	quotaDelta := quota - relayInfo.FinalPreConsumedQuota
 
+	ctx.Set("metric_input_tokens", usage.PromptTokens)
+	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+
 	if quotaDelta > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
 			logger.FormatQuota(quotaDelta),
@@ -560,6 +569,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
+			emitBillingMetric(ctx, quotaDelta, true)
+		} else {
+			emitBillingMetric(ctx, quotaDelta, false)
 		}
 	}
 
@@ -686,4 +698,16 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 			}
 		}
 	})
+}
+
+func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
+	if !logger.MetricsEnabled() {
+		return
+	}
+	var failCount int
+	if failed {
+		failCount = 1
+	}
+	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
+	logger.RecordBilling(channel, quota, failCount)
 }

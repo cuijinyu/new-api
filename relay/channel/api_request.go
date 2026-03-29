@@ -336,7 +336,7 @@ func emitUpstreamMetric(c *gin.Context, latencyMs int64, statusCode int, isTimeo
 	if !logger.MetricsEnabled() {
 		return
 	}
-	channel := c.GetString("channel_name")
+	channel := fmt.Sprintf("ch%d", c.GetInt("channel_id"))
 	var errCount, timeoutCount int
 	if statusCode >= 400 || statusCode == 0 {
 		errCount = 1

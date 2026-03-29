@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -20,7 +21,8 @@ func MetricsMiddleware() gin.HandlerFunc {
 		c.Next()
 		latencyMs := time.Since(start).Milliseconds()
 
-		channel := c.GetString("channel_name")
+		channelId := c.GetInt("channel_id")
+		channel := fmt.Sprintf("ch%d", channelId)
 		model := c.GetString("original_model")
 		statusCode := c.Writer.Status()
 
