@@ -1,0 +1,38 @@
+{
+  "_comment": "折扣配置。cost_discount = 我方成本/刊例价，revenue_discount = 客户应付/刊例价。支持三级匹配：精确(channel×model) > 通配(channel×*) > 默认。",
+
+  "cost_discounts": {
+    "_comment": "成本侧折扣：渠道 × 模型 → 折扣率（刊例价 × discount = 我方成本）",
+    "defaults": {
+      "*": 1.0
+    },
+    "by_channel": {
+      "25": { "*": 0.41, "_name": "MateCloud-Claude主力" },
+      "54": { "*": 0.41, "_name": "MateCloud-Claude备用" },
+      "24": { "*": 0.41, "_name": "MateCloud-Claude-3" },
+      "26": { "*": 1.0,  "_name": "Bedrock" },
+      "39": { "*": 1.0,  "_name": "OpenAI直连" },
+      "57": { "*": 1.0,  "_name": "Gemini" },
+      "38": { "*": 1.0,  "_name": "DeepSeek" },
+      "28": { "*": 1.0,  "_name": "Grok" },
+      "58": { "*": 1.0,  "_name": "ByteDance" },
+      "49": { "*": 1.0,  "_name": "GLM" },
+      "43": { "*": 1.0,  "_name": "Kling" }
+    }
+  },
+
+  "revenue_discounts": {
+    "_comment": "客户侧折扣：用户 × 模型 → 折扣率（刊例价 × discount = 客户应付）",
+    "defaults": {
+      "*": 1.0
+    },
+    "by_user": {
+      "18": { "*": 0.65, "_name": "GMICloud" },
+      "89": { "*": 0.47, "_name": "Dragon" },
+      "99": { "*": 1.0,  "_name": "liuchuan" },
+      "86": { "*": 1.0,  "_name": "github_86" },
+      "1":  { "*": 1.0,  "_name": "gallon" },
+      "63": { "*": 1.0,  "_name": "sh-models" }
+    }
+  }
+}
