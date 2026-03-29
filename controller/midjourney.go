@@ -25,6 +25,9 @@ func UpdateMidjourneyTaskBulk() {
 	ctx := context.TODO()
 	for {
 		time.Sleep(time.Duration(15) * time.Second)
+		if !common.TryRunOnce("poll:midjourney", 14*time.Second) {
+			continue
+		}
 
 		tasks := model.GetAllUnFinishTasks()
 		if len(tasks) == 0 {

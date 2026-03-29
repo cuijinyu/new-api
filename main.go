@@ -132,7 +132,7 @@ func main() {
 
 	go controller.AutomaticallyTestChannels()
 
-	if common.IsMasterNode && constant.UpdateTask {
+	if constant.UpdateTask {
 		gopool.Go(func() {
 			controller.UpdateMidjourneyTaskBulk()
 		})

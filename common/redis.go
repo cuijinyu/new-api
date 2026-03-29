@@ -24,6 +24,18 @@ func RedisKeyCacheSeconds() int {
 	return SyncFrequency
 }
 
+// TryRunOnce attempts to acquire a short-lived exclusive flag via SETNX.
+// Returns true if this node should execute the current round; false if
+// another node already claimed it. When Redis is disabled, always returns
+// true so single-node deployments work unchanged.
+func TryRunOnce(key string, ttl time.Duration) bool {
+	if !RedisEnabled {
+		return true
+	}
+	ok, _ := RDB.SetNX(context.Background(), "once:"+key, "1", ttl).Result()
+	return ok
+}
+
 // InitRedisClient This function is called after init()
 func InitRedisClient() (err error) {
 	if os.Getenv("REDIS_CONN_STRING") == "" {

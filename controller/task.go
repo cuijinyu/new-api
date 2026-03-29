@@ -23,11 +23,11 @@ import (
 )
 
 func UpdateTaskBulk() {
-	//revocer
-	//imageModel := "midjourney"
 	for {
 		time.Sleep(time.Duration(15) * time.Second)
-		// common.SysLog("任务进度轮询开始")
+		if !common.TryRunOnce("poll:task", 14*time.Second) {
+			continue
+		}
 		ctx := context.TODO()
 		allTasks := model.GetAllUnFinishSyncTasks(500)
 		platformTask := make(map[constant.TaskPlatform][]*model.Task)

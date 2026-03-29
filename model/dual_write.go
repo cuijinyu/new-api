@@ -59,15 +59,13 @@ func InitDualWriteDB() error {
 	sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 	sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 
-	if common.IsMasterNode {
-		err = SecondaryDB.AutoMigrate(
-			&Channel{}, &Token{}, &User{}, &PasskeyCredential{}, &Option{}, &Redemption{}, &Ability{}, &Log{},
-			&Midjourney{}, &TopUp{}, &QuotaData{}, &Task{}, &Model{}, &Vendor{}, &PrefillGroup{}, &Setup{},
-			&TwoFA{}, &TwoFABackupCode{}, &Invoice{}, &ReconDiscount{}, &ReconUpstream{}, &ReconResult{},
-		)
-		if err != nil {
-			return err
-		}
+	err = SecondaryDB.AutoMigrate(
+		&Channel{}, &Token{}, &User{}, &PasskeyCredential{}, &Option{}, &Redemption{}, &Ability{}, &Log{},
+		&Midjourney{}, &TopUp{}, &QuotaData{}, &Task{}, &Model{}, &Vendor{}, &PrefillGroup{}, &Setup{},
+		&TwoFA{}, &TwoFABackupCode{}, &Invoice{}, &ReconDiscount{}, &ReconUpstream{}, &ReconResult{},
+	)
+	if err != nil {
+		return err
 	}
 	registerDualWriteCallbacks()
 	common.SysLog("dual-write enabled: primary DB writes will be mirrored to DUAL_WRITE_SQL_DSN")

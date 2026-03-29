@@ -621,10 +621,6 @@ func TestAllChannels(c *gin.Context) {
 var autoTestChannelsOnce sync.Once
 
 func AutomaticallyTestChannels() {
-	// 只在Master节点定时测试渠道
-	if !common.IsMasterNode {
-		return
-	}
 	autoTestChannelsOnce.Do(func() {
 		for {
 			if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
@@ -633,7 +629,11 @@ func AutomaticallyTestChannels() {
 			}
 			for {
 				frequency := operation_setting.GetMonitorSetting().AutoTestChannelMinutes
-				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
+				sleepDur := time.Duration(int(math.Round(frequency))) * time.Minute
+				time.Sleep(sleepDur)
+				if !common.TryRunOnce("auto-test-channels", sleepDur-10*time.Second) {
+					continue
+				}
 				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
 				common.SysLog("automatically testing all channels")
 				_ = testAllChannels(false)
