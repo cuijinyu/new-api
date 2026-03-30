@@ -149,81 +149,145 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 				actualUsage = float64(taskResult.TotalTokens)
 			}
 
-			// 获取模型名称
+			// 获取模型名称：优先使用任务创建时保存的 OriginModelName，避免受 task.Data 被响应覆盖影响
+			modelName := task.Properties.OriginModelName
+			if modelName == "" {
+				modelName = task.Properties.UpstreamModelName
+			}
+
+			// 兼容历史数据：尝试从 task.Data 读取 model（旧任务/旧链路可能仍在这里）
 			var taskData map[string]interface{}
 			if err := json.Unmarshal(task.Data, &taskData); err == nil {
-				if modelName, ok := taskData["model"].(string); ok && modelName != "" {
-					// 获取模型价格和倍率
-					modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
-					if hasRatioSetting && modelRatio > 0 {
-						group := task.Group
-						if group == "" {
-							if user, err := model.GetUserById(task.UserId, false); err == nil {
-								group = user.Group
-							}
+				if modelName == "" {
+					if fallbackModel, ok := taskData["model"].(string); ok && fallbackModel != "" {
+						modelName = fallbackModel
+					}
+				}
+				if modelName == "" {
+					if dataObj, ok := taskData["data"].(map[string]interface{}); ok {
+						if fallbackModel, ok := dataObj["model"].(string); ok && fallbackModel != "" {
+							modelName = fallbackModel
 						}
-						if group != "" {
-							groupRatio := ratio_setting.GetGroupRatio(group)
-							userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-							finalGroupRatio := groupRatio
-							if hasUserGroupRatio {
-								finalGroupRatio = userGroupRatio
-							}
+					}
+				}
+			}
 
-							// 计算单价倍率
-							actualModelRatio := modelRatio
-							dynamicScale := 1.0
+			// 获取模型价格和倍率（同时支持 ModelPrice 和 ModelRatio 两种计费模式）
+			value, isPrice, found := ratio_setting.GetModelRatioOrPrice(modelName)
+			if found && value > 0 {
+				group := task.Group
+				if group == "" {
+					if user, err := model.GetUserById(task.UserId, false); err == nil {
+						group = user.Group
+					}
+				}
+				if group != "" {
+					groupRatio := ratio_setting.GetGroupRatio(group)
+					userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
+					finalGroupRatio := groupRatio
+					if hasUserGroupRatio {
+						finalGroupRatio = userGroupRatio
+					}
 
-							// 尝试从适配器获取“单价系数”
-							if unitPriceAdaptor, ok := adaptor.(interface {
-								GetUnitPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error)
-							}); ok {
-								relayInfo := &relaycommon.RelayInfo{OriginModelName: modelName, TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: task.Action}}
-								tempCtx, _ := gin.CreateTestContext(nil)
-								tempCtx.Set("task_request", relaycommon.TaskSubmitReq{Model: modelName, Metadata: taskData})
-								if mode, ok := taskData["mode"].(string); ok {
-									tempCtx.Set("mode", mode)
-								}
-								if scale, err := unitPriceAdaptor.GetUnitPriceScale(tempCtx, relayInfo); err == nil {
-									dynamicScale = float64(scale)
-									actualModelRatio = dynamicScale * modelRatio
-								}
-							}
+					// 计算单价倍率
+					dynamicScale := 1.0
 
-							// 实际应扣额度 = 实际时长 * (单价系数 * 基础倍率) * 分组倍率
-							actualQuota := int(actualUsage * actualModelRatio * finalGroupRatio)
-							preConsumedQuota := task.Quota
-							quotaDelta := actualQuota - preConsumedQuota
-
-							logDetail := fmt.Sprintf("任务ID: %s, 类型: %s, 实际时长: %.2fs, 模型倍率: %.2f, 动态系数: %.2f, 分组倍率: %.2f, 预扣: %s, 实际: %s",
-								task.TaskID, task.Action, actualUsage, modelRatio, dynamicScale, finalGroupRatio,
-								logger.LogQuota(preConsumedQuota), logger.LogQuota(actualQuota))
-
-							if quotaDelta > 0 {
-								logger.LogInfo(ctx, "视频任务补扣费: "+logDetail)
-								if err := model.DecreaseUserQuota(task.UserId, quotaDelta); err == nil {
-									model.UpdateUserUsedQuotaAndRequestCount(task.UserId, quotaDelta)
-									model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
-									task.Quota = actualQuota
-									model.RecordLog(task.UserId, model.LogTypeSystem, "视频任务成功补扣费: "+logDetail)
-								}
-							} else if quotaDelta < 0 {
-								refundQuota := -quotaDelta
-								logger.LogInfo(ctx, "视频任务额度返还: "+logDetail)
-								if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err == nil {
-									task.Quota = actualQuota
-									model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
-										ChannelId: task.ChannelId,
-										ModelName: modelName,
-										Quota:     refundQuota,
-										Content:   "视频任务成功退还多扣费用: " + logDetail,
-										Group:     task.Group,
-									})
-								}
-							} else {
-								logger.LogInfo(ctx, "视频任务预扣费准确: "+logDetail)
-							}
+					// 尝试从适配器获取"单价系数"
+					if unitPriceAdaptor, ok := adaptor.(interface {
+						GetUnitPriceScale(c *gin.Context, info *relaycommon.RelayInfo) (float32, error)
+					}); ok {
+						relayInfo := &relaycommon.RelayInfo{OriginModelName: modelName, TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: task.Action}}
+						tempCtx, _ := gin.CreateTestContext(nil)
+						tempCtx.Set("task_request", relaycommon.TaskSubmitReq{Model: modelName, Metadata: taskData})
+						if mode, ok := taskData["mode"].(string); ok {
+							tempCtx.Set("mode", mode)
 						}
+						if scale, err := unitPriceAdaptor.GetUnitPriceScale(tempCtx, relayInfo); err == nil {
+							dynamicScale = float64(scale)
+						}
+					}
+
+					var actualQuota int
+					if isPrice {
+						// ModelPrice 模式：与预扣费公式一致
+						// 预扣: quota = modelPrice × (duration × unitScale) × groupRatio × QuotaPerUnit
+						// 核销: quota = modelPrice × (actualDuration × unitScale) × groupRatio × QuotaPerUnit
+						actualQuota = int(value * (actualUsage * dynamicScale) * finalGroupRatio * common.QuotaPerUnit)
+					} else {
+						// ModelRatio 模式：原有逻辑
+						actualModelRatio := dynamicScale * value
+						actualQuota = int(actualUsage * actualModelRatio * finalGroupRatio)
+					}
+					preConsumedQuota := task.Quota
+					quotaDelta := actualQuota - preConsumedQuota
+
+					calcProcess := ""
+					adjustmentHint := "预扣和实际一致，无需调整"
+					if quotaDelta > 0 {
+						adjustmentHint = fmt.Sprintf("实际消耗更高，需要补扣 %s", logger.LogQuota(quotaDelta))
+					} else if quotaDelta < 0 {
+						adjustmentHint = fmt.Sprintf("预扣偏高，需要退回 %s", logger.LogQuota(-quotaDelta))
+					}
+
+					if isPrice {
+						calcProcess = fmt.Sprintf(
+							"计费说明（价格模式）：实际额度 = 模型价格(%.4f) × 实际时长(%.2fs) × 单价系数(%.2f) × 分组倍率(%.2f) × QuotaPerUnit(%.0f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							value, actualUsage, dynamicScale, finalGroupRatio, common.QuotaPerUnit,
+							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+						)
+					} else {
+						calcProcess = fmt.Sprintf(
+							"计费说明（倍率模式）：实际额度 = 实际时长(%.2f) × 单价系数(%.2f) × 模型倍率(%.4f) × 分组倍率(%.2f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							actualUsage, dynamicScale, value, finalGroupRatio,
+							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+						)
+					}
+
+					logDetail := fmt.Sprintf("任务ID: %s, 类型: %s, 实际时长: %.2fs, 模型%s: %.4f, 动态系数: %.2f, 分组倍率: %.2f。%s。结论：%s",
+						task.TaskID, task.Action, actualUsage,
+						map[bool]string{true: "价格", false: "倍率"}[isPrice],
+						value, dynamicScale, finalGroupRatio,
+						calcProcess, adjustmentHint)
+
+					if quotaDelta > 0 {
+						logger.LogInfo(ctx, "视频任务补扣费: "+logDetail)
+						if err := model.DecreaseUserQuota(task.UserId, quotaDelta); err == nil {
+							model.UpdateUserUsedQuota(task.UserId, quotaDelta)
+							model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
+							task.Quota = actualQuota
+							model.RecordConsumeLogNoContext(task.UserId, model.RecordConsumeLogParams{
+								ChannelId: task.ChannelId,
+								ModelName: modelName,
+								Quota:     quotaDelta,
+								Content:   "视频任务成功补扣费: " + logDetail,
+								Group:     task.Group,
+								Other: map[string]interface{}{
+									"task_id":        task.TaskID,
+									"action":         task.Action,
+									"actual_usage":   actualUsage,
+									"unit_scale":     dynamicScale,
+									"group_ratio":    finalGroupRatio,
+									"price_or_ratio": value,
+								},
+							})
+						}
+					} else if quotaDelta < 0 {
+						refundQuota := -quotaDelta
+						logger.LogInfo(ctx, "视频任务额度返还: "+logDetail)
+						if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err == nil {
+							model.UpdateUserUsedQuota(task.UserId, -refundQuota)
+							model.UpdateChannelUsedQuota(task.ChannelId, -refundQuota)
+							task.Quota = actualQuota
+							model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
+								ChannelId: task.ChannelId,
+								ModelName: modelName,
+								Quota:     refundQuota,
+								Content:   "视频任务成功退还多扣费用: " + logDetail,
+								Group:     task.Group,
+							})
+						}
+					} else {
+						logger.LogInfo(ctx, "视频任务预扣费准确: "+logDetail)
 					}
 				}
 			}
@@ -260,13 +324,28 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		// 任务失败且之前状态不是失败才退还额度，防止重复退还
 		if err := model.IncreaseUserQuota(task.UserId, quota, false); err != nil {
 			logger.LogError(ctx, "Failed to increase user quota: "+err.Error())
+		} else {
+			model.UpdateUserUsedQuota(task.UserId, -quota)
+			model.UpdateChannelUsedQuota(task.ChannelId, -quota)
 		}
 		logContent := fmt.Sprintf("Video async task failed %s, refund %s", task.TaskID, logger.LogQuota(quota))
-		modelName := ""
+		modelName := task.Properties.OriginModelName
+		if modelName == "" {
+			modelName = task.Properties.UpstreamModelName
+		}
 		var taskData map[string]interface{}
 		if err := json.Unmarshal(task.Data, &taskData); err == nil {
-			if m, ok := taskData["model"].(string); ok {
-				modelName = m
+			if modelName == "" {
+				if m, ok := taskData["model"].(string); ok {
+					modelName = m
+				}
+			}
+			if modelName == "" {
+				if dataObj, ok := taskData["data"].(map[string]interface{}); ok {
+					if m, ok := dataObj["model"].(string); ok {
+						modelName = m
+					}
+				}
 			}
 		}
 		model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
