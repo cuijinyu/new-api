@@ -74,6 +74,7 @@ def cmd_bill(args):
     month = args.month or _last_month()
     output_dir = args.output or "."
     flat_tier = args.flat_tier or bool(args.flat_tier_since)
+    end_day = getattr(args, "end_day", None)
     result = report_builder.generate_monthly_bill(
         month, output_dir,
         user_id=args.user_id,
@@ -81,10 +82,19 @@ def cmd_bill(args):
         exchange_rate=args.exchange_rate,
         flat_tier=flat_tier,
         flat_tier_since=args.flat_tier_since,
+        end_day=end_day,
         detail=args.detail,
+        upload_s3=args.upload,
         no_cache=args.no_cache,
     )
-    if isinstance(result, list):
+    if isinstance(result, dict):
+        print(f"\n  月度账单已生成: {result['xlsx']}")
+        print(f"  S3 下载链接（24h 有效）:")
+        print(f"    汇总: {result['xlsx_url']}")
+        if "detail_csv" in result:
+            print(f"  逐条明细已生成: {result['detail_csv']}")
+            print(f"    明细: {result['detail_csv_url']}")
+    elif isinstance(result, list):
         print(f"\n  月度账单已生成: {result[0]}")
         print(f"  逐条明细已生成: {result[1]}")
     else:
@@ -319,8 +329,12 @@ def build_parser():
                         help="降档模式：分段模型强制使用低档价")
     p_bill.add_argument("--flat-tier-since", type=str,
                         help="降档起始日期 YYYY-MM-DD（隐含 --flat-tier）")
+    p_bill.add_argument("--end-day", type=str,
+                        help="账单截止日期 YYYY-MM-DD（含当天，必须在 --month 所在月内）")
     p_bill.add_argument("--detail", action="store_true",
                         help="同时导出逐条明细 CSV.gz（按天并行查询）")
+    p_bill.add_argument("--upload", action="store_true",
+                        help="上传产物到 S3 并生成 presigned 下载链接（24h 有效）")
     p_bill.add_argument("-o", "--output", default=".", help="输出目录")
 
     # daily

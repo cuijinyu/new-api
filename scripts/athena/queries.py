@@ -26,6 +26,18 @@ def _year_month(year_month: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+def _validate_end_day(end_day: str, year_month: str) -> None:
+    """Validate that end_day is a YYYY-MM-DD date within the given year_month."""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", end_day)
+    if not m:
+        raise ValueError(f"end_day must be YYYY-MM-DD, got {end_day!r}")
+    ym_prefix = f"{m.group(1)}-{m.group(2)}"
+    if ym_prefix != year_month:
+        raise ValueError(
+            f"end_day {end_day!r} is not in month {year_month!r}"
+        )
+
+
 def _partition_filter(year: str, month: str, day: str = None, hour: str = None) -> str:
     parts = [f"year = {_q(year)}", f"month = {_q(month)}"]
     if day:
@@ -39,9 +51,13 @@ def _partition_filter(year: str, month: str, day: str = None, hour: str = None) 
 # A. Billing queries (usage_logs)
 # ---------------------------------------------------------------------------
 
-def monthly_bill_by_user(year_month: str, user_id: int = None) -> str:
+def monthly_bill_by_user(year_month: str, user_id: int = None,
+                         end_day: str = None) -> str:
     year, month = _year_month(year_month)
     where = _partition_filter(year, month)
+    if end_day:
+        _validate_end_day(end_day, year_month)
+        where += f" AND day <= {_q(end_day.split('-')[2])}"
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -61,9 +77,13 @@ ORDER BY total_usd DESC
 """
 
 
-def monthly_bill_by_user_model(year_month: str, user_id: int = None) -> str:
+def monthly_bill_by_user_model(year_month: str, user_id: int = None,
+                               end_day: str = None) -> str:
     year, month = _year_month(year_month)
     where = _partition_filter(year, month)
+    if end_day:
+        _validate_end_day(end_day, year_month)
+        where += f" AND day <= {_q(end_day.split('-')[2])}"
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -83,15 +103,21 @@ ORDER BY user_id, total_usd DESC
 """
 
 
-def monthly_bill_full(year_month: str, user_id: int = None) -> str:
+def monthly_bill_full(year_month: str, user_id: int = None,
+                      end_day: str = None) -> str:
     """Full billing detail with cache token breakdown from other JSON.
 
     Extracts cache_tokens, cache_creation_tokens (5m/1h/remaining) and
     tiered pricing info from the 'other' JSON field via Athena json_extract,
     so the aggregation is done server-side for performance.
+
+    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive), must be in same month.
     """
     year, month = _year_month(year_month)
     where = _partition_filter(year, month)
+    if end_day:
+        _validate_end_day(end_day, year_month)
+        where += f" AND day <= {_q(end_day.split('-')[2])}"
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -124,9 +150,13 @@ ORDER BY user_id, total_usd DESC
 """
 
 
-def daily_trend(year_month: str, user_id: int = None) -> str:
+def daily_trend(year_month: str, user_id: int = None,
+                end_day: str = None) -> str:
     year, month = _year_month(year_month)
     where = _partition_filter(year, month)
+    if end_day:
+        _validate_end_day(end_day, year_month)
+        where += f" AND day <= {_q(end_day.split('-')[2])}"
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -326,14 +356,18 @@ ORDER BY created_at
 """
 
 
-def detail_day_list(year_month: str) -> list[str]:
-    """Return list of day strings (01..31) for the given month.
+def detail_day_list(year_month: str, end_day: str = None) -> list[str]:
+    """Return list of day strings (01..N) for the given month.
 
+    If end_day ('YYYY-MM-DD') is provided, the list is truncated at that day.
     Used by parallel detail export to generate per-day queries.
     """
     import calendar
     year, month = _year_month(year_month)
     _, ndays = calendar.monthrange(int(year), int(month))
+    if end_day:
+        _validate_end_day(end_day, year_month)
+        ndays = int(end_day.split("-")[2])
     return [f"{d:02d}" for d in range(1, ndays + 1)]
 
 

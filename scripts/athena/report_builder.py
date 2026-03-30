@@ -14,7 +14,8 @@ import numpy as np
 import pandas as pd
 import xlsxwriter
 
-from athena_engine import run_query_cached, run_queries_parallel, QUOTA_TO_USD
+from athena_engine import (run_query_cached, run_queries_parallel_iter,
+                          upload_and_sign, QUOTA_TO_USD)
 import queries
 import pricing_engine
 
@@ -111,15 +112,23 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                           exchange_rate: float = 7.3,
                           flat_tier: bool = False,
                           flat_tier_since: str = None,
+                          end_day: str = None,
                           detail: bool = False,
-                          no_cache: bool = False) -> str | list[str]:
+                          upload_s3: bool = False,
+                          no_cache: bool = False) -> str | list[str] | dict:
     """Generate monthly bill Excel with xlsxwriter formatting.
 
     Uses fast aggregation queries (monthly_bill_full) with flat-tier applied
     at the summary level. For row-level precision, use generate_recalc_report.
 
+    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive). Must be within
+    year_month. When set, only data up to and including this day is included.
+
     When detail=True, also exports row-level data as compressed CSV alongside
-    the summary Excel. Returns [xlsx_path, csv_gz_path] in detail mode.
+    the summary Excel.
+
+    When upload_s3=True, uploads all output files to S3 and returns a dict
+    with local paths and presigned download URLs (24h expiry).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -128,7 +137,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     suffix = f"_user{user_id}" if user_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
-    filename = f"bill_{year_month}{suffix}{tier_suffix}.xlsx"
+    day_suffix = f"_to{end_day.replace('-', '')}" if end_day else ""
+    filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     rate = exchange_rate if currency == "CNY" else 1.0
@@ -136,10 +146,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     # Fast aggregation queries
     df_full = run_query_cached(
-        queries.monthly_bill_full(year_month, user_id=user_id),
+        queries.monthly_bill_full(year_month, user_id=user_id, end_day=end_day),
         no_cache=no_cache)
     df_trend = run_query_cached(
-        queries.daily_trend(year_month, user_id=user_id),
+        queries.daily_trend(year_month, user_id=user_id, end_day=end_day),
         no_cache=no_cache)
 
     if df_full.empty:
@@ -159,6 +169,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             tier_tag = f"（降档自 {flat_tier_since}）"
         else:
             tier_tag = "（统一低档价）"
+    if end_day:
+        tier_tag += f"（截至 {end_day}）"
 
     wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
 
@@ -346,13 +358,47 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     wb.close()
 
-    if not detail:
+    if not detail and not upload_s3:
         return filepath
 
-    detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
-                                     flat_tier=flat_tier,
-                                     flat_tier_since=flat_tier_since)
-    return [filepath, detail_path]
+    detail_path = None
+    if detail:
+        detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
+                                         flat_tier=flat_tier,
+                                         flat_tier_since=flat_tier_since,
+                                         end_day=end_day)
+
+    if upload_s3:
+        result = _upload_results(filepath, detail_path)
+        return result
+
+    if detail_path:
+        return [filepath, detail_path]
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# S3 upload helper
+# ---------------------------------------------------------------------------
+
+def _upload_results(xlsx_path: str, detail_path: str = None) -> dict:
+    """Upload generated files to S3 and return paths + presigned URLs."""
+    result = {"xlsx": xlsx_path}
+
+    print(f"[upload] 上传汇总账单到 S3...", file=sys.stderr)
+    info = upload_and_sign(xlsx_path)
+    result["xlsx_url"] = info["url"]
+    result["xlsx_s3_key"] = info["s3_key"]
+
+    if detail_path:
+        result["detail_csv"] = detail_path
+        print(f"[upload] 上传明细数据到 S3...", file=sys.stderr)
+        info = upload_and_sign(detail_path)
+        result["detail_csv_url"] = info["url"]
+        result["detail_csv_s3_key"] = info["s3_key"]
+
+    print(f"[upload] 上传完成", file=sys.stderr)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -363,19 +409,23 @@ def _export_detail_csv(year_month: str, output_dir: str,
                        user_id: int = None, channel_id: int = None,
                        model: str = None,
                        flat_tier: bool = False,
-                       flat_tier_since: str = None) -> str:
+                       flat_tier_since: str = None,
+                       end_day: str = None) -> str:
     """Export row-level detail as compressed CSV via parallel daily queries.
 
-    Submits one Athena query per day in parallel, downloads results directly
-    from S3 (bypassing pagination API), applies pricing, and writes CSV.gz.
-    For 2M rows this takes ~5-8 minutes vs 30+ minutes with the old approach.
+    Streams results: each day's data is priced and appended to CSV.gz as soon
+    as it arrives, so peak memory ≈ one day's data (~20-60 MB) instead of the
+    full month (~700+ MB). Safe for 2C2G machines even with 2M+ rows.
+
+    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive).
     """
     suffix = f"_user{user_id}" if user_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
-    csv_filename = f"bill_{year_month}{suffix}{tier_suffix}_detail.csv.gz"
+    day_suffix = f"_to{end_day.replace('-', '')}" if end_day else ""
+    csv_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail.csv.gz"
     csv_path = os.path.join(output_dir, csv_filename)
 
-    days = queries.detail_day_list(year_month)
+    days = queries.detail_day_list(year_month, end_day=end_day)
     sqls = [
         queries.raw_usage_detail_daily(year_month, day=d,
                                        user_id=user_id,
@@ -386,33 +436,70 @@ def _export_detail_csv(year_month: str, output_dir: str,
 
     print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
     t0 = time.time()
-    dfs = run_queries_parallel(sqls)
-    t_query = time.time() - t0
-    print(f"[detail] 查询完成，耗时 {t_query:.1f}s", file=sys.stderr)
+    total_rows = 0
+    header_written = False
+    days_done = 0
 
-    non_empty = [df for df in dfs if not df.empty]
-    if not non_empty:
+    try:
+        with gzip.open(csv_path, "wt", encoding="utf-8", compresslevel=6) as gz:
+            for idx, df_day in run_queries_parallel_iter(sqls):
+                days_done += 1
+                if df_day.empty:
+                    continue
+
+                df_day = _apply_detail_pricing(df_day, flat_tier=flat_tier,
+                                               flat_tier_since=flat_tier_since)
+                total_rows += len(df_day)
+
+                df_day.to_csv(gz, index=False, header=(not header_written),
+                              mode="a", lineterminator="\n")
+                header_written = True
+
+                elapsed = time.time() - t0
+                print(f"[detail] day {days[idx]}: +{len(df_day):,} 行 "
+                      f"({days_done}/{len(sqls)} done, "
+                      f"累计 {total_rows:,}, {elapsed:.0f}s)",
+                      file=sys.stderr)
+
+    except Exception:
+        if os.path.exists(csv_path):
+            os.remove(csv_path)
+        raise
+
+    elapsed = time.time() - t0
+
+    if total_rows == 0:
         print("[detail] 无数据", file=sys.stderr)
         with gzip.open(csv_path, "wt", encoding="utf-8") as f:
             f.write("no data\n")
         return csv_path
 
-    df_all = pd.concat(non_empty, ignore_index=True)
-    total_rows = len(df_all)
-    print(f"[detail] 共 {total_rows:,} 行，开始计算定价...", file=sys.stderr)
-
-    df_all = _apply_detail_pricing(df_all, flat_tier=flat_tier,
-                                   flat_tier_since=flat_tier_since)
-
-    print(f"[detail] 写入 CSV.gz: {csv_path}", file=sys.stderr)
-    t1 = time.time()
-    df_all.to_csv(csv_path, index=False, compression="gzip", encoding="utf-8")
-    t_write = time.time() - t1
     size_mb = os.path.getsize(csv_path) / 1024 / 1024
-    print(f"[detail] 写入完成，{size_mb:.1f} MB，耗时 {t_write:.1f}s", file=sys.stderr)
-    print(f"[detail] 总计 {total_rows:,} 行，总耗时 {time.time()-t0:.1f}s", file=sys.stderr)
+    print(f"[detail] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
+          f"耗时 {elapsed:.1f}s", file=sys.stderr)
 
     return csv_path
+
+
+def _vectorized_discount(df: pd.DataFrame, key_col: str, model_col: str,
+                         lookup_fn) -> pd.Series:
+    """Vectorized discount lookup — compute per unique (key, model) pair, then map back.
+
+    Instead of calling lookup_fn per row (slow for 500K+ rows), we deduplicate
+    the (key, model) combinations, look up once per combo, and broadcast back.
+    Typically reduces 500K lookups to ~50.
+    """
+    if key_col not in df.columns:
+        return pd.Series(1.0, index=df.index)
+
+    pairs = df[[key_col, model_col]].drop_duplicates()
+    cache = {}
+    for _, row in pairs.iterrows():
+        cache[(row[key_col], row[model_col])] = lookup_fn(row[key_col], row[model_col])
+
+    return pd.Series(
+        [cache.get((k, m), 1.0) for k, m in zip(df[key_col], df[model_col])],
+        index=df.index)
 
 
 def _apply_detail_pricing(df: pd.DataFrame,
@@ -477,12 +564,10 @@ def _apply_detail_pricing(df: pd.DataFrame,
     df["billed_usd"] = billed_usd.round(6)
     df["list_price_usd"] = pd.Series(price_base).round(6)
 
-    df["cost_discount"] = df.apply(
-        lambda r: pricing_engine.get_cost_discount(r.get("channel_id", 0), r.get("model", "")),
-        axis=1)
-    df["revenue_discount"] = df.apply(
-        lambda r: pricing_engine.get_revenue_discount(r.get("user_id", 0), r.get("model", "")),
-        axis=1)
+    df["cost_discount"] = _vectorized_discount(
+        df, "channel_id", "model", pricing_engine.get_cost_discount)
+    df["revenue_discount"] = _vectorized_discount(
+        df, "user_id", "model", pricing_engine.get_revenue_discount)
 
     df["cost_usd"] = (pd.Series(price_base) * df["cost_discount"]).round(6)
     df["revenue_usd"] = (pd.Series(price_base) * df["revenue_discount"]).round(6)
