@@ -349,7 +349,11 @@ SELECT
              CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0)
         AS cw_1h,
     COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0)
-        AS cw_remaining
+        AS cw_remaining,
+    CAST(json_extract_scalar(other, '$.tiered_input_price') AS DOUBLE)
+        AS tiered_ip,
+    CAST(json_extract_scalar(other, '$.tiered_output_price') AS DOUBLE)
+        AS tiered_op
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 ORDER BY created_at

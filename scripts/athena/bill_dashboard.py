@@ -662,31 +662,50 @@ with tab_export:
 
     exp_col5, exp_col6 = st.columns(2)
     with exp_col5:
-        exp_end_day = st.text_input(
-            "截止日期 (YYYY-MM-DD)",
-            key="exp_end_day",
-            placeholder="留空=整月",
-            help="仅统计到该日期（含当天），必须在所选月份内。例如月中出账时填写实际截止日。",
-        )
+        import calendar as _cal
+        _ym_year, _ym_month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
+        _month_first = datetime(_ym_year, _ym_month, 1).date()
+        _month_last = datetime(_ym_year, _ym_month,
+                               _cal.monthrange(_ym_year, _ym_month)[1]).date()
+        _today = datetime.now(timezone.utc).date()
+        _end_day_default = min(_today, _month_last)
+        exp_end_day_toggle = st.checkbox("指定截止日期", key="exp_end_day_toggle",
+                                         help="勾选后可选择账单截止日期，留空则导出整月")
+        if exp_end_day_toggle:
+            exp_end_day_date = st.date_input(
+                "截止日期",
+                value=_end_day_default,
+                min_value=_month_first,
+                max_value=_month_last,
+                key="exp_end_day_picker",
+                help="仅统计到该日期（含当天）",
+            )
+            exp_end_day = exp_end_day_date.strftime("%Y-%m-%d")
+        else:
+            exp_end_day = None
     with exp_col6:
         pass  # reserved
 
     exp_col7, exp_col8 = st.columns(2)
     with exp_col7:
-        exp_detail = st.checkbox("含逐条明细 (CSV.gz)", key="exp_detail",
+        exp_detail = st.checkbox("含逐条明细 (CSV.zip，Windows 可直接解压)", key="exp_detail",
                                  help="同时导出每一条请求的明细数据（按天并行查询，大用户可能需要 5-8 分钟）")
     with exp_col8:
+        exp_customer_view = st.checkbox("客户版本（隐藏成本/利润）", key="exp_customer_view",
+                                        help="导出可直接发给客户的版本，不含成本折扣、成本价、利润、利润率、渠道 ID 等内部数据")
+
+    exp_col9, exp_col10 = st.columns(2)
+    with exp_col9:
         exp_upload = st.checkbox("上传到 S3 并生成下载链接", key="exp_upload", value=True,
                                  help="上传到 S3 后生成 24h 有效的下载链接，适合分享给他人")
+    with exp_col10:
+        pass
 
     if st.button("生成月度账单 Excel", key="btn_export_bill"):
         import tempfile
         _exp_flat = exp_flat_tier or bool(exp_flat_since.strip())
         _exp_since = exp_flat_since.strip() or None
-        _exp_end_day = exp_end_day.strip() or None
-        if _exp_end_day and not _exp_end_day.startswith(year_month):
-            st.error(f"截止日期 {_exp_end_day!r} 不在所选月份 {year_month} 内，请重新填写。")
-            st.stop()
+        _exp_end_day = exp_end_day  # already None or valid YYYY-MM-DD from date_input
         with tempfile.TemporaryDirectory() as tmpdir:
             uid = exp_user_id if exp_user_id > 0 else None
             spinner_msg = "正在生成账单..."
@@ -699,6 +718,7 @@ with tab_export:
                     flat_tier=_exp_flat, flat_tier_since=_exp_since,
                     end_day=_exp_end_day,
                     detail=exp_detail,
+                    customer_view=exp_customer_view,
                     upload_s3=exp_upload,
                     no_cache=no_cache)
 
@@ -728,10 +748,10 @@ with tab_export:
                 with open(csv_path, "rb") as f:
                     csv_size_mb = os.path.getsize(csv_path) / 1024 / 1024
                     st.download_button(
-                        label=f"📥 下载逐条明细 (CSV.gz, {csv_size_mb:.1f} MB)",
+                        label=f"📥 下载逐条明细 (CSV.zip, {csv_size_mb:.1f} MB)",
                         data=f.read(),
                         file_name=os.path.basename(csv_path),
-                        mime="application/gzip",
+                        mime="application/zip",
                     )
                 st.success("账单 + 明细已生成，点击上方按钮下载")
             else:

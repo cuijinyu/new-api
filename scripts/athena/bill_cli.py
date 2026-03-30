@@ -75,6 +75,7 @@ def cmd_bill(args):
     output_dir = args.output or "."
     flat_tier = args.flat_tier or bool(args.flat_tier_since)
     end_day = getattr(args, "end_day", None)
+    customer_view = getattr(args, "customer_view", False)
     result = report_builder.generate_monthly_bill(
         month, output_dir,
         user_id=args.user_id,
@@ -84,6 +85,7 @@ def cmd_bill(args):
         flat_tier_since=args.flat_tier_since,
         end_day=end_day,
         detail=args.detail,
+        customer_view=customer_view,
         upload_s3=args.upload,
         no_cache=args.no_cache,
     )
@@ -332,7 +334,9 @@ def build_parser():
     p_bill.add_argument("--end-day", type=str,
                         help="账单截止日期 YYYY-MM-DD（含当天，必须在 --month 所在月内）")
     p_bill.add_argument("--detail", action="store_true",
-                        help="同时导出逐条明细 CSV.gz（按天并行查询）")
+                        help="同时导出逐条明细 CSV.zip（按天并行查询）")
+    p_bill.add_argument("--customer-view", action="store_true",
+                        help="客户版本：隐藏成本折扣、成本价、利润、渠道 ID 等内部数据")
     p_bill.add_argument("--upload", action="store_true",
                         help="上传产物到 S3 并生成 presigned 下载链接（24h 有效）")
     p_bill.add_argument("-o", "--output", default=".", help="输出目录")

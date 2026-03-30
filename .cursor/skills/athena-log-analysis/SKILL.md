@@ -41,7 +41,7 @@ python bill_cli.py bill --month 2026-03 --user-id 89 --flat-tier -o output/
 # Step 2: 含逐条明细（大用户 ~5-8 分钟，小用户 ~20 秒）
 python bill_cli.py bill --month 2026-03 --user-id 89 --flat-tier --detail -o output/
 # 输出: output/bill_2026-03_user89_flattier.xlsx (汇总)
-#       output/bill_2026-03_user89_flattier_detail.csv.gz (逐条明细)
+#       output/bill_2026-03_user89_flattier_detail.csv.zip (逐条明细)
 ```
 
 明细导出采用按天并行查询 + S3 直接下载 + Athena 端 json_extract，208 万条约 7-8 分钟。
@@ -58,7 +58,7 @@ python bill_cli.py bill --month 2026-03 --user-id 89 -o output/
 # 降档模式
 python bill_cli.py bill --month 2026-03 --user-id 89 --flat-tier -o output/
 
-# 含逐条明细（CSV.gz 压缩）
+# 含逐条明细（CSV.zip 压缩，Windows 可直接解压）
 python bill_cli.py bill --month 2026-03 --user-id 89 --flat-tier --detail -o output/
 
 # 人民币
@@ -167,7 +167,7 @@ Tab 页：
 - **异常检测** — 异常扣费 + 重复计费
 - **错误分析** — 按天查询 error_logs
 - **折扣管理** — 可视化编辑成本/客户折扣，支持批量操作
-- **导出** — 一键生成月度账单/异常报告 Excel，支持含逐条明细 CSV.gz
+- **导出** — 一键生成月度账单/异常报告 Excel，支持含逐条明细 CSV.zip（Windows 可直接解压）
 
 ## 三、定时任务 (`bill_cron.py`)
 

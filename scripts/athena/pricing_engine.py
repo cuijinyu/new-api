@@ -152,7 +152,9 @@ def _compute_list_price_from_agg(model: str, input_tokens: float,
         return None
 
     if isinstance(pricing, list):
-        tier = pricing[0] if flat_tier else pricing[-1]
+        if not flat_tier:
+            return None  # tiered models can't be priced from aggregated data
+        tier = pricing[0]
     else:
         tier = pricing
 
@@ -162,10 +164,9 @@ def _compute_list_price_from_agg(model: str, input_tokens: float,
     cwp_rate = tier["cwp"]
     cwp_1h_rate = tier["cwp_1h"]
 
-    net_input = max(input_tokens - cache_hit - cache_write, 0)
     cw_5m_total = cw_5m + cw_remaining
 
-    cost = (net_input / 1e6 * ip_rate
+    cost = (input_tokens / 1e6 * ip_rate
             + output_tokens / 1e6 * op_rate
             + cache_hit / 1e6 * chp_rate
             + cw_5m_total / 1e6 * cwp_rate
@@ -356,6 +357,8 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
             "ch": ch, "cw": cw,
             "cw_5m": cw_5m, "cw_1h": cw_1h, "cw_rem": cw_rem,
             "is_new": is_new,
+            "ip_new":     o.get("tiered_input_price"),
+            "op_new":     o.get("tiered_output_price"),
             "chp_new":    o.get("tiered_cache_hit_price"),
             "cwp_5m_new": o.get("tiered_cache_store_price_5m") or o.get("tiered_cache_store_price"),
             "cwp_1h_new": o.get("tiered_cache_store_price_1h"),
@@ -459,8 +462,10 @@ def recalc_from_raw(df: pd.DataFrame,
     # Assign tiered prices
     df = _assign_prices(df, flat_tier=flat_tier, flat_tier_since_ts=flat_tier_since_ts)
 
-    # Compute expected_usd (recalculated from pricing table)
+    # Compute expected_usd — prefer system-recorded tiered prices over our lookup
     is_new = df["is_new"]
+    ip      = np.where(is_new & df["ip_new"].notna(),     df["ip_new"],     df["ip"])
+    op      = np.where(is_new & df["op_new"].notna(),     df["op_new"],     df["op"])
     chp     = np.where(is_new & df["chp_new"].notna(),    df["chp_new"],    df["chp"])
     cwp_5m  = np.where(is_new & df["cwp_5m_new"].notna(), df["cwp_5m_new"], df["cwp"])
     cwp_1h  = np.where(is_new & df["cwp_1h_new"].notna(), df["cwp_1h_new"], df["cwp_1h"])
@@ -468,13 +473,11 @@ def recalc_from_raw(df: pd.DataFrame,
     pt = df["prompt_tokens"].astype(float)
     ct = df["completion_tokens"].astype(float)
     ch_tok = df["ch"].astype(float)
-    cw_tok = df["cw"].astype(float)
 
-    net_input   = np.maximum(pt - ch_tok - cw_tok, 0)
     cw_5m_total = df["cw_rem"].astype(float) + df["cw_5m"].astype(float)
 
-    cost_input      = net_input / 1e6 * df["ip"]
-    cost_output     = ct / 1e6 * df["op"]
+    cost_input      = pt / 1e6 * ip
+    cost_output     = ct / 1e6 * op
     cost_cache_hit  = ch_tok / 1e6 * chp
     cost_cw_5m      = cw_5m_total / 1e6 * cwp_5m
     cost_cw_1h      = df["cw_1h"].astype(float) / 1e6 * cwp_1h
