@@ -59,7 +59,7 @@ func InitDualWriteDB() error {
 	sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 	sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 
-	err = SecondaryDB.AutoMigrate(
+	err = autoMigrateIdempotent(SecondaryDB,
 		&Channel{}, &Token{}, &User{}, &PasskeyCredential{}, &Option{}, &Redemption{}, &Ability{}, &Log{},
 		&Midjourney{}, &TopUp{}, &QuotaData{}, &Task{}, &Model{}, &Vendor{}, &PrefillGroup{}, &Setup{},
 		&TwoFA{}, &TwoFABackupCode{}, &Invoice{}, &ReconDiscount{}, &ReconUpstream{}, &ReconResult{},

@@ -241,8 +241,42 @@ func InitLogDB() (err error) {
 	return err
 }
 
+// isMigrationIdempotentError returns true for errors that are safe to ignore
+// when running AutoMigrate on a database that was already partially migrated.
+// This happens in multi-node deployments where all nodes run migrations
+// concurrently: the second node may find indexes/columns already created by
+// the first node.
+//
+// MySQL:    1061 = Duplicate key name (index already exists)
+//           1060 = Duplicate column name (column already exists)
+// SQLite:   "already exists" covers both cases
+func isMigrationIdempotentError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "1061") || // MySQL duplicate index
+		strings.Contains(msg, "1060") || // MySQL duplicate column
+		strings.Contains(msg, "Duplicate key name") ||
+		strings.Contains(msg, "Duplicate column name") ||
+		(strings.Contains(msg, "already exists") && !strings.Contains(msg, "table")) // SQLite index/column
+}
+
+// autoMigrateIdempotent wraps db.AutoMigrate and ignores errors that indicate
+// the schema change was already applied by another node or a previous run.
+func autoMigrateIdempotent(db *gorm.DB, models ...interface{}) error {
+	if err := db.AutoMigrate(models...); err != nil {
+		if isMigrationIdempotentError(err) {
+			common.SysLog("autoMigrate: skipping already-applied schema change: " + err.Error())
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func migrateDB() error {
-	err := DB.AutoMigrate(
+	return autoMigrateIdempotent(DB,
 		&Channel{},
 		&Token{},
 		&User{},
@@ -266,14 +300,9 @@ func migrateDB() error {
 		&ReconUpstream{},
 		&ReconResult{},
 	)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func migrateDBFast() error {
-
 	var wg sync.WaitGroup
 
 	migrations := []struct {
@@ -310,17 +339,15 @@ func migrateDBFast() error {
 		wg.Add(1)
 		go func(model interface{}, name string) {
 			defer wg.Done()
-			if err := DB.AutoMigrate(model); err != nil {
+			if err := autoMigrateIdempotent(DB, model); err != nil {
 				errChan <- fmt.Errorf("failed to migrate %s: %v", name, err)
 			}
 		}(m.model, m.name)
 	}
 
-	// Wait for all migrations to complete
 	wg.Wait()
 	close(errChan)
 
-	// Check for any errors
 	for err := range errChan {
 		if err != nil {
 			return err
@@ -331,15 +358,7 @@ func migrateDBFast() error {
 }
 
 func migrateLOGDB() error {
-	if err := LOG_DB.AutoMigrate(&Log{}); err != nil {
-		// MySQL Error 1061: duplicate key name — index already exists, safe to ignore.
-		if strings.Contains(err.Error(), "1061") || strings.Contains(err.Error(), "Duplicate key name") {
-			common.SysLog("migrateLOGDB: skipping duplicate index error: " + err.Error())
-		} else {
-			return err
-		}
-	}
-	return nil
+	return autoMigrateIdempotent(LOG_DB, &Log{})
 }
 
 func closeDB(db *gorm.DB) error {
