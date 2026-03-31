@@ -241,124 +241,65 @@ func InitLogDB() (err error) {
 	return err
 }
 
-// isMigrationIdempotentError returns true for errors that are safe to ignore
-// when running AutoMigrate on a database that was already partially migrated.
-// This happens in multi-node deployments where all nodes run migrations
-// concurrently: the second node may find indexes/columns already created by
-// the first node.
-//
-// MySQL:    1061 = Duplicate key name (index already exists)
-//           1060 = Duplicate column name (column already exists)
-// SQLite:   "already exists" covers both cases
-func isMigrationIdempotentError(err error) bool {
-	if err == nil {
-		return false
+// withMySQLAdvisoryLock acquires a MySQL advisory lock (GET_LOCK) before
+// running fn, ensuring only one node executes migrations at a time. Other
+// nodes block until the lock is released. For non-MySQL databases the
+// function runs without locking (SQLite is single-process, PostgreSQL
+// AutoMigrate uses IF NOT EXISTS natively).
+func withMySQLAdvisoryLock(db *gorm.DB, lockName string, fn func() error) error {
+	if !common.UsingMySQL && common.LogSqlType != common.DatabaseTypeMySQL {
+		return fn()
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "1061") || // MySQL duplicate index
-		strings.Contains(msg, "1060") || // MySQL duplicate column
-		strings.Contains(msg, "Duplicate key name") ||
-		strings.Contains(msg, "Duplicate column name") ||
-		(strings.Contains(msg, "already exists") && !strings.Contains(msg, "table")) // SQLite index/column
-}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get sql.DB for advisory lock: %w", err)
+	}
+	// Acquire lock with 120s timeout (enough for slow migrations)
+	var result int
+	if err := sqlDB.QueryRow("SELECT GET_LOCK(?, 120)", lockName).Scan(&result); err != nil {
+		return fmt.Errorf("GET_LOCK(%s) failed: %w", lockName, err)
+	}
+	if result != 1 {
+		return fmt.Errorf("GET_LOCK(%s) timed out, another migration may be stuck", lockName)
+	}
+	defer sqlDB.QueryRow("SELECT RELEASE_LOCK(?)", lockName) //nolint:errcheck
 
-// autoMigrateIdempotent wraps db.AutoMigrate and ignores errors that indicate
-// the schema change was already applied by another node or a previous run.
-func autoMigrateIdempotent(db *gorm.DB, models ...interface{}) error {
-	if err := db.AutoMigrate(models...); err != nil {
-		if isMigrationIdempotentError(err) {
-			common.SysLog("autoMigrate: skipping already-applied schema change: " + err.Error())
-			return nil
-		}
-		return err
-	}
-	return nil
+	return fn()
 }
 
 func migrateDB() error {
-	return autoMigrateIdempotent(DB,
-		&Channel{},
-		&Token{},
-		&User{},
-		&PasskeyCredential{},
-		&Option{},
-		&Redemption{},
-		&Ability{},
-		&Log{},
-		&Midjourney{},
-		&TopUp{},
-		&QuotaData{},
-		&Task{},
-		&Model{},
-		&Vendor{},
-		&PrefillGroup{},
-		&Setup{},
-		&TwoFA{},
-		&TwoFABackupCode{},
-		&Invoice{},
-		&ReconDiscount{},
-		&ReconUpstream{},
-		&ReconResult{},
-	)
-}
-
-func migrateDBFast() error {
-	var wg sync.WaitGroup
-
-	migrations := []struct {
-		model interface{}
-		name  string
-	}{
-		{&Channel{}, "Channel"},
-		{&Token{}, "Token"},
-		{&User{}, "User"},
-		{&PasskeyCredential{}, "PasskeyCredential"},
-		{&Option{}, "Option"},
-		{&Redemption{}, "Redemption"},
-		{&Ability{}, "Ability"},
-		{&Log{}, "Log"},
-		{&Midjourney{}, "Midjourney"},
-		{&TopUp{}, "TopUp"},
-		{&QuotaData{}, "QuotaData"},
-		{&Task{}, "Task"},
-		{&Model{}, "Model"},
-		{&Vendor{}, "Vendor"},
-		{&PrefillGroup{}, "PrefillGroup"},
-		{&Setup{}, "Setup"},
-		{&TwoFA{}, "TwoFA"},
-		{&TwoFABackupCode{}, "TwoFABackupCode"},
-		{&Invoice{}, "Invoice"},
-		{&ReconDiscount{}, "ReconDiscount"},
-		{&ReconUpstream{}, "ReconUpstream"},
-		{&ReconResult{}, "ReconResult"},
-	}
-	// 动态计算migration数量，确保errChan缓冲区足够大
-	errChan := make(chan error, len(migrations))
-
-	for _, m := range migrations {
-		wg.Add(1)
-		go func(model interface{}, name string) {
-			defer wg.Done()
-			if err := autoMigrateIdempotent(DB, model); err != nil {
-				errChan <- fmt.Errorf("failed to migrate %s: %v", name, err)
-			}
-		}(m.model, m.name)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
-	}
-	common.SysLog("database migrated")
-	return nil
+	return withMySQLAdvisoryLock(DB, "ezmodel_migrate_main", func() error {
+		return DB.AutoMigrate(
+			&Channel{},
+			&Token{},
+			&User{},
+			&PasskeyCredential{},
+			&Option{},
+			&Redemption{},
+			&Ability{},
+			&Log{},
+			&Midjourney{},
+			&TopUp{},
+			&QuotaData{},
+			&Task{},
+			&Model{},
+			&Vendor{},
+			&PrefillGroup{},
+			&Setup{},
+			&TwoFA{},
+			&TwoFABackupCode{},
+			&Invoice{},
+			&ReconDiscount{},
+			&ReconUpstream{},
+			&ReconResult{},
+		)
+	})
 }
 
 func migrateLOGDB() error {
-	return autoMigrateIdempotent(LOG_DB, &Log{})
+	return withMySQLAdvisoryLock(LOG_DB, "ezmodel_migrate_log", func() error {
+		return LOG_DB.AutoMigrate(&Log{})
+	})
 }
 
 func closeDB(db *gorm.DB) error {
