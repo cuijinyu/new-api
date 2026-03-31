@@ -9,10 +9,19 @@ import io
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 if sys.stdout and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
+
+# 从仓库根目录加载 .env（须先于 athena_engine 导入，以便 RAW_LOG_S3_* / AWS_REGION 生效）
+try:
+    from dotenv import load_dotenv
+    _root = Path(__file__).resolve().parents[2]
+    load_dotenv(_root / ".env")
+except ImportError:
+    pass
 
 import streamlit as st
 import pandas as pd
