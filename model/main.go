@@ -331,9 +331,13 @@ func migrateDBFast() error {
 }
 
 func migrateLOGDB() error {
-	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
-		return err
+	if err := LOG_DB.AutoMigrate(&Log{}); err != nil {
+		// MySQL Error 1061: duplicate key name — index already exists, safe to ignore.
+		if strings.Contains(err.Error(), "1061") || strings.Contains(err.Error(), "Duplicate key name") {
+			common.SysLog("migrateLOGDB: skipping duplicate index error: " + err.Error())
+		} else {
+			return err
+		}
 	}
 	return nil
 }
