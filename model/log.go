@@ -37,6 +37,7 @@ type Log struct {
 	Group            string `json:"group" gorm:"index"`
 	Ip               string `json:"ip" gorm:"index;default:''"`
 	Other            string `json:"other"`
+	RequestId        string `json:"request_id" gorm:"type:varchar(64);index;default:''"`
 }
 
 // don't use iota, avoid change log type value
@@ -84,7 +85,7 @@ func getTokenIdByKey(key string) (int, error) {
 	return tk.Id, nil
 }
 
-func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int64, modelName string, startIdx int, num int) (logs []*Log, total int64, err error) {
+func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int64, modelName string, requestId string, startIdx int, num int) (logs []*Log, total int64, err error) {
 	tokenId, err := getTokenIdByKey(key)
 	if err != nil {
 		return nil, 0, err
@@ -96,6 +97,9 @@ func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int
 	}
 	if modelName != "" {
 		tx = tx.Where("model_name like ?", modelName)
+	}
+	if requestId != "" {
+		tx = tx.Where("request_id = ?", requestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)
@@ -237,7 +241,8 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			}
 			return ""
 		}(),
-		Other: otherStr,
+		Other:     otherStr,
+		RequestId: c.GetString(common.RequestIdKey),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -254,6 +259,8 @@ type RecordConsumeLogParams struct {
 	Quota            int                    `json:"quota"`
 	Content          string                 `json:"content"`
 	TokenId          int                    `json:"token_id"`
+	RequestId        string                 `json:"request_id"`
+	ClientIP         string                 `json:"client_ip"`
 	UseTimeSeconds   int                    `json:"use_time_seconds"`
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
@@ -261,12 +268,19 @@ type RecordConsumeLogParams struct {
 }
 
 type RecordRefundLogParams struct {
-	ChannelId int    `json:"channel_id"`
-	ModelName string `json:"model_name"`
-	Quota     int    `json:"quota"`
-	Content   string `json:"content"`
-	TokenId   int    `json:"token_id"`
-	Group     string `json:"group"`
+	ChannelId        int                    `json:"channel_id"`
+	ModelName        string                 `json:"model_name"`
+	TokenName        string                 `json:"token_name"`
+	Quota            int                    `json:"quota"`
+	Content          string                 `json:"content"`
+	TokenId          int                    `json:"token_id"`
+	RequestId        string                 `json:"request_id"`
+	ClientIP         string                 `json:"client_ip"`
+	UseTimeSeconds   int                    `json:"use_time_seconds"`
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CompletionTokens int                    `json:"completion_tokens"`
+	Group            string                 `json:"group"`
+	Other            map[string]interface{} `json:"other"`
 }
 
 func RecordRefundLog(userId int, params RecordRefundLogParams) {
@@ -275,17 +289,30 @@ func RecordRefundLog(userId int, params RecordRefundLogParams) {
 	if refundQuota > 0 {
 		refundQuota = -refundQuota
 	}
+	requestId := params.RequestId
+	if requestId == "" && params.Other != nil {
+		if reqID, ok := params.Other["request_id"].(string); ok {
+			requestId = reqID
+		}
+	}
 	log := &Log{
-		UserId:    userId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      LogTypeRefund,
-		Content:   params.Content,
-		ModelName: params.ModelName,
-		Quota:     refundQuota,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             LogTypeRefund,
+		Content:          params.Content,
+		ModelName:        params.ModelName,
+		TokenName:        params.TokenName,
+		Quota:            refundQuota,
+		ChannelId:        params.ChannelId,
+		TokenId:          params.TokenId,
+		RequestId:        requestId,
+		Ip:               params.ClientIP,
+		UseTime:          params.UseTimeSeconds,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		Group:            params.Group,
+		Other:            common.MapToJsonStr(params.Other),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -329,7 +356,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			}
 			return ""
 		}(),
-		Other: otherStr,
+		Other:     otherStr,
+		RequestId: c.GetString(common.RequestIdKey),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -350,7 +378,62 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string) (logs []*Log, total int64, err error) {
+// RecordConsumeLogNoContext records a consume log without gin context.
+// This is used by async settlement flows where request context is unavailable.
+func RecordConsumeLogNoContext(userId int, params RecordConsumeLogParams) {
+	if !common.LogConsumeEnabled {
+		return
+	}
+	username, _ := GetUsernameById(userId, false)
+	otherStr := common.MapToJsonStr(params.Other)
+	requestId := params.RequestId
+	if requestId == "" && params.Other != nil {
+		if reqID, ok := params.Other["request_id"].(string); ok {
+			requestId = reqID
+		}
+	}
+	log := &Log{
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             LogTypeConsume,
+		Content:          params.Content,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		TokenName:        params.TokenName,
+		ModelName:        params.ModelName,
+		Quota:            params.Quota,
+		ChannelId:        params.ChannelId,
+		TokenId:          params.TokenId,
+		UseTime:          params.UseTimeSeconds,
+		IsStream:         params.IsStream,
+		Group:            params.Group,
+		Ip:               params.ClientIP,
+		Other:            otherStr,
+		RequestId:        requestId,
+	}
+	err := LOG_DB.Create(log).Error
+	if err != nil {
+		common.SysLog("failed to record consume log: " + err.Error())
+		return
+	}
+	if ConsumeLogHook != nil {
+		hook := ConsumeLogHook
+		otherCopy := params.Other
+		logCopy := *log
+		gopool.Go(func() {
+			safeCtx, _ := gin.CreateTestContext(nil)
+			if otherCopy != nil {
+				if reqID, ok := otherCopy["request_id"].(string); ok && reqID != "" {
+					safeCtx.Set(common.RequestIdKey, reqID)
+				}
+			}
+			hook(safeCtx, &logCopy, otherCopy)
+		})
+	}
+}
+
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, requestId string, startIdx int, num int, channel int, group string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -378,6 +461,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	}
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
+	}
+	if requestId != "" {
+		tx = tx.Where("logs.request_id = ?", requestId)
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
@@ -415,7 +501,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	return logs, total, err
 }
 
-func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string) (logs []*Log, total int64, err error) {
+func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, requestId string, startIdx int, num int, group string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -437,6 +523,9 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	}
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
+	}
+	if requestId != "" {
+		tx = tx.Where("logs.request_id = ?", requestId)
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {

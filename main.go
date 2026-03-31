@@ -68,8 +68,14 @@ func main() {
 
 	if service.UsageLogS3Enabled() {
 		model.ConsumeLogHook = func(c *gin.Context, l *model.Log, other map[string]interface{}) {
-			service.EnqueueUsageLog(c, service.UsageLogPayload{
-				RequestID:        c.GetString(common.RequestIdKey),
+			requestID := ""
+			safeCtx := c
+			if safeCtx == nil {
+				safeCtx, _ = gin.CreateTestContext(nil)
+			}
+			requestID = safeCtx.GetString(common.RequestIdKey)
+			service.EnqueueUsageLog(safeCtx, service.UsageLogPayload{
+				RequestID:        requestID,
 				CreatedAt:        l.CreatedAt,
 				UserID:           l.UserId,
 				Username:         l.Username,

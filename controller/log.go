@@ -20,9 +20,10 @@ func GetAllLogs(c *gin.Context) {
 	username := c.Query("username")
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
+	requestId := c.Query("request_id")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group)
+	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, requestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -41,8 +42,9 @@ func GetUserLogs(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
+	requestId := c.Query("request_id")
 	group := c.Query("group")
-	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group)
+	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, requestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -112,7 +114,8 @@ func GetLogByKey(c *gin.Context) {
 	}
 	logType, _ := strconv.Atoi(c.Query("type"))
 	modelName := c.Query("model_name")
-	logs, total, err := model.GetLogByKey(key, logType, startTimestamp, endTimestamp, modelName, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	requestId := c.Query("request_id")
+	logs, total, err := model.GetLogByKey(key, logType, startTimestamp, endTimestamp, modelName, requestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		c.JSON(200, gin.H{
 			"success": false,
