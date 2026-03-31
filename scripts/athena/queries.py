@@ -38,6 +38,18 @@ def _validate_end_day(end_day: str, year_month: str) -> None:
         )
 
 
+def _validate_start_day(start_day: str, year_month: str) -> None:
+    """Validate that start_day is a YYYY-MM-DD date within the given year_month."""
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", start_day)
+    if not m:
+        raise ValueError(f"start_day must be YYYY-MM-DD, got {start_day!r}")
+    ym_prefix = f"{m.group(1)}-{m.group(2)}"
+    if ym_prefix != year_month:
+        raise ValueError(
+            f"start_day {start_day!r} is not in month {year_month!r}"
+        )
+
+
 def _partition_filter(year: str, month: str, day: str = None, hour: str = None) -> str:
     parts = [f"year = {_q(year)}", f"month = {_q(month)}"]
     if day:
@@ -47,17 +59,111 @@ def _partition_filter(year: str, month: str, day: str = None, hour: str = None) 
     return " AND ".join(parts)
 
 
+def _parse_datetime(dt_str: str) -> tuple[str, str, str, str, int]:
+    """Parse 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD HH' into (year, month, day, hour_str, unix_ts).
+
+    Returns unix_ts as UTC epoch seconds (treats input as UTC).
+    hour_str is zero-padded, e.g. '09'.
+    """
+    from datetime import datetime, timezone
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2})(?::(\d{2}))?$", dt_str.strip())
+    if not m:
+        raise ValueError(
+            f"datetime must be 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD HH', got {dt_str!r}"
+        )
+    year, month, day = m.group(1), m.group(2), m.group(3)
+    hour = int(m.group(4))
+    minute = int(m.group(5)) if m.group(5) else 0
+    dt = datetime(int(year), int(month), int(day), hour, minute, tzinfo=timezone.utc)
+    return year, month, day, f"{hour:02d}", int(dt.timestamp())
+
+
+def _hour_range_filter(year: str, month: str,
+                       start_day: str = None, start_hour: str = None,
+                       end_day: str = None, end_hour: str = None) -> str:
+    """Build partition WHERE clause covering [start_day/hour .. end_day/hour].
+
+    When start_hour/end_hour are provided, uses >= / <= on the hour partition
+    column (only valid when start_day == end_day; otherwise falls back to
+    day-range filter to avoid over-pruning across day boundaries).
+    """
+    parts = [f"year = {_q(year)}", f"month = {_q(month)}"]
+
+    same_day = (start_day and end_day and start_day == end_day)
+
+    if same_day:
+        parts.append(f"day = {_q(start_day.split('-')[2])}")
+        if start_hour:
+            parts.append(f"hour >= {_q(start_hour)}")
+        if end_hour:
+            parts.append(f"hour <= {_q(end_hour)}")
+    else:
+        if start_day:
+            parts.append(f"day >= {_q(start_day.split('-')[2])}")
+        if end_day:
+            parts.append(f"day <= {_q(end_day.split('-')[2])}")
+
+    return " AND ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # A. Billing queries (usage_logs)
 # ---------------------------------------------------------------------------
 
-def monthly_bill_by_user(year_month: str, user_id: int = None,
-                         end_day: str = None) -> str:
-    year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
-    if end_day:
+def _build_time_where(year: str, month: str, year_month: str,
+                      start_day: str = None, end_day: str = None,
+                      start_time: str = None, end_time: str = None) -> str:
+    """Build WHERE clause with partition pruning + optional created_at row filter.
+
+    start_time / end_time: 'YYYY-MM-DD HH:MM' (UTC). When provided, they take
+    precedence over start_day / end_day for the row-level created_at filter,
+    and the hour partition is also pruned to minimize scan cost.
+
+    Returns (partition_where, extra_row_conditions) combined into one string.
+    """
+    # Resolve effective day/hour boundaries
+    s_day = s_hour = s_ts = None
+    e_day = e_hour = e_ts = None
+
+    if start_time:
+        sy, sm, sd, sh, s_ts = _parse_datetime(start_time)
+        s_day, s_hour = f"{sy}-{sm}-{sd}", sh
+        _validate_start_day(s_day, year_month)
+    elif start_day:
+        _validate_start_day(start_day, year_month)
+        s_day = start_day
+
+    if end_time:
+        ey, em, ed, eh, e_ts = _parse_datetime(end_time)
+        e_day, e_hour = f"{ey}-{em}-{ed}", eh
+        _validate_end_day(e_day, year_month)
+    elif end_day:
         _validate_end_day(end_day, year_month)
-        where += f" AND day <= {_q(end_day.split('-')[2])}"
+        e_day = end_day
+
+    # Partition pruning
+    where = _hour_range_filter(year, month,
+                               start_day=s_day, start_hour=s_hour,
+                               end_day=e_day, end_hour=e_hour)
+
+    # Row-level created_at filter (only when sub-day precision is needed)
+    if s_ts is not None:
+        where += f" AND created_at >= {s_ts}"
+    if e_ts is not None:
+        # end_time is inclusive to the minute: include all records in that minute
+        where += f" AND created_at < {e_ts + 60}"
+
+    return where
+
+
+def monthly_bill_by_user(year_month: str, user_id: int = None,
+                         start_day: str = None, end_day: str = None,
+                         start_time: str = None, end_time: str = None) -> str:
+    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
+    year, month = _year_month(year_month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -78,12 +184,13 @@ ORDER BY total_usd DESC
 
 
 def monthly_bill_by_user_model(year_month: str, user_id: int = None,
-                               end_day: str = None) -> str:
+                               start_day: str = None, end_day: str = None,
+                               start_time: str = None, end_time: str = None) -> str:
+    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
-    if end_day:
-        _validate_end_day(end_day, year_month)
-        where += f" AND day <= {_q(end_day.split('-')[2])}"
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -104,20 +211,22 @@ ORDER BY user_id, total_usd DESC
 
 
 def monthly_bill_full(year_month: str, user_id: int = None,
-                      end_day: str = None) -> str:
+                      start_day: str = None, end_day: str = None,
+                      start_time: str = None, end_time: str = None) -> str:
     """Full billing detail with cache token breakdown from other JSON.
 
     Extracts cache_tokens, cache_creation_tokens (5m/1h/remaining) and
     tiered pricing info from the 'other' JSON field via Athena json_extract,
     so the aggregation is done server-side for performance.
 
-    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive), must be in same month.
+    start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
+    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision;
+        takes precedence over start_day / end_day when provided.
     """
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
-    if end_day:
-        _validate_end_day(end_day, year_month)
-        where += f" AND day <= {_q(end_day.split('-')[2])}"
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -151,12 +260,13 @@ ORDER BY user_id, total_usd DESC
 
 
 def daily_trend(year_month: str, user_id: int = None,
-                end_day: str = None) -> str:
+                start_day: str = None, end_day: str = None,
+                start_time: str = None, end_time: str = None) -> str:
+    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
-    if end_day:
-        _validate_end_day(end_day, year_month)
-        where += f" AND day <= {_q(end_day.split('-')[2])}"
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     return f"""
@@ -360,19 +470,36 @@ ORDER BY created_at
 """
 
 
-def detail_day_list(year_month: str, end_day: str = None) -> list[str]:
+def detail_day_list(year_month: str, start_day: str = None, end_day: str = None,
+                    start_time: str = None, end_time: str = None) -> list[str]:
     """Return list of day strings (01..N) for the given month.
 
-    If end_day ('YYYY-MM-DD') is provided, the list is truncated at that day.
+    start_time / end_time ('YYYY-MM-DD HH:MM') take precedence over
+    start_day / end_day when provided.
     Used by parallel detail export to generate per-day queries.
     """
     import calendar
     year, month = _year_month(year_month)
     _, ndays = calendar.monthrange(int(year), int(month))
-    if end_day:
-        _validate_end_day(end_day, year_month)
-        ndays = int(end_day.split("-")[2])
-    return [f"{d:02d}" for d in range(1, ndays + 1)]
+    first_day = 1
+
+    eff_start_day = start_day
+    eff_end_day = end_day
+
+    if start_time:
+        sy, sm, sd, _sh, _ts = _parse_datetime(start_time)
+        eff_start_day = f"{sy}-{sm}-{sd}"
+    if end_time:
+        ey, em, ed, _eh, _ts = _parse_datetime(end_time)
+        eff_end_day = f"{ey}-{em}-{ed}"
+
+    if eff_start_day:
+        _validate_start_day(eff_start_day, year_month)
+        first_day = int(eff_start_day.split("-")[2])
+    if eff_end_day:
+        _validate_end_day(eff_end_day, year_month)
+        ndays = int(eff_end_day.split("-")[2])
+    return [f"{d:02d}" for d in range(first_day, ndays + 1)]
 
 
 # ---------------------------------------------------------------------------

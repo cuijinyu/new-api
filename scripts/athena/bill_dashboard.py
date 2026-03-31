@@ -669,18 +669,41 @@ with tab_export:
         exp_flat_since = st.text_input("降档起始日期 (YYYY-MM-DD)",
                                        key="exp_flat_since", placeholder="留空=全量降档")
 
+    import calendar as _cal
+    _ym_year, _ym_month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
+    _month_first = datetime(_ym_year, _ym_month, 1).date()
+    _month_last = datetime(_ym_year, _ym_month,
+                           _cal.monthrange(_ym_year, _ym_month)[1]).date()
+    _today = datetime.now(timezone.utc).date()
+    _end_day_default = min(_today, _month_last)
+
+    # ── 时间范围配置 ──
+    st.markdown("**时间范围**")
     exp_col5, exp_col6 = st.columns(2)
     with exp_col5:
-        import calendar as _cal
-        _ym_year, _ym_month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
-        _month_first = datetime(_ym_year, _ym_month, 1).date()
-        _month_last = datetime(_ym_year, _ym_month,
-                               _cal.monthrange(_ym_year, _ym_month)[1]).date()
-        _today = datetime.now(timezone.utc).date()
-        _end_day_default = min(_today, _month_last)
-        exp_end_day_toggle = st.checkbox("指定截止日期", key="exp_end_day_toggle",
-                                         help="勾选后可选择账单截止日期，留空则导出整月")
-        if exp_end_day_toggle:
+        exp_start_toggle = st.checkbox("指定起始时间", key="exp_start_toggle",
+                                       help="勾选后可设置账单起始日期（可精确到小时），留空则从月初开始")
+        if exp_start_toggle:
+            exp_start_date = st.date_input(
+                "起始日期",
+                value=_month_first,
+                min_value=_month_first,
+                max_value=_month_last,
+                key="exp_start_day_picker",
+            )
+            exp_start_hour = st.selectbox(
+                "起始小时（UTC，留空=当天 00:00）",
+                options=[""] + [f"{h:02d}" for h in range(24)],
+                key="exp_start_hour",
+                help="精确到小时，时区为 UTC",
+            )
+        else:
+            exp_start_date = None
+            exp_start_hour = ""
+    with exp_col6:
+        exp_end_toggle = st.checkbox("指定截止时间", key="exp_end_day_toggle",
+                                     help="勾选后可设置账单截止日期（可精确到小时），留空则导出整月")
+        if exp_end_toggle:
             exp_end_day_date = st.date_input(
                 "截止日期",
                 value=_end_day_default,
@@ -689,11 +712,29 @@ with tab_export:
                 key="exp_end_day_picker",
                 help="仅统计到该日期（含当天）",
             )
-            exp_end_day = exp_end_day_date.strftime("%Y-%m-%d")
+            exp_end_hour = st.selectbox(
+                "截止小时（UTC，留空=当天 23:59）",
+                options=[""] + [f"{h:02d}" for h in range(24)],
+                key="exp_end_hour",
+                help="精确到小时，时区为 UTC",
+            )
         else:
-            exp_end_day = None
-    with exp_col6:
-        pass  # reserved
+            exp_end_day_date = None
+            exp_end_hour = ""
+
+    # Resolve start_time / end_time / start_day / end_day
+    exp_start_time = exp_start_day = None
+    exp_end_time = exp_end_day = None
+    if exp_start_toggle and exp_start_date is not None:
+        if exp_start_hour:
+            exp_start_time = f"{exp_start_date.strftime('%Y-%m-%d')} {exp_start_hour}:00"
+        else:
+            exp_start_day = exp_start_date.strftime("%Y-%m-%d")
+    if exp_end_toggle and exp_end_day_date is not None:
+        if exp_end_hour:
+            exp_end_time = f"{exp_end_day_date.strftime('%Y-%m-%d')} {exp_end_hour}:59"
+        else:
+            exp_end_day = exp_end_day_date.strftime("%Y-%m-%d")
 
     exp_col7, exp_col8 = st.columns(2)
     with exp_col7:
@@ -715,7 +756,6 @@ with tab_export:
         import tempfile
         _exp_flat = exp_flat_tier or bool(exp_flat_since.strip())
         _exp_since = exp_flat_since.strip() or None
-        _exp_end_day = exp_end_day  # already None or valid YYYY-MM-DD from date_input
         with tempfile.TemporaryDirectory() as tmpdir:
             uid = exp_user_id if exp_user_id > 0 else None
             spinner_msg = "正在生成账单..."
@@ -726,7 +766,10 @@ with tab_export:
                     year_month, tmpdir, user_id=uid,
                     currency=exp_currency,
                     flat_tier=_exp_flat, flat_tier_since=_exp_since,
-                    end_day=_exp_end_day,
+                    start_day=exp_start_day,
+                    end_day=exp_end_day,
+                    start_time=exp_start_time,
+                    end_time=exp_end_time,
                     detail=exp_detail,
                     customer_view=exp_customer_view,
                     upload_s3=exp_upload,

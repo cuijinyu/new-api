@@ -136,7 +136,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                           exchange_rate: float = 7.3,
                           flat_tier: bool = False,
                           flat_tier_since: str = None,
+                          start_day: str = None,
                           end_day: str = None,
+                          start_time: str = None,
+                          end_time: str = None,
                           detail: bool = False,
                           customer_view: bool = False,
                           upload_s3: bool = False,
@@ -146,8 +149,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     Uses fast aggregation queries (monthly_bill_full) with flat-tier applied
     at the summary level. For row-level precision, use generate_recalc_report.
 
-    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive). Must be within
-    year_month. When set, only data up to and including this day is included.
+    start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
+    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision;
+        takes precedence over start_day / end_day when provided.
 
     When detail=True, also exports row-level data as compressed CSV alongside
     the summary Excel.
@@ -160,11 +164,16 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     if flat_tier_since:
         flat_tier = True
 
+    # Resolve effective display labels for filename / tier_tag
+    eff_start = start_time or start_day
+    eff_end = end_time or end_day
+
     suffix = f"_user{user_id}" if user_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
-    day_suffix = f"_to{end_day.replace('-', '')}" if end_day else ""
+    from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
+    day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
     cv_suffix = "_customer" if customer_view else ""
-    filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}{cv_suffix}.xlsx"
+    filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}{cv_suffix}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     rate = exchange_rate if currency == "CNY" else 1.0
@@ -172,10 +181,14 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     # Fast aggregation queries
     df_full = run_query_cached(
-        queries.monthly_bill_full(year_month, user_id=user_id, end_day=end_day),
+        queries.monthly_bill_full(year_month, user_id=user_id,
+                                  start_day=start_day, end_day=end_day,
+                                  start_time=start_time, end_time=end_time),
         no_cache=no_cache)
     df_trend = run_query_cached(
-        queries.daily_trend(year_month, user_id=user_id, end_day=end_day),
+        queries.daily_trend(year_month, user_id=user_id,
+                            start_day=start_day, end_day=end_day,
+                            start_time=start_time, end_time=end_time),
         no_cache=no_cache)
 
     if df_full.empty:
@@ -195,8 +208,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             tier_tag = f"（降档自 {flat_tier_since}）"
         else:
             tier_tag = "（统一低档价）"
-    if end_day:
-        tier_tag += f"（截至 {end_day}）"
+    if eff_start:
+        tier_tag += f"（自 {eff_start}）"
+    if eff_end:
+        tier_tag += f"（截至 {eff_end}）"
 
     wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
 
@@ -447,7 +462,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
                                          flat_tier=flat_tier,
                                          flat_tier_since=flat_tier_since,
+                                         start_day=start_day,
                                          end_day=end_day,
+                                         start_time=start_time,
+                                         end_time=end_time,
                                          customer_view=customer_view)
 
     if upload_s3:
@@ -492,7 +510,10 @@ def _export_detail_csv(year_month: str, output_dir: str,
                        model: str = None,
                        flat_tier: bool = False,
                        flat_tier_since: str = None,
+                       start_day: str = None,
                        end_day: str = None,
+                       start_time: str = None,
+                       end_time: str = None,
                        customer_view: bool = False) -> str:
     """Export row-level detail as xlsx (customer_view) or zip-compressed CSV.
 
@@ -503,14 +524,20 @@ def _export_detail_csv(year_month: str, output_dir: str,
     customer_view=False:
       - Outputs .csv.zip (internal full-field format)
 
-    end_day: optional cutoff date 'YYYY-MM-DD' (inclusive).
+    start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
+    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision.
     """
+    eff_start = start_time or start_day
+    eff_end = end_time or end_day
+
     suffix = f"_user{user_id}" if user_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
-    day_suffix = f"_to{end_day.replace('-', '')}" if end_day else ""
+    from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
+    day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
     cv_suffix = "_customer" if customer_view else ""
 
-    days = queries.detail_day_list(year_month, end_day=end_day)
+    days = queries.detail_day_list(year_month, start_day=start_day, end_day=end_day,
+                                   start_time=start_time, end_time=end_time)
     sqls = [
         queries.raw_usage_detail_daily(year_month, day=d,
                                        user_id=user_id,
@@ -518,6 +545,16 @@ def _export_detail_csv(year_month: str, output_dir: str,
                                        model=model)
         for d in days
     ]
+
+    # Pre-compute unix timestamps for sub-day row filtering on boundary days
+    _start_ts = _end_ts = None
+    _start_day_str = _end_day_str = None
+    if start_time:
+        sy, sm, sd, _sh, _start_ts = queries._parse_datetime(start_time)
+        _start_day_str = f"{sy}-{sm}-{sd}"
+    if end_time:
+        ey, em, ed, _eh, _end_ts = queries._parse_datetime(end_time)
+        _end_day_str = f"{ey}-{em}-{ed}"
 
     print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
     t0 = time.time()
@@ -527,6 +564,17 @@ def _export_detail_csv(year_month: str, output_dir: str,
 
     for idx, df_day in run_queries_parallel_iter(sqls):
         days_done += 1
+        if df_day.empty:
+            continue
+
+        # Sub-day row filter: trim boundary days to exact minute
+        cur_day = days[idx]  # e.g. '15'
+        cur_day_full = f"{year_month}-{cur_day}"
+        if _start_ts is not None and cur_day_full == _start_day_str:
+            df_day = df_day[df_day["created_at"] >= _start_ts]
+        if _end_ts is not None and cur_day_full == _end_day_str:
+            df_day = df_day[df_day["created_at"] < _end_ts + 60]
+
         if df_day.empty:
             continue
 
@@ -552,12 +600,15 @@ def _export_detail_csv(year_month: str, output_dir: str,
     if customer_view:
         out_path = _write_detail_xlsx_customer(
             df_all, year_month, output_dir, user_id=user_id,
-            flat_tier=flat_tier, end_day=end_day,
-            tier_suffix=tier_suffix, day_suffix=day_suffix)
+            flat_tier=flat_tier,
+            start_day=start_time or start_day,
+            end_day=end_time or end_day,
+            tier_suffix=tier_suffix, from_suffix=from_suffix, day_suffix=day_suffix)
     else:
         out_path = _write_detail_csv_internal(
             df_all, year_month, output_dir,
-            suffix=suffix, tier_suffix=tier_suffix, day_suffix=day_suffix)
+            suffix=suffix, tier_suffix=tier_suffix,
+            from_suffix=from_suffix, day_suffix=day_suffix)
 
     size_mb = os.path.getsize(out_path) / 1024 / 1024
     print(f"[detail] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
@@ -568,11 +619,12 @@ def _export_detail_csv(year_month: str, output_dir: str,
 
 def _write_detail_csv_internal(df: pd.DataFrame, year_month: str,
                                output_dir: str, suffix: str = "",
-                               tier_suffix: str = "", day_suffix: str = "") -> str:
+                               tier_suffix: str = "", from_suffix: str = "",
+                               day_suffix: str = "") -> str:
     """Write internal full-field detail as zip-compressed CSV."""
     import io as _io
 
-    zip_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail.csv.zip"
+    zip_filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}_detail.csv.zip"
     csv_inner_name = zip_filename.replace(".zip", "")
     zip_path = os.path.join(output_dir, zip_filename)
 
@@ -612,17 +664,20 @@ _CUSTOMER_DETAIL_COLS = [
 
 def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
                                 output_dir: str, user_id: int = None,
-                                flat_tier: bool = False, end_day: str = None,
-                                tier_suffix: str = "",
+                                flat_tier: bool = False,
+                                start_day: str = None, end_day: str = None,
+                                tier_suffix: str = "", from_suffix: str = "",
                                 day_suffix: str = "") -> str:
     """Write customer-facing detail as xlsx with auto-split sheets."""
     suffix = f"_user{user_id}" if user_id else ""
-    xlsx_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail_customer.xlsx"
+    xlsx_filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}_detail_customer.xlsx"
     xlsx_path = os.path.join(output_dir, xlsx_filename)
 
     tier_tag = ""
     if flat_tier:
         tier_tag = "（统一低档价）"
+    if start_day:
+        tier_tag += f"（自 {start_day}）"
     if end_day:
         tier_tag += f"（截至 {end_day}）"
 
