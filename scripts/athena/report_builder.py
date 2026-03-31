@@ -355,18 +355,36 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     write_sheet(wb, f"API 账单 -- {year_month} (模型汇总){tier_tag}",
                 "模型汇总", m_hdrs, m_wids, m_data, m_fmts)
 
-    # ── Tab 3: 用户×模型定价明细 ──
-    df_sorted = df_full.sort_values("list_price_usd", ascending=False)
-
+    # ── Tab 3: 定价明细 ──
     if customer_view:
+        # Customer view: aggregate by (user, model) — hide channel dimension
+        df_cv = df_full.groupby(["user_id", "username", "model_name"]).agg({
+            "call_count": "sum",
+            "total_input_tokens": "sum",
+            "total_output_tokens": "sum",
+            "list_price_usd": "sum",
+            "revenue_usd": "sum",
+        }).reset_index().sort_values("list_price_usd", ascending=False)
         d_hdrs = [
             "用户 ID", "用户名", "模型名称", "调用次数",
             "输入 Tokens", "输出 Tokens",
-            f"刊例价 ({symbol})", "折扣", f"应付金额 ({symbol})",
+            f"刊例价 ({symbol})", f"应付金额 ({symbol})",
         ]
-        d_wids = [10, 16, 28, 10, 14, 14, 16, 10, 16]
-        d_fmts = [TOK, None, None, TOK, TOK, TOK, USD4, PCT, USD4]
+        d_wids = [10, 16, 28, 10, 14, 14, 16, 16]
+        d_fmts = [TOK, None, None, TOK, TOK, TOK, USD4, USD4]
+
+        d_data = []
+        for _, r in df_cv.iterrows():
+            d_data.append([
+                int(r["user_id"]), r["username"],
+                r["model_name"], int(r["call_count"]),
+                int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+                float(r["list_price_usd"]) * rate,
+                float(r["revenue_usd"]) * rate,
+            ])
     else:
+        # Internal view: keep channel dimension for cost analysis
+        df_sorted = df_full.sort_values("list_price_usd", ascending=False)
         d_hdrs = [
             "用户 ID", "用户名", "渠道 ID", "模型名称", "调用次数",
             "输入 Tokens", "输出 Tokens",
@@ -377,18 +395,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         d_wids = [10, 16, 10, 28, 10, 14, 14, 16, 10, 16, 10, 16, 14, 10]
         d_fmts = [TOK, None, TOK, None, TOK, TOK, TOK, USD4, PCT, USD4, PCT, USD4, USD4, PCT]
 
-    d_data = []
-    for _, r in df_sorted.iterrows():
-        lp = float(r["list_price_usd"]) * rate
-        rev = float(r["revenue_usd"]) * rate
-        if customer_view:
-            d_data.append([
-                int(r["user_id"]), r["username"],
-                r["model_name"], int(r["call_count"]),
-                int(r["total_input_tokens"]), int(r["total_output_tokens"]),
-                lp, float(r["revenue_discount"]), rev,
-            ])
-        else:
+        d_data = []
+        for _, r in df_sorted.iterrows():
+            lp = float(r["list_price_usd"]) * rate
+            rev = float(r["revenue_usd"]) * rate
             cost = float(r["cost_usd"]) * rate
             profit = float(r["profit_usd"]) * rate
             margin = profit / rev if rev else 0
@@ -404,19 +414,26 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     write_sheet(wb, f"API 账单 -- {year_month} (定价明细){tier_tag}",
                 "定价明细", d_hdrs, d_wids, d_data, d_fmts)
 
-    # ── Tab 3: 每日趋势 ──
-    t_hdrs = ["日期", "调用次数", "总 Tokens", "总额度", f"刊例价 ({symbol})"]
-    t_wids = [14, 12, 14, 14, 14]
-    t_fmts = [None, TOK, TOK, TOK, USD4]
+    # ── Tab 4: 每日趋势 ──
+    if customer_view:
+        t_hdrs = ["日期", "调用次数", "总 Tokens", f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 14, 14]
+        t_fmts = [None, TOK, TOK, USD4]
+    else:
+        t_hdrs = ["日期", "调用次数", "总 Tokens", "总额度", f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 14, 14, 14]
+        t_fmts = [None, TOK, TOK, TOK, USD4]
     t_data = []
     if not df_trend.empty:
         for _, r in df_trend.iterrows():
-            t_data.append([
+            row_data = [
                 f"{year_month}-{int(r['day']):02d}",
                 int(r["call_count"]), int(r["total_tokens"]),
-                int(r["total_quota"]),
-                float(r["total_usd"]) * rate,
-            ])
+            ]
+            if not customer_view:
+                row_data.append(int(r["total_quota"]))
+            row_data.append(float(r["total_usd"]) * rate)
+            t_data.append(row_data)
     write_sheet(wb, f"每日费用趋势 -- {year_month}",
                 "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
 
@@ -430,7 +447,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
                                          flat_tier=flat_tier,
                                          flat_tier_since=flat_tier_since,
-                                         end_day=end_day)
+                                         end_day=end_day,
+                                         customer_view=customer_view)
 
     if upload_s3:
         result = _upload_results(filepath, detail_path)
@@ -474,24 +492,23 @@ def _export_detail_csv(year_month: str, output_dir: str,
                        model: str = None,
                        flat_tier: bool = False,
                        flat_tier_since: str = None,
-                       end_day: str = None) -> str:
-    """Export row-level detail as a zip-compressed CSV via parallel daily queries.
+                       end_day: str = None,
+                       customer_view: bool = False) -> str:
+    """Export row-level detail as xlsx (customer_view) or zip-compressed CSV.
 
-    Output is a .csv.zip file (ZIP format) so Windows can extract it natively
-    without any third-party tools.
-
-    Streams results: each day's data is priced and appended to the in-memory
-    CSV buffer, then written into the ZIP entry at the end.
-    Peak memory ≈ full CSV text (~200-400 MB for 2M rows); safe for 4GB+ machines.
+    customer_view=True:
+      - Outputs .xlsx with auto-split sheets (≤500K rows each)
+      - Chinese column headers, UTC+8 timestamps
+      - Hides cost/profit/channel/discount columns
+    customer_view=False:
+      - Outputs .csv.zip (internal full-field format)
 
     end_day: optional cutoff date 'YYYY-MM-DD' (inclusive).
     """
     suffix = f"_user{user_id}" if user_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
     day_suffix = f"_to{end_day.replace('-', '')}" if end_day else ""
-    zip_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail.csv.zip"
-    csv_inner_name = zip_filename.replace(".zip", "")
-    zip_path = os.path.join(output_dir, zip_filename)
+    cv_suffix = "_customer" if customer_view else ""
 
     days = queries.detail_day_list(year_month, end_day=end_day)
     sqls = [
@@ -505,54 +522,147 @@ def _export_detail_csv(year_month: str, output_dir: str,
     print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
     t0 = time.time()
     total_rows = 0
-    header_written = False
     days_done = 0
+    all_chunks: list[pd.DataFrame] = []
 
-    import io as _io
-    csv_buf = _io.StringIO()
+    for idx, df_day in run_queries_parallel_iter(sqls):
+        days_done += 1
+        if df_day.empty:
+            continue
 
-    try:
-        for idx, df_day in run_queries_parallel_iter(sqls):
-            days_done += 1
-            if df_day.empty:
-                continue
-
-            df_day = _apply_detail_pricing(df_day, flat_tier=flat_tier,
-                                           flat_tier_since=flat_tier_since)
-            total_rows += len(df_day)
-
-            df_day.to_csv(csv_buf, index=False, header=(not header_written),
-                          lineterminator="\n")
-            header_written = True
-
-            elapsed = time.time() - t0
-            print(f"[detail] day {days[idx]}: +{len(df_day):,} 行 "
-                  f"({days_done}/{len(sqls)} done, "
-                  f"累计 {total_rows:,}, {elapsed:.0f}s)",
-                  file=sys.stderr)
+        df_day = _apply_detail_pricing(df_day, flat_tier=flat_tier,
+                                       flat_tier_since=flat_tier_since)
+        total_rows += len(df_day)
+        all_chunks.append(df_day)
 
         elapsed = time.time() - t0
+        print(f"[detail] day {days[idx]}: +{len(df_day):,} 行 "
+              f"({days_done}/{len(sqls)} done, "
+              f"累计 {total_rows:,}, {elapsed:.0f}s)",
+              file=sys.stderr)
 
-        if total_rows == 0:
-            print("[detail] 无数据", file=sys.stderr)
-            csv_buf.write("no data\n")
+    elapsed = time.time() - t0
 
+    if total_rows == 0:
+        print("[detail] 无数据", file=sys.stderr)
+        all_chunks = [pd.DataFrame()]
+
+    df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
+
+    if customer_view:
+        out_path = _write_detail_xlsx_customer(
+            df_all, year_month, output_dir, user_id=user_id,
+            flat_tier=flat_tier, end_day=end_day,
+            tier_suffix=tier_suffix, day_suffix=day_suffix)
+    else:
+        out_path = _write_detail_csv_internal(
+            df_all, year_month, output_dir,
+            suffix=suffix, tier_suffix=tier_suffix, day_suffix=day_suffix)
+
+    size_mb = os.path.getsize(out_path) / 1024 / 1024
+    print(f"[detail] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
+          f"耗时 {elapsed:.1f}s", file=sys.stderr)
+
+    return out_path
+
+
+def _write_detail_csv_internal(df: pd.DataFrame, year_month: str,
+                               output_dir: str, suffix: str = "",
+                               tier_suffix: str = "", day_suffix: str = "") -> str:
+    """Write internal full-field detail as zip-compressed CSV."""
+    import io as _io
+
+    zip_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail.csv.zip"
+    csv_inner_name = zip_filename.replace(".zip", "")
+    zip_path = os.path.join(output_dir, zip_filename)
+
+    csv_buf = _io.StringIO()
+    if df.empty:
+        csv_buf.write("no data\n")
+    else:
+        df.to_csv(csv_buf, index=False, lineterminator="\n")
+
+    try:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED,
                              compresslevel=6) as zf:
             zf.writestr(csv_inner_name, csv_buf.getvalue().encode("utf-8"))
-
-    except Exception:
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-        raise
     finally:
         csv_buf.close()
 
-    size_mb = os.path.getsize(zip_path) / 1024 / 1024
-    print(f"[detail] 完成: {total_rows:,} 行, {size_mb:.1f} MB (zip), "
-          f"耗时 {elapsed:.1f}s", file=sys.stderr)
-
     return zip_path
+
+
+# Column spec for customer-facing detail xlsx
+_CUSTOMER_DETAIL_COLS = [
+    # (internal_col, chinese_header, width, num_fmt_or_None)
+    ("request_id",          "记录 ID",              20, None),
+    ("created_at",          "时间 (UTC+8)",         20, None),
+    ("model_name",          "模型名称",             28, None),
+    ("token_name",          "Token 名称",           16, None),
+    ("prompt_tokens",       "输入 Tokens",          14, TOK),
+    ("completion_tokens",   "输出 Tokens",          14, TOK),
+    ("cache_hit_tokens",    "缓存命中 Tokens",      14, TOK),
+    ("cw_5m",               "缓存写入 Tokens\n(5min)", 14, TOK),
+    ("cw_1h",               "缓存写入 Tokens\n(1h)",   14, TOK),
+    ("list_price_usd",      "刊例价 ($)",           14, USD6),
+    ("revenue_discount",    "折扣",                 10, PCT),
+    ("revenue_usd",         "应付金额 ($)",         14, USD6),
+]
+
+
+def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
+                                output_dir: str, user_id: int = None,
+                                flat_tier: bool = False, end_day: str = None,
+                                tier_suffix: str = "",
+                                day_suffix: str = "") -> str:
+    """Write customer-facing detail as xlsx with auto-split sheets."""
+    suffix = f"_user{user_id}" if user_id else ""
+    xlsx_filename = f"bill_{year_month}{suffix}{tier_suffix}{day_suffix}_detail_customer.xlsx"
+    xlsx_path = os.path.join(output_dir, xlsx_filename)
+
+    tier_tag = ""
+    if flat_tier:
+        tier_tag = "（统一低档价）"
+    if end_day:
+        tier_tag += f"（截至 {end_day}）"
+
+    if df.empty:
+        wb = xlsxwriter.Workbook(xlsx_path)
+        ws = wb.add_worksheet("无数据")
+        ws.write(0, 0, "指定时间段内无数据")
+        wb.close()
+        return xlsx_path
+
+    # Convert created_at (unix timestamp) to UTC+8 readable string
+    if "created_at" in df.columns:
+        df = df.copy()
+        df["created_at"] = (
+            pd.to_datetime(df["created_at"], unit="s", utc=True)
+            .dt.tz_convert("Asia/Shanghai")
+            .dt.strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+    # Build column mapping — only include columns that exist in df
+    col_spec = [(ic, ch, w, nf) for ic, ch, w, nf in _CUSTOMER_DETAIL_COLS
+                if ic in df.columns]
+    internal_cols = [c[0] for c in col_spec]
+    headers = [c[1] for c in col_spec]
+    col_widths = [c[2] for c in col_spec]
+    num_fmts = [c[3] for c in col_spec]
+
+    df_out = df[internal_cols].copy()
+    df_out = df_out.fillna("")
+
+    user_label = f"User{user_id} " if user_id else ""
+    title_base = f"{user_label}API 账单 -- {year_month} (调用明细){tier_tag}"
+
+    data_rows = df_out.values.tolist()
+
+    wb = xlsxwriter.Workbook(xlsx_path, {"constant_memory": False})
+    write_sheet(wb, title_base, "调用明细", headers, col_widths,
+                data_rows, num_fmts)
+    wb.close()
+    return xlsx_path
 
 
 def _vectorized_discount(df: pd.DataFrame, key_col: str, model_col: str,

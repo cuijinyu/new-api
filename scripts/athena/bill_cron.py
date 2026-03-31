@@ -21,10 +21,10 @@ if sys.stdout and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8"
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-import boto3
 import schedule
 
-from athena_engine import REGION, AK, SK, RESULT_BUCKET
+from athena_engine import (RESULT_BUCKET, upload_to_s3 as _engine_upload,
+                           generate_presigned_url, REPORT_PREFIX as _ENGINE_PREFIX)
 import report_builder
 
 REPORT_BUCKET = os.getenv("REPORT_S3_BUCKET", RESULT_BUCKET)
@@ -38,21 +38,11 @@ FLAT_TIER = os.getenv("CRON_FLAT_TIER", "").lower() in ("1", "true", "yes")
 FLAT_TIER_SINCE = os.getenv("CRON_FLAT_TIER_SINCE", "").strip() or None
 
 
-def _get_s3():
-    kw = {"region_name": REGION}
-    if AK and SK:
-        kw["aws_access_key_id"] = AK
-        kw["aws_secret_access_key"] = SK
-    endpoint = os.getenv("RAW_LOG_S3_ENDPOINT", "")
-    if endpoint:
-        kw["endpoint_url"] = endpoint
-    return boto3.client("s3", **kw)
-
-
 def _upload_to_s3(local_path: str, s3_key: str):
-    s3 = _get_s3()
-    s3.upload_file(local_path, REPORT_BUCKET, s3_key)
-    print(f"  [S3] 已上传: s3://{REPORT_BUCKET}/{s3_key}")
+    _engine_upload(local_path, s3_key)
+    url = generate_presigned_url(s3_key)
+    print(f"  [S3] 已上传: s3://{RESULT_BUCKET}/{s3_key}")
+    print(f"  [S3] 下载链接（24h）: {url}")
 
 
 def _log(msg: str):

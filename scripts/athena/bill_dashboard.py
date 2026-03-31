@@ -688,8 +688,9 @@ with tab_export:
 
     exp_col7, exp_col8 = st.columns(2)
     with exp_col7:
-        exp_detail = st.checkbox("含逐条明细 (CSV.zip，Windows 可直接解压)", key="exp_detail",
-                                 help="同时导出每一条请求的明细数据（按天并行查询，大用户可能需要 5-8 分钟）")
+        exp_detail = st.checkbox("含逐条明细", key="exp_detail",
+                                 help="同时导出每一条请求的明细数据（按天并行查询，大用户可能需要 5-8 分钟）。"
+                                      "客户版本输出 .xlsx（自动分 sheet），内部版本输出 .csv.zip")
     with exp_col8:
         exp_customer_view = st.checkbox("客户版本（隐藏成本/利润）", key="exp_customer_view",
                                         help="导出可直接发给客户的版本，不含成本折扣、成本价、利润、利润率、渠道 ID 等内部数据")
@@ -737,7 +738,7 @@ with tab_export:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
             elif isinstance(result, list):
-                xlsx_path, csv_path = result
+                xlsx_path, detail_path = result
                 with open(xlsx_path, "rb") as f:
                     st.download_button(
                         label="📥 下载汇总账单 (Excel)",
@@ -745,13 +746,20 @@ with tab_export:
                         file_name=f"bill_{year_month}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
-                with open(csv_path, "rb") as f:
-                    csv_size_mb = os.path.getsize(csv_path) / 1024 / 1024
+                detail_size_mb = os.path.getsize(detail_path) / 1024 / 1024
+                detail_basename = os.path.basename(detail_path)
+                is_xlsx = detail_basename.endswith(".xlsx")
+                detail_label = (f"📥 下载逐条明细 (Excel, {detail_size_mb:.1f} MB)"
+                                if is_xlsx
+                                else f"📥 下载逐条明细 (CSV.zip, {detail_size_mb:.1f} MB)")
+                detail_mime = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                               if is_xlsx else "application/zip")
+                with open(detail_path, "rb") as f:
                     st.download_button(
-                        label=f"📥 下载逐条明细 (CSV.zip, {csv_size_mb:.1f} MB)",
+                        label=detail_label,
                         data=f.read(),
-                        file_name=os.path.basename(csv_path),
-                        mime="application/zip",
+                        file_name=detail_basename,
+                        mime=detail_mime,
                     )
                 st.success("账单 + 明细已生成，点击上方按钮下载")
             else:

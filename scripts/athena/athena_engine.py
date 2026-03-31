@@ -31,6 +31,7 @@ RESULT_LOCATION = f"s3://{RESULT_BUCKET}/{RESULT_PREFIX}/"
 
 CACHE_BUCKET = os.getenv("ATHENA_CACHE_BUCKET", RESULT_BUCKET)
 CACHE_PREFIX = os.getenv("ATHENA_CACHE_PREFIX", "athena-cache")
+REPORT_PREFIX = os.getenv("REPORT_S3_PREFIX", "billing-reports")
 
 AK = os.getenv("RAW_LOG_S3_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
 SK = os.getenv("RAW_LOG_S3_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
@@ -355,6 +356,23 @@ def run_queries_parallel(sqls: list[str], poll_interval: float = 3.0,
     Submits up to max_concurrent queries at once, polls until all complete,
     then downloads results. Total wall time ≈ slowest single query.
     """
+    dfs = []
+    for df in run_queries_parallel_iter(sqls, poll_interval, max_concurrent):
+        dfs.append(df)
+    return dfs
+
+
+def run_queries_parallel_iter(sqls: list[str], poll_interval: float = 3.0,
+                              max_concurrent: int = 20):
+    """Submit queries in parallel, yield (index, DataFrame) as each completes.
+
+    Yields tuples of (query_index, DataFrame) in completion order.
+    Downloads happen in a background thread so that the caller's processing
+    (pricing, CSV write) does not block downloads of other completed queries.
+    """
+    from collections import deque
+    from concurrent.futures import ThreadPoolExecutor
+
     client = _get_athena()
     exec_ids = []
 
@@ -368,29 +386,124 @@ def run_queries_parallel(sqls: list[str], poll_interval: float = 3.0,
             )
             exec_ids.append(resp["QueryExecutionId"])
 
-    results = [None] * len(exec_ids)
     pending = set(range(len(exec_ids)))
+    ready_queue: deque = deque()
+    download_pool = ThreadPoolExecutor(max_workers=4)
+    active_downloads = {}
 
-    while pending:
+    def _bg_download(idx, uri):
+        df = _download_s3_csv(uri)
+        return idx, df
+
+    while pending or active_downloads or ready_queue:
+        if ready_queue:
+            yield ready_queue.popleft()
+            continue
+
+        # Check for completed downloads
+        done_keys = []
+        for key, future in active_downloads.items():
+            if future.done():
+                done_keys.append(key)
+                try:
+                    ready_queue.append(future.result())
+                except Exception as e:
+                    print(f"[parallel] download {key} failed: {e}", file=sys.stderr)
+                    ready_queue.append((key, pd.DataFrame()))
+        for key in done_keys:
+            del active_downloads[key]
+
+        if ready_queue:
+            continue
+
+        if not pending:
+            time.sleep(0.1)
+            continue
+
         time.sleep(poll_interval)
         for idx in list(pending):
             resp = client.get_query_execution(QueryExecutionId=exec_ids[idx])
             qe = resp["QueryExecution"]
             state = qe["Status"]["State"]
             if state == "SUCCEEDED":
-                results[idx] = qe
                 pending.discard(idx)
+                output_uri = qe["ResultConfiguration"]["OutputLocation"]
+                active_downloads[idx] = download_pool.submit(
+                    _bg_download, idx, output_uri)
             elif state in ("FAILED", "CANCELLED"):
                 reason = qe["Status"].get("StateChangeReason", "")
                 print(f"[parallel] query {idx} {state}: {reason}", file=sys.stderr)
-                results[idx] = None
                 pending.discard(idx)
+                ready_queue.append((idx, pd.DataFrame()))
 
-    dfs = []
-    for qe in results:
-        if qe is None:
-            dfs.append(pd.DataFrame())
-        else:
-            output_uri = qe["ResultConfiguration"]["OutputLocation"]
-            dfs.append(_download_s3_csv(output_uri))
-    return dfs
+    download_pool.shutdown(wait=False)
+
+
+# ---------------------------------------------------------------------------
+# S3 report upload + presigned URL
+# ---------------------------------------------------------------------------
+
+def upload_to_s3(local_path: str, s3_key: str = None) -> str:
+    """Upload a local file to S3. Returns the S3 key used.
+
+    Default key: {REPORT_PREFIX}/{year_month}/{filename}
+    where year_month is extracted from the filename (e.g. bill_2026-03_...).
+    """
+    filename = os.path.basename(local_path)
+    if s3_key is None:
+        ym = _extract_year_month(filename)
+        s3_key = f"{REPORT_PREFIX}/{ym}/{filename}" if ym else f"{REPORT_PREFIX}/{filename}"
+
+    s3 = _get_s3()
+    content_type = "application/gzip" if filename.endswith(".gz") else \
+                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
+                   if filename.endswith(".xlsx") else "application/octet-stream"
+
+    s3.upload_file(local_path, RESULT_BUCKET, s3_key,
+                   ExtraArgs={"ContentType": content_type})
+    return s3_key
+
+
+_s3_presign_client = None
+
+
+def _get_s3_presign():
+    """S3 client for presigned URL generation (SigV4 + virtual-hosted style)."""
+    global _s3_presign_client
+    if _s3_presign_client is None:
+        from botocore.config import Config
+        kw = {"region_name": REGION,
+              "config": Config(signature_version="s3v4",
+                               s3={"addressing_style": "virtual"})}
+        if AK and SK:
+            kw["aws_access_key_id"] = AK
+            kw["aws_secret_access_key"] = SK
+        _s3_presign_client = boto3.client("s3", **kw)
+    return _s3_presign_client
+
+
+def generate_presigned_url(s3_key: str, expires_in: int = 86400) -> str:
+    """Generate a presigned download URL for an S3 object.
+
+    Uses SigV4 with regional endpoint for cross-region compatibility.
+    Default expiry: 24 hours (86400 seconds).
+    """
+    s3 = _get_s3_presign()
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": RESULT_BUCKET, "Key": s3_key},
+        ExpiresIn=expires_in)
+
+
+def upload_and_sign(local_path: str, s3_key: str = None,
+                    expires_in: int = 86400) -> dict:
+    """Upload file to S3 and return dict with key + presigned URL."""
+    key = upload_to_s3(local_path, s3_key)
+    url = generate_presigned_url(key, expires_in)
+    return {"s3_key": key, "url": url}
+
+
+def _extract_year_month(filename: str) -> str | None:
+    """Extract YYYY-MM from a filename like bill_2026-03_user89.xlsx."""
+    m = re.search(r"(\d{4}-\d{2})", filename)
+    return m.group(1) if m else None
