@@ -248,6 +248,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	task.Quota = quota
 	task.Data = taskData
 	task.Action = info.Action
+	task.Properties.TokenId = info.TokenId
+	task.Properties.TokenName = c.GetString("token_name")
+	task.Properties.RequestId = c.GetString(common.RequestIdKey)
+	task.Properties.ClientIP = c.ClientIP()
 	err = task.Insert()
 	if err != nil {
 		taskErr = service.TaskErrorWrapper(err, "insert_task_failed", http.StatusInternalServerError)

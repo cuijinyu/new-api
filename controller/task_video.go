@@ -172,6 +172,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 				}
 			}
 
+			tokenId := task.Properties.TokenId
+			tokenName := task.Properties.TokenName
+			requestId := task.Properties.RequestId
+			clientIP := task.Properties.ClientIP
+
 			// 获取模型价格和倍率（同时支持 ModelPrice 和 ModelRatio 两种计费模式）
 			value, isPrice, found := ratio_setting.GetModelRatioOrPrice(modelName)
 			if found && value > 0 {
@@ -231,15 +236,15 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 
 					if isPrice {
 						calcProcess = fmt.Sprintf(
-							"计费说明（价格模式）：实际额度 = 模型价格(%.4f) × 实际时长(%.2fs) × 单价系数(%.2f) × 分组倍率(%.2f) × QuotaPerUnit(%.0f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							"计费说明（价格模式）：实际额度 = 模型价格(%.4f) × 实际时长(%.2fs) × 单价系数(%.2f) × 分组倍率(%.2f) × QuotaPerUnit(%.0f) = %s（Quota: %d）；预扣额度 = %s（Quota: %d）；差额(实际-预扣) = %s（Quota: %d）",
 							value, actualUsage, dynamicScale, finalGroupRatio, common.QuotaPerUnit,
-							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+							logger.LogQuota(actualQuota), actualQuota, logger.LogQuota(preConsumedQuota), preConsumedQuota, logger.LogQuota(quotaDelta), quotaDelta,
 						)
 					} else {
 						calcProcess = fmt.Sprintf(
-							"计费说明（倍率模式）：实际额度 = 实际时长(%.2f) × 单价系数(%.2f) × 模型倍率(%.4f) × 分组倍率(%.2f) = %s；预扣额度 = %s；差额(实际-预扣) = %s（原始值: %d）",
+							"计费说明（倍率模式）：实际额度 = 实际时长(%.2f) × 单价系数(%.2f) × 模型倍率(%.4f) × 分组倍率(%.2f) = %s（Quota: %d）；预扣额度 = %s（Quota: %d）；差额(实际-预扣) = %s（Quota: %d）",
 							actualUsage, dynamicScale, value, finalGroupRatio,
-							logger.LogQuota(actualQuota), logger.LogQuota(preConsumedQuota), logger.LogQuota(quotaDelta), quotaDelta,
+							logger.LogQuota(actualQuota), actualQuota, logger.LogQuota(preConsumedQuota), preConsumedQuota, logger.LogQuota(quotaDelta), quotaDelta,
 						)
 					}
 
@@ -256,11 +261,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 							model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
 							task.Quota = actualQuota
 							model.RecordConsumeLogNoContext(task.UserId, model.RecordConsumeLogParams{
-								ChannelId: task.ChannelId,
-								ModelName: modelName,
-								Quota:     quotaDelta,
-								Content:   "视频任务成功补扣费: " + logDetail,
-								Group:     task.Group,
+								ChannelId:      task.ChannelId,
+								ModelName:      modelName,
+								TokenName:      tokenName,
+								Quota:          quotaDelta,
+								Content:        "视频任务成功补扣费: " + logDetail,
+								TokenId:        tokenId,
+								RequestId:      requestId,
+								ClientIP:       clientIP,
+								UseTimeSeconds: int(actualUsage),
+								Group:          task.Group,
 								Other: map[string]interface{}{
 									"task_id":        task.TaskID,
 									"action":         task.Action,
@@ -268,6 +278,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 									"unit_scale":     dynamicScale,
 									"group_ratio":    finalGroupRatio,
 									"price_or_ratio": value,
+									"request_id":     requestId,
 								},
 							})
 						}
@@ -279,11 +290,22 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 							model.UpdateChannelUsedQuota(task.ChannelId, -refundQuota)
 							task.Quota = actualQuota
 							model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
-								ChannelId: task.ChannelId,
-								ModelName: modelName,
-								Quota:     refundQuota,
-								Content:   "视频任务成功退还多扣费用: " + logDetail,
-								Group:     task.Group,
+								ChannelId:      task.ChannelId,
+								ModelName:      modelName,
+								TokenName:      tokenName,
+								Quota:          refundQuota,
+								Content:        "视频任务成功退还多扣费用: " + logDetail,
+								TokenId:        tokenId,
+								RequestId:      requestId,
+								ClientIP:       clientIP,
+								UseTimeSeconds: int(actualUsage),
+								Group:          task.Group,
+								Other: map[string]interface{}{
+									"task_id":      task.TaskID,
+									"action":       task.Action,
+									"actual_usage": actualUsage,
+									"request_id":   requestId,
+								},
 							})
 						}
 					} else {
@@ -351,9 +373,18 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
 			ChannelId: task.ChannelId,
 			ModelName: modelName,
+			TokenName: task.Properties.TokenName,
 			Quota:     quota,
 			Content:   logContent,
+			TokenId:   task.Properties.TokenId,
+			RequestId: task.Properties.RequestId,
+			ClientIP:  task.Properties.ClientIP,
 			Group:     task.Group,
+			Other: map[string]interface{}{
+				"task_id":    task.TaskID,
+				"action":     task.Action,
+				"request_id": task.Properties.RequestId,
+			},
 		})
 	}
 

@@ -76,6 +76,10 @@ type Properties struct {
 	Input             string `json:"input"`
 	UpstreamModelName string `json:"upstream_model_name,omitempty"`
 	OriginModelName   string `json:"origin_model_name,omitempty"`
+	TokenId           int    `json:"token_id,omitempty"`
+	TokenName         string `json:"token_name,omitempty"`
+	RequestId         string `json:"request_id,omitempty"`
+	ClientIP          string `json:"client_ip,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {

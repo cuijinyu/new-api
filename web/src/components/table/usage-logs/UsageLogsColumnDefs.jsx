@@ -401,8 +401,11 @@ export const getLogsColumns = ({
       title: t('用时/首字'),
       dataIndex: 'use_time',
       render: (text, record, index) => {
-        if (!(record.type === 2 || record.type === 5)) {
+        if (!(record.type === 2 || record.type === 5 || record.type === 6)) {
           return <></>;
+        }
+        if (record.type === 6) {
+          return <>{parseInt(text || 0) > 0 ? renderUseTime(text, t) : '-'}</>;
         }
         if (record.is_stream) {
           let other = getLogOther(record.other);
@@ -483,7 +486,7 @@ export const getLogsColumns = ({
       ),
       dataIndex: 'ip',
       render: (text, record, index) => {
-        return (record.type === 2 || record.type === 5) && text ? (
+        return (record.type === 2 || record.type === 5 || record.type === 6) && text ? (
           <Tooltip content={text}>
             <span>
               <Tag
@@ -507,7 +510,7 @@ export const getLogsColumns = ({
       title: t('重试'),
       dataIndex: 'retry',
       render: (text, record, index) => {
-        if (!(record.type === 2 || record.type === 5)) {
+        if (!(record.type === 2 || record.type === 5 || record.type === 6)) {
           return <></>;
         }
         let content = t('渠道') + `：${record.channel}`;

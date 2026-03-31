@@ -259,6 +259,8 @@ type RecordConsumeLogParams struct {
 	Quota            int                    `json:"quota"`
 	Content          string                 `json:"content"`
 	TokenId          int                    `json:"token_id"`
+	RequestId        string                 `json:"request_id"`
+	ClientIP         string                 `json:"client_ip"`
 	UseTimeSeconds   int                    `json:"use_time_seconds"`
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
@@ -266,12 +268,19 @@ type RecordConsumeLogParams struct {
 }
 
 type RecordRefundLogParams struct {
-	ChannelId int    `json:"channel_id"`
-	ModelName string `json:"model_name"`
-	Quota     int    `json:"quota"`
-	Content   string `json:"content"`
-	TokenId   int    `json:"token_id"`
-	Group     string `json:"group"`
+	ChannelId        int                    `json:"channel_id"`
+	ModelName        string                 `json:"model_name"`
+	TokenName        string                 `json:"token_name"`
+	Quota            int                    `json:"quota"`
+	Content          string                 `json:"content"`
+	TokenId          int                    `json:"token_id"`
+	RequestId        string                 `json:"request_id"`
+	ClientIP         string                 `json:"client_ip"`
+	UseTimeSeconds   int                    `json:"use_time_seconds"`
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CompletionTokens int                    `json:"completion_tokens"`
+	Group            string                 `json:"group"`
+	Other            map[string]interface{} `json:"other"`
 }
 
 func RecordRefundLog(userId int, params RecordRefundLogParams) {
@@ -280,17 +289,30 @@ func RecordRefundLog(userId int, params RecordRefundLogParams) {
 	if refundQuota > 0 {
 		refundQuota = -refundQuota
 	}
+	requestId := params.RequestId
+	if requestId == "" && params.Other != nil {
+		if reqID, ok := params.Other["request_id"].(string); ok {
+			requestId = reqID
+		}
+	}
 	log := &Log{
-		UserId:    userId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      LogTypeRefund,
-		Content:   params.Content,
-		ModelName: params.ModelName,
-		Quota:     refundQuota,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
+		UserId:           userId,
+		Username:         username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             LogTypeRefund,
+		Content:          params.Content,
+		ModelName:        params.ModelName,
+		TokenName:        params.TokenName,
+		Quota:            refundQuota,
+		ChannelId:        params.ChannelId,
+		TokenId:          params.TokenId,
+		RequestId:        requestId,
+		Ip:               params.ClientIP,
+		UseTime:          params.UseTimeSeconds,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		Group:            params.Group,
+		Other:            common.MapToJsonStr(params.Other),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -364,6 +386,12 @@ func RecordConsumeLogNoContext(userId int, params RecordConsumeLogParams) {
 	}
 	username, _ := GetUsernameById(userId, false)
 	otherStr := common.MapToJsonStr(params.Other)
+	requestId := params.RequestId
+	if requestId == "" && params.Other != nil {
+		if reqID, ok := params.Other["request_id"].(string); ok {
+			requestId = reqID
+		}
+	}
 	log := &Log{
 		UserId:           userId,
 		Username:         username,
@@ -380,8 +408,9 @@ func RecordConsumeLogNoContext(userId int, params RecordConsumeLogParams) {
 		UseTime:          params.UseTimeSeconds,
 		IsStream:         params.IsStream,
 		Group:            params.Group,
-		Ip:               "",
+		Ip:               params.ClientIP,
 		Other:            otherStr,
+		RequestId:        requestId,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
