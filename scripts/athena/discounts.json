@@ -7,9 +7,9 @@
       "*": 1.0
     },
     "by_channel": {
-      "25": { "*": 0.41, "_name": "MateCloud-Claude主力" },
-      "54": { "*": 0.41, "_name": "MateCloud-Claude备用" },
-      "24": { "*": 0.41, "_name": "MateCloud-Claude-3" },
+      "25": { "*": 0.35, "_name": "MateCloud-Claude主力" },
+      "54": { "*": 0.35, "_name": "MateCloud-Claude备用" },
+      "24": { "*": 0.35, "_name": "MateCloud-Claude-3" },
       "26": { "*": 1.0,  "_name": "Bedrock" },
       "39": { "*": 1.0,  "_name": "OpenAI直连" },
       "57": { "*": 1.0,  "_name": "Gemini" },

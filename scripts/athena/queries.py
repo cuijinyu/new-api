@@ -157,6 +157,7 @@ def _build_time_where(year: str, month: str, year_month: str,
 
 
 def monthly_bill_by_user(year_month: str, user_id: int = None,
+                         channel_id: int = None,
                          start_day: str = None, end_day: str = None,
                          start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -166,6 +167,8 @@ def monthly_bill_by_user(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
     return f"""
 SELECT
     user_id,
@@ -184,6 +187,7 @@ ORDER BY total_usd DESC
 
 
 def monthly_bill_by_user_model(year_month: str, user_id: int = None,
+                               channel_id: int = None,
                                start_day: str = None, end_day: str = None,
                                start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -193,6 +197,8 @@ def monthly_bill_by_user_model(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
     return f"""
 SELECT
     user_id,
@@ -211,6 +217,7 @@ ORDER BY user_id, total_usd DESC
 
 
 def monthly_bill_full(year_month: str, user_id: int = None,
+                      channel_id: int = None,
                       start_day: str = None, end_day: str = None,
                       start_time: str = None, end_time: str = None) -> str:
     """Full billing detail with cache token breakdown from other JSON.
@@ -229,6 +236,8 @@ def monthly_bill_full(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
     return f"""
 SELECT
     user_id,
@@ -260,6 +269,7 @@ ORDER BY user_id, total_usd DESC
 
 
 def daily_trend(year_month: str, user_id: int = None,
+                channel_id: int = None,
                 start_day: str = None, end_day: str = None,
                 start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -269,6 +279,8 @@ def daily_trend(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
     return f"""
 SELECT
     day,
@@ -408,6 +420,108 @@ SELECT
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 ORDER BY created_at
+"""
+
+
+# ---------------------------------------------------------------------------
+# A1b. Row-level query by created_at range (for vendor crosscheck)
+# ---------------------------------------------------------------------------
+
+def usage_by_created_at_range(ts_min: int, ts_max: int,
+                              channel_id: int = None,
+                              user_id: int = None) -> str:
+    """Row-level usage_logs filtered by created_at unix timestamp range.
+
+    Derives partition filters from timestamps to enable partition pruning.
+    Returns per-request data suitable for request_id-level crosscheck.
+    """
+    from datetime import datetime, timezone
+
+    dt_min = datetime.fromtimestamp(ts_min, tz=timezone.utc)
+    dt_max = datetime.fromtimestamp(ts_max, tz=timezone.utc)
+
+    # Build partition filter covering all months/days in range
+    if dt_min.year == dt_max.year and dt_min.month == dt_max.month:
+        where = (f"year = '{dt_min.year}' AND month = '{dt_min.month:02d}' "
+                 f"AND day >= '{dt_min.day:02d}' AND day <= '{dt_max.day:02d}'")
+    elif dt_min.year == dt_max.year:
+        where = (f"year = '{dt_min.year}' AND "
+                 f"((month = '{dt_min.month:02d}' AND day >= '{dt_min.day:02d}') OR "
+                 f"(month > '{dt_min.month:02d}' AND month < '{dt_max.month:02d}') OR "
+                 f"(month = '{dt_max.month:02d}' AND day <= '{dt_max.day:02d}'))")
+    else:
+        where = (f"year >= '{dt_min.year}' AND year <= '{dt_max.year}'")
+
+    where += f" AND created_at >= {int(ts_min)} AND created_at < {int(ts_max)}"
+
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+
+    return f"""
+SELECT
+    request_id,
+    created_at,
+    user_id,
+    username,
+    channel_id,
+    model_name,
+    token_name,
+    prompt_tokens,
+    completion_tokens,
+    quota,
+    ROUND(quota / 500000.0, 6) AS billed_usd,
+    use_time_seconds,
+    is_stream
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+ORDER BY created_at
+"""
+
+
+def usage_summary_by_created_at_range(ts_min: int, ts_max: int,
+                                      channel_id: int = None,
+                                      user_id: int = None) -> str:
+    """Aggregated usage by model for a created_at timestamp range.
+
+    Used for model-level crosscheck against vendor bills.
+    """
+    from datetime import datetime, timezone
+
+    dt_min = datetime.fromtimestamp(ts_min, tz=timezone.utc)
+    dt_max = datetime.fromtimestamp(ts_max, tz=timezone.utc)
+
+    if dt_min.year == dt_max.year and dt_min.month == dt_max.month:
+        where = (f"year = '{dt_min.year}' AND month = '{dt_min.month:02d}' "
+                 f"AND day >= '{dt_min.day:02d}' AND day <= '{dt_max.day:02d}'")
+    elif dt_min.year == dt_max.year:
+        where = (f"year = '{dt_min.year}' AND "
+                 f"((month = '{dt_min.month:02d}' AND day >= '{dt_min.day:02d}') OR "
+                 f"(month > '{dt_min.month:02d}' AND month < '{dt_max.month:02d}') OR "
+                 f"(month = '{dt_max.month:02d}' AND day <= '{dt_max.day:02d}'))")
+    else:
+        where = (f"year >= '{dt_min.year}' AND year <= '{dt_max.year}'")
+
+    where += f" AND created_at >= {int(ts_min)} AND created_at < {int(ts_max)}"
+
+    if channel_id is not None:
+        where += f" AND channel_id = {int(channel_id)}"
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+
+    return f"""
+SELECT
+    model_name,
+    COUNT(*)                                AS call_count,
+    SUM(prompt_tokens)                      AS total_input_tokens,
+    SUM(completion_tokens)                  AS total_output_tokens,
+    SUM(quota)                              AS total_quota,
+    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY model_name
+ORDER BY total_usd DESC
 """
 
 

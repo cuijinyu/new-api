@@ -313,7 +313,7 @@ PRICING = {
         {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
         {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
     ],
-    "claude-haiku-4-5-20251001":  {"ip": 1,  "op": 5,  "chp": 0.1, "cwp": 1.25,  "cwp_1h": 1.25},
+    "claude-haiku-4-5-20251001":  {"ip": 0.8, "op": 4,  "chp": 0.08, "cwp": 1.0,  "cwp_1h": 1.0},
     "claude-3-7-sonnet-20250219": {"ip": 3,  "op": 15, "chp": 0.3, "cwp": 3.75,  "cwp_1h": 3.75},
     "claude-opus-4-1-20250805":   {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
     "claude-opus-4-20250514":     {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
@@ -599,3 +599,113 @@ def cross_check(our_data: pd.DataFrame, vendor_bill: pd.DataFrame,
         merged["diff_pct"] = (merged["diff"] / merged["vendor_amount"].replace(0, float("nan")) * 100).round(2)
 
     return merged.sort_values("vendor_amount", ascending=False)
+
+
+# ---------------------------------------------------------------------------
+# Row-level cross-check (request_id matching)
+# ---------------------------------------------------------------------------
+
+def cross_check_row_level(our_df: pd.DataFrame,
+                          vendor_df: pd.DataFrame) -> dict:
+    """Cross-check at the request_id level between our data and vendor data.
+
+    Both DataFrames must have: request_id, model_name, quota.
+    vendor_df should also have vendor_usd (= quota / 500000).
+
+    Returns a dict with:
+      - summary: model-level aggregated comparison
+      - only_ours: requests in our system but not in vendor bill
+      - only_vendor: requests in vendor bill but not in our system
+      - matched: matched requests with diff analysis
+      - stats: overall statistics
+    """
+    ours = our_df.copy()
+    vendor = vendor_df.copy()
+
+    # Normalize
+    if "billed_usd" not in ours.columns and "quota" in ours.columns:
+        ours["billed_usd"] = ours["quota"].astype(float) / QUOTA_TO_USD
+    if "vendor_usd" not in vendor.columns and "quota" in vendor.columns:
+        vendor["vendor_usd"] = vendor["quota"].astype(float) / QUOTA_TO_USD
+
+    our_ids = set(ours["request_id"].astype(str))
+    vendor_ids = set(vendor["request_id"].astype(str))
+
+    common_ids = our_ids & vendor_ids
+    only_our_ids = our_ids - vendor_ids
+    only_vendor_ids = vendor_ids - our_ids
+
+    # Matched records — compare quota
+    ours_key = ours.set_index(ours["request_id"].astype(str))
+    vendor_key = vendor.set_index(vendor["request_id"].astype(str))
+
+    matched_rows = []
+    for rid in common_ids:
+        our_row = ours_key.loc[rid]
+        v_row = vendor_key.loc[rid]
+        # Handle potential duplicates — take first
+        if isinstance(our_row, pd.DataFrame):
+            our_row = our_row.iloc[0]
+        if isinstance(v_row, pd.DataFrame):
+            v_row = v_row.iloc[0]
+
+        our_q = float(our_row.get("quota", 0))
+        v_q = float(v_row.get("quota", 0))
+        matched_rows.append({
+            "request_id": rid,
+            "model_name": str(our_row.get("model_name", "")),
+            "our_quota": our_q,
+            "vendor_quota": v_q,
+            "quota_diff": our_q - v_q,
+            "our_usd": our_q / QUOTA_TO_USD,
+            "vendor_usd": v_q / QUOTA_TO_USD,
+            "usd_diff": (our_q - v_q) / QUOTA_TO_USD,
+        })
+
+    matched_df = pd.DataFrame(matched_rows) if matched_rows else pd.DataFrame(
+        columns=["request_id", "model_name", "our_quota", "vendor_quota",
+                 "quota_diff", "our_usd", "vendor_usd", "usd_diff"])
+
+    only_ours_df = ours[ours["request_id"].astype(str).isin(only_our_ids)].copy()
+    only_vendor_df = vendor[vendor["request_id"].astype(str).isin(only_vendor_ids)].copy()
+
+    # Model-level summary
+    our_model_agg = ours.groupby("model_name").agg(
+        our_count=("request_id", "count"),
+        our_usd=("billed_usd", "sum"),
+    ).reset_index()
+    vendor_model_agg = vendor.groupby("model_name").agg(
+        vendor_count=("request_id", "count"),
+        vendor_usd=("vendor_usd", "sum"),
+    ).reset_index()
+    summary = our_model_agg.merge(vendor_model_agg, on="model_name", how="outer").fillna(0)
+    summary["count_diff"] = summary["our_count"].astype(int) - summary["vendor_count"].astype(int)
+    summary["usd_diff"] = summary["our_usd"] - summary["vendor_usd"]
+    summary["diff_pct"] = (summary["usd_diff"] / summary["vendor_usd"].replace(0, float("nan")) * 100).round(2)
+    summary = summary.sort_values("vendor_usd", ascending=False)
+
+    # Quota mismatch stats
+    mismatched = matched_df[matched_df["quota_diff"].abs() > 0]
+
+    stats = {
+        "total_our_records": len(ours),
+        "total_vendor_records": len(vendor),
+        "matched_records": len(common_ids),
+        "only_ours_records": len(only_our_ids),
+        "only_vendor_records": len(only_vendor_ids),
+        "quota_mismatched": len(mismatched),
+        "our_total_usd": float(ours["billed_usd"].sum()),
+        "vendor_total_usd": float(vendor["vendor_usd"].sum()),
+        "matched_our_usd": float(matched_df["our_usd"].sum()) if not matched_df.empty else 0,
+        "matched_vendor_usd": float(matched_df["vendor_usd"].sum()) if not matched_df.empty else 0,
+        "only_ours_usd": float(only_ours_df["billed_usd"].sum()) if not only_ours_df.empty else 0,
+        "only_vendor_usd": float(only_vendor_df["vendor_usd"].sum()) if not only_vendor_df.empty else 0,
+    }
+
+    return {
+        "summary": summary,
+        "matched": matched_df,
+        "only_ours": only_ours_df,
+        "only_vendor": only_vendor_df,
+        "stats": stats,
+    }

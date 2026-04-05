@@ -5,6 +5,7 @@ EZModel 账单 CLI 工具
 用法:
     python bill_cli.py bill --month 2026-03 -o bills/
     python bill_cli.py bill --month 2026-03 --user-id 89 -o bills/
+    python bill_cli.py bill --month 2026-03 --channel-id 25 -o bills/
     python bill_cli.py daily --date 2026-03-29 -o reports/
     python bill_cli.py anomaly --month 2026-03 -o reports/
     python bill_cli.py ranking --month 2026-03
@@ -79,6 +80,7 @@ def cmd_bill(args):
     result = report_builder.generate_monthly_bill(
         month, output_dir,
         user_id=args.user_id,
+        channel_id=args.channel_id,
         currency=args.currency,
         exchange_rate=args.exchange_rate,
         flat_tier=flat_tier,
@@ -161,7 +163,9 @@ def cmd_kpi(args):
 
 def cmd_profit(args):
     month = args.month or _last_month()
-    df = run_query_cached(queries.monthly_bill_full(month, user_id=args.user_id),
+    channel_id = getattr(args, "channel_id", None)
+    df = run_query_cached(queries.monthly_bill_full(month, user_id=args.user_id,
+                                                    channel_id=channel_id),
                           no_cache=args.no_cache)
     if df.empty:
         print("  (无数据)")
@@ -275,20 +279,30 @@ def cmd_import_bill(args):
 
 def cmd_crosscheck(args):
     output_dir = args.output or "."
-    mapping = None
-    if args.model_col or args.amount_col:
-        mapping = {}
-        if args.model_col:
-            mapping["model"] = args.model_col
-        if args.amount_col:
-            mapping["amount"] = args.amount_col
 
-    month = args.month or _last_month()
-    path = report_builder.generate_crosscheck_report(
-        month, args.vendor, output_dir,
-        channel_id=args.channel_id,
-        column_mapping=mapping,
-        no_cache=args.no_cache)
+    vendor_files = args.vendor
+    # Auto-detect row-level format
+    if args.row_level or cost_import.is_row_level_bill(vendor_files[0]):
+        print(f"  检测到逐条明细格式，使用 request_id 级别对账")
+        path = report_builder.generate_row_level_crosscheck_report(
+            vendor_files, output_dir,
+            channel_id=args.channel_id,
+            no_cache=args.no_cache)
+    else:
+        mapping = None
+        if args.model_col or args.amount_col:
+            mapping = {}
+            if args.model_col:
+                mapping["model"] = args.model_col
+            if args.amount_col:
+                mapping["amount"] = args.amount_col
+
+        month = args.month or _last_month()
+        path = report_builder.generate_crosscheck_report(
+            month, vendor_files[0], output_dir,
+            channel_id=args.channel_id,
+            column_mapping=mapping,
+            no_cache=args.no_cache)
     print(f"\n  对账报告已生成: {path}")
 
 
@@ -325,6 +339,7 @@ def build_parser():
     p_bill = sub.add_parser("bill", parents=[common], help="生成月度账单 Excel")
     p_bill.add_argument("--month", help="YYYY-MM (默认上月)")
     p_bill.add_argument("--user-id", type=int, help="指定用户 ID")
+    p_bill.add_argument("--channel-id", type=int, help="指定上游渠道 ID（只出该渠道的账单）")
     p_bill.add_argument("--currency", default="USD", choices=["USD", "CNY"])
     p_bill.add_argument("--exchange-rate", type=float, default=7.3, help="CNY 汇率")
     p_bill.add_argument("--flat-tier", action="store_true",
@@ -375,6 +390,7 @@ def build_parser():
     p_profit = sub.add_parser("profit", parents=[common], help="利润分析（四层价格）")
     p_profit.add_argument("--month", help="YYYY-MM")
     p_profit.add_argument("--user-id", type=int, help="指定用户 ID")
+    p_profit.add_argument("--channel-id", type=int, help="指定上游渠道 ID")
     p_profit.add_argument("--detail", action="store_true", help="显示用户明细")
     p_profit.add_argument("-o", "--output", help="导出完整明细 xlsx")
 
@@ -419,11 +435,14 @@ def build_parser():
     # crosscheck
     p_cross = sub.add_parser("crosscheck", parents=[common],
                              help="与供应商账单交叉对账")
-    p_cross.add_argument("--month", help="YYYY-MM (默认上月)")
-    p_cross.add_argument("--vendor", required=True, help="供应商账单文件路径")
+    p_cross.add_argument("--month", help="YYYY-MM (默认上月，汇总模式使用)")
+    p_cross.add_argument("--vendor", required=True, nargs="+",
+                         help="供应商账单文件路径（支持多个文件）")
     p_cross.add_argument("--channel-id", type=int, help="限定渠道 ID")
-    p_cross.add_argument("--model-col", help="模型列名")
-    p_cross.add_argument("--amount-col", help="金额列名")
+    p_cross.add_argument("--row-level", action="store_true",
+                         help="强制使用逐条 request_id 对账模式（自动检测时可省略）")
+    p_cross.add_argument("--model-col", help="模型列名（汇总模式）")
+    p_cross.add_argument("--amount-col", help="金额列名（汇总模式）")
     p_cross.add_argument("-o", "--output", default=".", help="输出目录")
 
     # query

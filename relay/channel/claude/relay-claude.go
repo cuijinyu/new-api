@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
@@ -355,7 +356,8 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
 				for _, mediaMessage := range message.ParseContent() {
 					claudeMediaMessage := dto.ClaudeMediaMessage{
-						Type: mediaMessage.Type,
+						Type:         mediaMessage.Type,
+						CacheControl: mediaMessage.CacheControl,
 					}
 					if mediaMessage.Type == "text" {
 						claudeMediaMessage.Text = common.GetPointer[string](mediaMessage.Text)
@@ -415,6 +417,53 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 				claudeMessage.Content = claudeMediaMessages
 			}
 			claudeMessages = append(claudeMessages, claudeMessage)
+		}
+	}
+
+	// 透传 OpenAI user 字段到 Claude metadata.user_id，用于 Anthropic 侧的路由粘滞
+	if textRequest.User != "" && claudeRequest.Metadata == nil {
+		claudeRequest.Metadata, _ = json.Marshal(dto.ClaudeMetadata{
+			UserId: textRequest.User,
+		})
+	}
+
+	// 自动缓存：在最后一个 system block 上注入 cache_control（block 级别，兼容所有上游代理）
+	autoCache := model_setting.GetClaudeSettings().IsAutoCacheEnabled()
+	if autoCache {
+		hasExplicitCache := false
+		for _, msg := range systemMessages {
+			if msg.CacheControl != nil {
+				hasExplicitCache = true
+				break
+			}
+		}
+		if !hasExplicitCache {
+			for i := range claudeMessages {
+				if content, ok := claudeMessages[i].Content.([]dto.ClaudeMediaMessage); ok {
+					for _, block := range content {
+						if block.CacheControl != nil {
+							hasExplicitCache = true
+							break
+						}
+					}
+				}
+				if hasExplicitCache {
+					break
+				}
+			}
+		}
+		if !hasExplicitCache && len(systemMessages) > 0 {
+			systemMessages[len(systemMessages)-1].CacheControl = []byte(`{"type":"ephemeral"}`)
+		}
+
+		// autoCache fallback：客户端未传 user 时，用 token id 作为 metadata.user_id
+		if claudeRequest.Metadata == nil {
+			tokenId := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
+			if tokenId > 0 {
+				claudeRequest.Metadata, _ = json.Marshal(dto.ClaudeMetadata{
+					UserId: fmt.Sprintf("token-%d", tokenId),
+				})
+			}
 		}
 	}
 

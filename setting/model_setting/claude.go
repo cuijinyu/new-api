@@ -18,6 +18,7 @@ type ClaudeSettings struct {
 	DefaultMaxTokens                      map[string]int                 `json:"default_max_tokens"`
 	ThinkingAdapterEnabled                bool                           `json:"thinking_adapter_enabled"`
 	ThinkingAdapterBudgetTokensPercentage float64                        `json:"thinking_adapter_budget_tokens_percentage"`
+	AutoCacheEnabled                      *bool                          `json:"auto_cache_enabled,omitempty"`
 }
 
 // 默认配置
@@ -72,4 +73,11 @@ func (c *ClaudeSettings) GetDefaultMaxTokens(model string) int {
 		return maxTokens
 	}
 	return c.DefaultMaxTokens["default"]
+}
+
+func (c *ClaudeSettings) IsAutoCacheEnabled() bool {
+	if c.AutoCacheEnabled == nil {
+		return true
+	}
+	return *c.AutoCacheEnabled
 }

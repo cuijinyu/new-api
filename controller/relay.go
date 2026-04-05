@@ -85,6 +85,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+
+			// Mask Bedrock "Operation not allowed" as 503 overloaded before
+			// sending the response, so callers treat it as transient and retry
+			// instead of banning our channel.
+			if strings.Contains(newAPIError.Error(), "Operation not allowed") {
+				newAPIError = types.NewOpenAIError(
+					fmt.Errorf("system overloaded"),
+					types.ErrorCodeBadResponseStatusCode,
+					http.StatusServiceUnavailable,
+				)
+			}
+
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -273,6 +285,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return true
 	}
 	if openaiErr.StatusCode == http.StatusBadRequest {
+		if isChannelSideBadRequest(openaiErr) {
+			return true
+		}
 		return false
 	}
 	if openaiErr.StatusCode == 408 {
@@ -283,6 +298,24 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return true
+}
+
+// isChannelSideBadRequest identifies 400 errors caused by channel-side
+// misconfiguration or transient upstream issues (not client errors),
+// so the request can be retried on a different channel.
+var channelSideBadRequestPatterns = []string{
+	"the provided model identifier is invalid",
+	"invalid character '<' looking for beginning of value",
+}
+
+func isChannelSideBadRequest(err *types.NewAPIError) bool {
+	msg := strings.ToLower(err.Error())
+	for _, pattern := range channelSideBadRequestPatterns {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

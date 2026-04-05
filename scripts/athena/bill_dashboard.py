@@ -660,6 +660,12 @@ with tab_export:
         exp_user_id = st.number_input("用户 ID（留空=全平台）", min_value=0,
                                       value=0, step=1)
     with exp_col2:
+        exp_channel_id = st.number_input("渠道 ID（留空=全渠道）", min_value=0,
+                                         value=0, step=1,
+                                         help="指定上游渠道 ID，只出该渠道的账单")
+
+    exp_col2b, exp_col2c = st.columns(2)
+    with exp_col2b:
         exp_currency = st.selectbox("币种", ["USD", "CNY"])
 
     exp_col3, exp_col4 = st.columns(2)
@@ -758,12 +764,14 @@ with tab_export:
         _exp_since = exp_flat_since.strip() or None
         with tempfile.TemporaryDirectory() as tmpdir:
             uid = exp_user_id if exp_user_id > 0 else None
+            chid = exp_channel_id if exp_channel_id > 0 else None
             spinner_msg = "正在生成账单..."
             if exp_detail:
                 spinner_msg += " (含逐条明细，请耐心等待)"
             with st.spinner(spinner_msg):
                 result = report_builder.generate_monthly_bill(
                     year_month, tmpdir, user_id=uid,
+                    channel_id=chid,
                     currency=exp_currency,
                     flat_tier=_exp_flat, flat_tier_since=_exp_since,
                     start_day=exp_start_day,

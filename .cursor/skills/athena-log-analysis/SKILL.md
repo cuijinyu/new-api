@@ -55,6 +55,12 @@ python bill_cli.py bill --month 2026-03 -o output/
 # 指定用户
 python bill_cli.py bill --month 2026-03 --user-id 89 -o output/
 
+# 指定上游渠道（只出该渠道的账单）
+python bill_cli.py bill --month 2026-03 --channel-id 25 -o output/
+
+# 指定用户 + 渠道
+python bill_cli.py bill --month 2026-03 --user-id 89 --channel-id 25 -o output/
+
 # 降档模式
 python bill_cli.py bill --month 2026-03 --user-id 89 --flat-tier -o output/
 
@@ -73,6 +79,9 @@ python bill_cli.py profit --month 2026-03
 
 # 含用户明细
 python bill_cli.py profit --month 2026-03 --detail
+
+# 指定渠道
+python bill_cli.py profit --month 2026-03 --channel-id 25
 
 # 导出
 python bill_cli.py profit --month 2026-03 -o profit.xlsx
@@ -118,6 +127,37 @@ python bill_cli.py crosscheck --month 2026-03 --vendor vendor_bill.csv \
 ```
 
 支持 CSV 和 Excel 格式，自动识别常见列名：模型/model/model_name、额度/amount/total/cost。
+
+### 逐条对账（渠道 25 等逐条明细格式）
+
+当供应商提供的是逐条明细账单（含 request_id, model_name, quota 列）时，
+自动切换为 request_id 级别对账模式：
+
+```bash
+# 单文件逐条对账（自动检测格式）
+python bill_cli.py crosscheck --vendor vendor_detail.xlsx \
+    --channel-id 25 -o output/
+
+# 多文件对账（供应商按时间段拆分的多个文件）
+python bill_cli.py crosscheck \
+    --vendor "EZModel3月份账单2026-03-01-00到2026-03-26-00.xlsx" \
+             "EZModel3月份账单2026-03-26-00到2026-03-31-00.xlsx" \
+    --channel-id 25 -o output/
+
+# 强制逐条模式（跳过自动检测）
+python bill_cli.py crosscheck --vendor vendor.xlsx \
+    --channel-id 25 --row-level -o output/
+```
+
+**逐条对账流程：**
+1. 导入供应商逐条明细，自动检测 created_at 时间范围
+2. 从 Athena 查询同时间段 + 同渠道的我方数据
+3. 按 request_id 匹配，输出 Excel 报告含：
+   - 对账概览（统计数据）
+   - 模型汇总对比（记录数 + 金额对比）
+   - 金额不一致记录（quota 差异明细）
+   - 仅我方有的记录
+   - 仅供应商有的记录
 
 ### 折扣管理
 

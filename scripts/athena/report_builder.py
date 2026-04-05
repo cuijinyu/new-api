@@ -132,6 +132,7 @@ def _write_info_sheet(wb, ws, row, items):
 
 def generate_monthly_bill(year_month: str, output_dir: str,
                           user_id: int = None,
+                          channel_id: int = None,
                           currency: str = "USD",
                           exchange_rate: float = 7.3,
                           flat_tier: bool = False,
@@ -169,11 +170,12 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     eff_end = end_time or end_day
 
     suffix = f"_user{user_id}" if user_id else ""
+    ch_suffix = f"_ch{channel_id}" if channel_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
     from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
     day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
     cv_suffix = "_customer" if customer_view else ""
-    filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}{cv_suffix}.xlsx"
+    filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}{cv_suffix}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     rate = exchange_rate if currency == "CNY" else 1.0
@@ -182,11 +184,13 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     # Fast aggregation queries
     df_full = run_query_cached(
         queries.monthly_bill_full(year_month, user_id=user_id,
+                                  channel_id=channel_id,
                                   start_day=start_day, end_day=end_day,
                                   start_time=start_time, end_time=end_time),
         no_cache=no_cache)
     df_trend = run_query_cached(
         queries.daily_trend(year_month, user_id=user_id,
+                            channel_id=channel_id,
                             start_day=start_day, end_day=end_day,
                             start_time=start_time, end_time=end_time),
         no_cache=no_cache)
@@ -460,6 +464,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     detail_path = None
     if detail:
         detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
+                                         channel_id=channel_id,
                                          flat_tier=flat_tier,
                                          flat_tier_since=flat_tier_since,
                                          start_day=start_day,
@@ -531,6 +536,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     eff_end = end_time or end_day
 
     suffix = f"_user{user_id}" if user_id else ""
+    ch_suffix = f"_ch{channel_id}" if channel_id else ""
     tier_suffix = "_flattier" if flat_tier else ""
     from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
     day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
@@ -600,6 +606,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     if customer_view:
         out_path = _write_detail_xlsx_customer(
             df_all, year_month, output_dir, user_id=user_id,
+            channel_id=channel_id,
             flat_tier=flat_tier,
             start_day=start_time or start_day,
             end_day=end_time or end_day,
@@ -607,7 +614,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     else:
         out_path = _write_detail_csv_internal(
             df_all, year_month, output_dir,
-            suffix=suffix, tier_suffix=tier_suffix,
+            suffix=suffix, ch_suffix=ch_suffix, tier_suffix=tier_suffix,
             from_suffix=from_suffix, day_suffix=day_suffix)
 
     size_mb = os.path.getsize(out_path) / 1024 / 1024
@@ -619,12 +626,13 @@ def _export_detail_csv(year_month: str, output_dir: str,
 
 def _write_detail_csv_internal(df: pd.DataFrame, year_month: str,
                                output_dir: str, suffix: str = "",
+                               ch_suffix: str = "",
                                tier_suffix: str = "", from_suffix: str = "",
                                day_suffix: str = "") -> str:
     """Write internal full-field detail as zip-compressed CSV."""
     import io as _io
 
-    zip_filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}_detail.csv.zip"
+    zip_filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}_detail.csv.zip"
     csv_inner_name = zip_filename.replace(".zip", "")
     zip_path = os.path.join(output_dir, zip_filename)
 
@@ -664,13 +672,15 @@ _CUSTOMER_DETAIL_COLS = [
 
 def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
                                 output_dir: str, user_id: int = None,
+                                channel_id: int = None,
                                 flat_tier: bool = False,
                                 start_day: str = None, end_day: str = None,
                                 tier_suffix: str = "", from_suffix: str = "",
                                 day_suffix: str = "") -> str:
     """Write customer-facing detail as xlsx with auto-split sheets."""
     suffix = f"_user{user_id}" if user_id else ""
-    xlsx_filename = f"bill_{year_month}{suffix}{tier_suffix}{from_suffix}{day_suffix}_detail_customer.xlsx"
+    ch_suffix = f"_ch{channel_id}" if channel_id else ""
+    xlsx_filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}_detail_customer.xlsx"
     xlsx_path = os.path.join(output_dir, xlsx_filename)
 
     tier_tag = ""
@@ -1169,4 +1179,228 @@ def generate_crosscheck_report(year_month: str, vendor_bill_path: str,
                 "供应商原始数据", v_hdrs, v_wids, v_data, v_fmts)
 
     wb.close()
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# Row-level crosscheck report (request_id matching)
+# ---------------------------------------------------------------------------
+
+def generate_row_level_crosscheck_report(
+        vendor_files: list[str],
+        output_dir: str,
+        channel_id: int = None,
+        no_cache: bool = False) -> str:
+    """Generate row-level crosscheck report against vendor bills.
+
+    Supports the channel-25 逐条明细 format: each row is one API request
+    with request_id, model_name, quota, prompt_tokens, etc.
+
+    Multiple vendor files can be provided (e.g. split by time range).
+
+    Steps:
+      1. Import all vendor files, detect created_at range
+      2. Query our Athena data for the same time range + channel
+      3. Match by request_id, report differences
+    """
+    import cost_import
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 1. Import vendor data
+    print(f"[crosscheck] 导入供应商账单 ({len(vendor_files)} 个文件)...", file=sys.stderr)
+    vendor_df = cost_import.import_row_level_bill(
+        vendor_files, channel_id=channel_id)
+    print(f"[crosscheck] 供应商记录: {len(vendor_df):,} 条, "
+          f"${vendor_df['vendor_usd'].sum():,.2f}", file=sys.stderr)
+
+    # 2. Detect time range from vendor data
+    if "created_at" not in vendor_df.columns:
+        raise ValueError("供应商账单缺少 created_at 列，无法确定时间范围")
+
+    ts_min = int(vendor_df["created_at"].min())
+    ts_max = int(vendor_df["created_at"].max()) + 1
+
+    from datetime import datetime as _dt, timezone as _tz
+    dt_min = _dt.fromtimestamp(ts_min, tz=_tz.utc)
+    dt_max = _dt.fromtimestamp(ts_max, tz=_tz.utc)
+    print(f"[crosscheck] 时间范围: {dt_min:%Y-%m-%d %H:%M} ~ "
+          f"{dt_max:%Y-%m-%d %H:%M} UTC", file=sys.stderr)
+
+    # 3. Query our data from Athena
+    print(f"[crosscheck] 查询我方 Athena 数据 (channel_id={channel_id})...",
+          file=sys.stderr)
+    our_sql = queries.usage_by_created_at_range(
+        ts_min, ts_max, channel_id=channel_id)
+    our_df = run_query_cached(our_sql, no_cache=no_cache)
+    print(f"[crosscheck] 我方记录: {len(our_df):,} 条, "
+          f"${our_df['billed_usd'].sum():,.2f}" if not our_df.empty else
+          "[crosscheck] 我方记录: 0 条", file=sys.stderr)
+
+    if our_df.empty:
+        our_df = pd.DataFrame(columns=["request_id", "model_name", "quota",
+                                        "billed_usd", "prompt_tokens",
+                                        "completion_tokens"])
+
+    # 4. Row-level crosscheck
+    print(f"[crosscheck] 逐条对账中...", file=sys.stderr)
+    result = pricing_engine.cross_check_row_level(our_df, vendor_df)
+    stats = result["stats"]
+
+    # 5. Generate report
+    time_label = f"{dt_min:%Y%m%d_%H%M}-{dt_max:%Y%m%d_%H%M}"
+    ch_label = f"_ch{channel_id}" if channel_id else ""
+    filename = f"crosscheck_rowlevel_{time_label}{ch_label}.xlsx"
+    filepath = os.path.join(output_dir, filename)
+
+    wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
+
+    # ── Tab 0: 对账概览 ──
+    ws_info = wb.add_worksheet("对账概览")
+    ws_info.set_column(0, 0, 24)
+    ws_info.set_column(1, 1, 30)
+    row = _write_info_sheet(wb, ws_info, 0, [
+        ("对账类型", "逐条 request_id 对账"),
+        ("时间范围 (UTC)", f"{dt_min:%Y-%m-%d %H:%M} ~ {dt_max:%Y-%m-%d %H:%M}"),
+        ("渠道 ID", str(channel_id or "全部")),
+        ("供应商文件数", str(len(vendor_files))),
+        ("", ""),
+        ("我方总记录数", f"{stats['total_our_records']:,}"),
+        ("供应商总记录数", f"{stats['total_vendor_records']:,}"),
+        ("匹配记录数", f"{stats['matched_records']:,}"),
+        ("仅我方有", f"{stats['only_ours_records']:,}"),
+        ("仅供应商有", f"{stats['only_vendor_records']:,}"),
+        ("金额不一致", f"{stats['quota_mismatched']:,}"),
+        ("", ""),
+        ("我方总金额 (USD)", f"${stats['our_total_usd']:,.4f}"),
+        ("供应商总金额 (USD)", f"${stats['vendor_total_usd']:,.4f}"),
+        ("总差额 (USD)", f"${stats['our_total_usd'] - stats['vendor_total_usd']:,.4f}"),
+        ("匹配部分我方 (USD)", f"${stats['matched_our_usd']:,.4f}"),
+        ("匹配部分供应商 (USD)", f"${stats['matched_vendor_usd']:,.4f}"),
+        ("仅我方金额 (USD)", f"${stats['only_ours_usd']:,.4f}"),
+        ("仅供应商金额 (USD)", f"${stats['only_vendor_usd']:,.4f}"),
+    ])
+
+    # ── Tab 1: 模型汇总对比 ──
+    summary = result["summary"]
+    s_hdrs = ["模型名称", "我方记录数", "供应商记录数", "记录差",
+              "我方金额 ($)", "供应商金额 ($)", "差额 ($)", "差额 %"]
+    s_wids = [28, 14, 14, 10, 16, 16, 14, 10]
+    s_fmts = [None, TOK, TOK, TOK, USD2, USD2, USD4, PCT]
+    s_data = []
+    for _, r in summary.iterrows():
+        s_data.append([
+            r["model_name"], int(r["our_count"]), int(r["vendor_count"]),
+            int(r["count_diff"]),
+            float(r["our_usd"]), float(r["vendor_usd"]),
+            float(r["usd_diff"]),
+            float(r["diff_pct"]) / 100 if pd.notna(r["diff_pct"]) else 0,
+        ])
+    s_tot = [
+        "合计",
+        int(summary["our_count"].sum()), int(summary["vendor_count"].sum()),
+        int(summary["count_diff"].sum()),
+        float(summary["our_usd"].sum()), float(summary["vendor_usd"].sum()),
+        float(summary["usd_diff"].sum()),
+        float(summary["usd_diff"].sum()) / float(summary["vendor_usd"].sum())
+        if float(summary["vendor_usd"].sum()) else 0,
+    ]
+    write_sheet(wb, "模型汇总对比", "模型汇总",
+                s_hdrs, s_wids, s_data, s_fmts,
+                total_row=s_tot, total_fmts=s_fmts)
+
+    # ── Tab 2: 金额不一致记录 ──
+    matched = result["matched"]
+    mismatched = matched[matched["quota_diff"].abs() > 0] if not matched.empty else matched
+    if not mismatched.empty:
+        mismatched = mismatched.sort_values("usd_diff", ascending=False, key=abs).head(10000)
+        mm_hdrs = ["Request ID", "模型", "我方 Quota", "供应商 Quota",
+                   "Quota 差", "我方 ($)", "供应商 ($)", "差额 ($)"]
+        mm_wids = [24, 28, 14, 14, 14, 14, 14, 14]
+        mm_fmts = [None, None, TOK, TOK, TOK, USD6, USD6, USD6]
+        mm_data = []
+        for _, r in mismatched.iterrows():
+            mm_data.append([
+                str(r["request_id"]), r["model_name"],
+                int(r["our_quota"]), int(r["vendor_quota"]),
+                int(r["quota_diff"]),
+                float(r["our_usd"]), float(r["vendor_usd"]),
+                float(r["usd_diff"]),
+            ])
+        write_sheet(wb, "金额不一致记录 (quota 差异)",
+                    "金额不一致", mm_hdrs, mm_wids, mm_data, mm_fmts)
+    else:
+        ws = wb.add_worksheet("金额不一致")
+        ws.write(0, 0, "所有匹配记录的 quota 完全一致")
+
+    # ── Tab 3: 仅我方有的记录 ──
+    only_ours = result["only_ours"]
+    if not only_ours.empty:
+        oo_show = only_ours.head(50000)
+        oo_hdrs = ["Request ID", "模型", "Quota", "USD",
+                   "Prompt Tokens", "Completion Tokens"]
+        oo_wids = [24, 28, 14, 14, 14, 14]
+        oo_fmts = [None, None, TOK, USD6, TOK, TOK]
+        oo_data = []
+        for _, r in oo_show.iterrows():
+            oo_data.append([
+                str(r.get("request_id", "")), str(r.get("model_name", "")),
+                int(r.get("quota", 0)), float(r.get("billed_usd", 0)),
+                int(r.get("prompt_tokens", 0)), int(r.get("completion_tokens", 0)),
+            ])
+        oo_tot = [
+            f"合计 ({len(only_ours):,} 条)", "", "",
+            float(only_ours["billed_usd"].sum()), "", "",
+        ]
+        write_sheet(wb, f"仅我方有 ({len(only_ours):,} 条)",
+                    "仅我方", oo_hdrs, oo_wids, oo_data, oo_fmts,
+                    total_row=oo_tot, total_fmts=oo_fmts)
+    else:
+        ws = wb.add_worksheet("仅我方")
+        ws.write(0, 0, "无仅我方有的记录")
+
+    # ── Tab 4: 仅供应商有的记录 ──
+    only_vendor = result["only_vendor"]
+    if not only_vendor.empty:
+        ov_show = only_vendor.head(50000)
+        ov_hdrs = ["Request ID", "模型", "Quota", "USD",
+                   "Prompt Tokens", "Completion Tokens"]
+        ov_wids = [24, 28, 14, 14, 14, 14]
+        ov_fmts = [None, None, TOK, USD6, TOK, TOK]
+        ov_data = []
+        for _, r in ov_show.iterrows():
+            ov_data.append([
+                str(r.get("request_id", "")), str(r.get("model_name", "")),
+                int(r.get("quota", 0)), float(r.get("vendor_usd", 0)),
+                int(r.get("prompt_tokens", 0)), int(r.get("completion_tokens", 0)),
+            ])
+        ov_tot = [
+            f"合计 ({len(only_vendor):,} 条)", "", "",
+            float(only_vendor["vendor_usd"].sum()), "", "",
+        ]
+        write_sheet(wb, f"仅供应商有 ({len(only_vendor):,} 条)",
+                    "仅供应商", ov_hdrs, ov_wids, ov_data, ov_fmts,
+                    total_row=ov_tot, total_fmts=ov_fmts)
+    else:
+        ws = wb.add_worksheet("仅供应商")
+        ws.write(0, 0, "无仅供应商有的记录")
+
+    wb.close()
+
+    # Print summary
+    print(f"\n{'='*60}", file=sys.stderr)
+    print(f"  逐条对账完成", file=sys.stderr)
+    print(f"{'='*60}", file=sys.stderr)
+    print(f"  匹配: {stats['matched_records']:,} / "
+          f"我方 {stats['total_our_records']:,} / "
+          f"供应商 {stats['total_vendor_records']:,}", file=sys.stderr)
+    print(f"  仅我方: {stats['only_ours_records']:,} 条 "
+          f"(${stats['only_ours_usd']:,.4f})", file=sys.stderr)
+    print(f"  仅供应商: {stats['only_vendor_records']:,} 条 "
+          f"(${stats['only_vendor_usd']:,.4f})", file=sys.stderr)
+    print(f"  金额不一致: {stats['quota_mismatched']:,} 条", file=sys.stderr)
+    print(f"  总差额: ${stats['our_total_usd'] - stats['vendor_total_usd']:,.4f}",
+          file=sys.stderr)
+    print(f"{'='*60}", file=sys.stderr)
+
     return filepath

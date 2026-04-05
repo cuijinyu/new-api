@@ -49,8 +49,48 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 			awsClaudeRequest.AnthropicBeta = betaJson
 		}
 	}
+
+	sanitizeCacheControlForBedrock(awsClaudeRequest.System)
+	for i := range awsClaudeRequest.Messages {
+		sanitizeCacheControlForBedrock(awsClaudeRequest.Messages[i].Content)
+	}
+
 	logger.LogJson(context.Background(), "json", awsClaudeRequest)
 	return &awsClaudeRequest, nil
+}
+
+// sanitizeCacheControlForBedrock walks content blocks (system or message content)
+// and strips fields from cache_control that Bedrock does not accept:
+//   - "scope": Bedrock rejects Extra inputs are not permitted
+//   - "ttl": Bedrock only accepts "5m" or "1h"; invalid values are removed
+var bedrockValidTTL = map[string]bool{"5m": true, "1h": true}
+
+func sanitizeCacheControlForBedrock(content any) {
+	blocks, ok := content.([]any)
+	if !ok {
+		return
+	}
+	for _, block := range blocks {
+		blockMap, ok := block.(map[string]any)
+		if !ok {
+			continue
+		}
+		cc, exists := blockMap["cache_control"]
+		if !exists {
+			continue
+		}
+		ccMap, ok := cc.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(ccMap, "scope")
+		if ttl, hasTTL := ccMap["ttl"]; hasTTL {
+			ttlStr, ok := ttl.(string)
+			if !ok || !bedrockValidTTL[ttlStr] {
+				delete(ccMap, "ttl")
+			}
+		}
+	}
 }
 
 // NovaMessage Nova模型使用messages-v1格式

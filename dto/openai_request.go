@@ -11,6 +11,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// extractCacheControl extracts cache_control from a content item map and returns it as json.RawMessage.
+func extractCacheControl(contentItem map[string]any) json.RawMessage {
+	cc, ok := contentItem["cache_control"]
+	if !ok || cc == nil {
+		return nil
+	}
+	raw, err := json.Marshal(cc)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
 type ResponseFormat struct {
 	Type       string          `json:"type,omitempty"`
 	JsonSchema json.RawMessage `json:"json_schema,omitempty"`
@@ -519,12 +532,15 @@ func (m *Message) ParseContent() []MediaContent {
 			continue
 		}
 
+		cacheControl := extractCacheControl(contentItem)
+
 		switch contentType {
 		case ContentTypeText:
 			if text, ok := contentItem["text"].(string); ok {
 				contentList = append(contentList, MediaContent{
-					Type: ContentTypeText,
-					Text: text,
+					Type:         ContentTypeText,
+					Text:         text,
+					CacheControl: cacheControl,
 				})
 			}
 
@@ -547,8 +563,9 @@ func (m *Message) ParseContent() []MediaContent {
 				}
 			}
 			contentList = append(contentList, MediaContent{
-				Type:     ContentTypeImageURL,
-				ImageUrl: temp,
+				Type:         ContentTypeImageURL,
+				ImageUrl:     temp,
+				CacheControl: cacheControl,
 			})
 
 		case ContentTypeInputAudio:
@@ -561,8 +578,9 @@ func (m *Message) ParseContent() []MediaContent {
 						Format: format,
 					}
 					contentList = append(contentList, MediaContent{
-						Type:       ContentTypeInputAudio,
-						InputAudio: temp,
+						Type:         ContentTypeInputAudio,
+						InputAudio:   temp,
+						CacheControl: cacheControl,
 					})
 				}
 			}
@@ -575,6 +593,7 @@ func (m *Message) ParseContent() []MediaContent {
 						File: &MessageFile{
 							FileId: fileId,
 						},
+						CacheControl: cacheControl,
 					})
 				} else {
 					fileName, ok1 := fileData["filename"].(string)
@@ -586,6 +605,7 @@ func (m *Message) ParseContent() []MediaContent {
 								FileName: fileName,
 								FileData: fileDataStr,
 							},
+							CacheControl: cacheControl,
 						})
 					}
 				}
@@ -692,12 +712,15 @@ func (m *Message) ParseContent() []MediaContent {
 				continue
 			}
 
+			cacheControl := extractCacheControl(contentItem)
+
 			switch contentType {
 			case ContentTypeText:
 				if text, ok := contentItem["text"].(string); ok {
 					contentList = append(contentList, MediaContent{
-						Type: ContentTypeText,
-						Text: text,
+						Type:         ContentTypeText,
+						Text:         text,
+						CacheControl: cacheControl,
 					})
 				}
 
@@ -720,8 +743,9 @@ func (m *Message) ParseContent() []MediaContent {
 					}
 				}
 				contentList = append(contentList, MediaContent{
-					Type:     ContentTypeImageURL,
-					ImageUrl: temp,
+					Type:         ContentTypeImageURL,
+					ImageUrl:     temp,
+					CacheControl: cacheControl,
 				})
 
 			case ContentTypeInputAudio:
@@ -734,8 +758,9 @@ func (m *Message) ParseContent() []MediaContent {
 							Format: format,
 						}
 						contentList = append(contentList, MediaContent{
-							Type:       ContentTypeInputAudio,
-							InputAudio: temp,
+							Type:         ContentTypeInputAudio,
+							InputAudio:   temp,
+							CacheControl: cacheControl,
 						})
 					}
 				}
@@ -748,6 +773,7 @@ func (m *Message) ParseContent() []MediaContent {
 							File: &MessageFile{
 								FileId: fileId,
 							},
+							CacheControl: cacheControl,
 						})
 					} else {
 						fileName, ok1 := fileData["filename"].(string)
@@ -759,6 +785,7 @@ func (m *Message) ParseContent() []MediaContent {
 									FileName: fileName,
 									FileData: fileDataStr,
 								},
+								CacheControl: cacheControl,
 							})
 						}
 					}
