@@ -40,15 +40,17 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		}
 	}()
 
+	streamStart := time.Now()
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
 
 	var (
-		stopChan   = make(chan bool, 3) // 增加缓冲区避免阻塞
-		scanner    = bufio.NewScanner(resp.Body)
-		ticker     = time.NewTicker(streamingTimeout)
-		pingTicker *time.Ticker
-		writeMutex sync.Mutex     // Mutex to protect concurrent writes
-		wg         sync.WaitGroup // 用于等待所有 goroutine 退出
+		stopChan          = make(chan bool, 3) // 增加缓冲区避免阻塞
+		scanner           = bufio.NewScanner(resp.Body)
+		ticker            = time.NewTicker(streamingTimeout)
+		pingTicker        *time.Ticker
+		writeMutex        sync.Mutex     // Mutex to protect concurrent writes
+		wg                sync.WaitGroup // 用于等待所有 goroutine 退出
+		scannerExitReason string         // scanner goroutine 写入，主循环在收到 stopChan 后读取
 	)
 
 	generalSettings := operation_setting.GetGeneralSetting()
@@ -173,6 +175,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		defer func() {
 			wg.Done()
 			if r := recover(); r != nil {
+				scannerExitReason = "scanner_panic"
 				logger.LogError(c, fmt.Sprintf("scanner goroutine panic: %v", r))
 			}
 			common.SafeSendBool(stopChan, true)
@@ -222,9 +225,11 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				select {
 				case success := <-done:
 					if !success {
+						scannerExitReason = "handler_error"
 						return
 					}
 				case <-time.After(10 * time.Second):
+					scannerExitReason = "handler_timeout"
 					logger.LogError(c, "data handler timeout")
 					return
 				case <-ctx.Done():
@@ -237,27 +242,73 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				if common.DebugEnabled {
 					println("received [DONE], stopping scanner")
 				}
+				scannerExitReason = "done"
 				return
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
+			scannerExitReason = "scanner_error"
 			if err != io.EOF {
 				logger.LogError(c, "scanner error: "+err.Error())
 			}
+		} else {
+			scannerExitReason = "done"
 		}
 	})
 
 	// 主循环等待完成或超时
+	channel := fmt.Sprintf("ch%d", c.GetInt("channel_id"))
+	var reason string
 	select {
 	case <-ticker.C:
-		// 超时处理逻辑
+		reason = "timeout"
 		logger.LogError(c, "streaming timeout")
 	case <-stopChan:
-		// 正常结束
-		logger.LogInfo(c, "streaming finished")
+		if scannerExitReason == "" || scannerExitReason == "done" {
+			reason = "completed"
+			logger.LogInfo(c, "streaming finished")
+		} else {
+			reason = scannerExitReason
+			logger.LogWarn(c, fmt.Sprintf("streaming ended abnormally: %s", scannerExitReason))
+		}
 	case <-c.Request.Context().Done():
-		// 客户端断开连接
+		reason = "client_disconnect"
 		logger.LogInfo(c, "client disconnected")
 	}
+	durationMs := time.Since(streamStart).Milliseconds()
+	c.Set("stream_finish_reason", reason)
+	c.Set("stream_duration_ms", durationMs)
+	logger.RecordStreamFinish(channel, reason, durationMs)
+}
+
+// StreamLifecycleTracker provides stream duration tracking and metric recording
+// for channel-specific stream handlers that don't use StreamScannerHandler.
+// Usage:
+//
+//	tracker := helper.NewStreamLifecycleTracker(c)
+//	defer tracker.Finish()
+//	// ... custom scanner loop ...
+type StreamLifecycleTracker struct {
+	c     *gin.Context
+	start time.Time
+}
+
+func NewStreamLifecycleTracker(c *gin.Context) *StreamLifecycleTracker {
+	return &StreamLifecycleTracker{c: c, start: time.Now()}
+}
+
+// Finish records stream_finish_reason / stream_duration_ms in gin context
+// and emits the RecordStreamFinish metric. It auto-detects client disconnect
+// via c.Request.Context().Err(). Call once, typically via defer.
+func (t *StreamLifecycleTracker) Finish() {
+	durationMs := time.Since(t.start).Milliseconds()
+	reason := "completed"
+	if t.c.Request.Context().Err() != nil {
+		reason = "client_disconnect"
+	}
+	channel := fmt.Sprintf("ch%d", t.c.GetInt("channel_id"))
+	t.c.Set("stream_finish_reason", reason)
+	t.c.Set("stream_duration_ms", durationMs)
+	logger.RecordStreamFinish(channel, reason, durationMs)
 }

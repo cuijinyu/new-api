@@ -679,7 +679,7 @@ func FormatClaudeResponseInfo(requestMode int, claudeResponse *dto.ClaudeRespons
 			// message_start, 获取usage
 			claudeInfo.Usage.PromptTokens = claudeResponse.Message.Usage.InputTokens
 			claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Message.Usage.CacheReadInputTokens
-			claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Message.Usage.CacheCreationInputTokens
+			claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Message.Usage.GetCacheCreationTotalTokens()
 			claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Message.Usage.GetCacheCreation5mTokens()
 			claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Message.Usage.GetCacheCreation1hTokens()
 			claudeInfo.Usage.CompletionTokens = claudeResponse.Message.Usage.OutputTokens
@@ -697,6 +697,21 @@ func FormatClaudeResponseInfo(requestMode int, claudeResponse *dto.ClaudeRespons
 				claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
 			}
 			claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
+
+			// message_delta 刷新 cache creation（上游可能在此事件补全）
+			if cacheCreation := claudeResponse.Usage.GetCacheCreationTotalTokens(); cacheCreation > 0 {
+				claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = cacheCreation
+			}
+			if cache5m := claudeResponse.Usage.GetCacheCreation5mTokens(); cache5m > 0 {
+				claudeInfo.Usage.ClaudeCacheCreation5mTokens = cache5m
+			}
+			if cache1h := claudeResponse.Usage.GetCacheCreation1hTokens(); cache1h > 0 {
+				claudeInfo.Usage.ClaudeCacheCreation1hTokens = cache1h
+			}
+			if cacheRead := claudeResponse.Usage.CacheReadInputTokens; cacheRead > 0 {
+				claudeInfo.Usage.PromptTokensDetails.CachedTokens = cacheRead
+			}
+
 			claudeInfo.Usage.TotalTokens = claudeInfo.Usage.PromptTokens + claudeInfo.Usage.CompletionTokens
 
 			// 判断是否完整
@@ -825,7 +840,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Usage.CacheReadInputTokens
-		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
+		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.GetCacheCreationTotalTokens()
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
 		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
 	}

@@ -362,6 +362,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+		logger.RecordDB("RecordConsumeLog", 0, 1)
 	}
 	if ConsumeLogHook != nil {
 		hook := ConsumeLogHook

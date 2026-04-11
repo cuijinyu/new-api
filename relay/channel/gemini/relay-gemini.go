@@ -1015,6 +1015,11 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 					usage.PromptTokensDetails.TextTokens = detail.TokenCount
 				}
 			}
+			for _, detail := range geminiResponse.UsageMetadata.CandidatesTokensDetails {
+				if detail.Modality == "IMAGE" {
+					usage.CompletionTokenDetails.ImageTokens = detail.TokenCount
+				}
+			}
 		}
 
 		return callback(data, &geminiResponse)
@@ -1148,6 +1153,11 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 			usage.PromptTokensDetails.AudioTokens = detail.TokenCount
 		} else if detail.Modality == "TEXT" {
 			usage.PromptTokensDetails.TextTokens = detail.TokenCount
+		}
+	}
+	for _, detail := range geminiResponse.UsageMetadata.CandidatesTokensDetails {
+		if detail.Modality == "IMAGE" {
+			usage.CompletionTokenDetails.ImageTokens = detail.TokenCount
 		}
 	}
 

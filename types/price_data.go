@@ -30,9 +30,10 @@ type PriceData struct {
 	CacheCreationRatio   float64
 	CacheCreation5mRatio float64
 	CacheCreation1hRatio float64
-	ImageRatio           float64
-	AudioRatio           float64
-	AudioCompletionRatio float64
+	ImageRatio              float64
+	ImageCompletionRatio    float64
+	AudioRatio              float64
+	AudioCompletionRatio    float64
 	OtherRatios          map[string]float64
 	UsePrice             bool
 	QuotaToPreConsume    int // 预消耗额度
@@ -48,7 +49,7 @@ type PerCallPriceData struct {
 }
 
 func (p PriceData) ToSetting() string {
-	baseStr := fmt.Sprintf("ModelPrice: %f, ModelRatio: %f, CompletionRatio: %f, CacheRatio: %f, GroupRatio: %f, UsePrice: %t, CacheCreationRatio: %f, CacheCreation5mRatio: %f, CacheCreation1hRatio: %f, QuotaToPreConsume: %d, ImageRatio: %f, AudioRatio: %f, AudioCompletionRatio: %f, UseTieredPricing: %t", p.ModelPrice, p.ModelRatio, p.CompletionRatio, p.CacheRatio, p.GroupRatioInfo.GroupRatio, p.UsePrice, p.CacheCreationRatio, p.CacheCreation5mRatio, p.CacheCreation1hRatio, p.QuotaToPreConsume, p.ImageRatio, p.AudioRatio, p.AudioCompletionRatio, p.UseTieredPricing)
+	baseStr := fmt.Sprintf("ModelPrice: %f, ModelRatio: %f, CompletionRatio: %f, CacheRatio: %f, GroupRatio: %f, UsePrice: %t, CacheCreationRatio: %f, CacheCreation5mRatio: %f, CacheCreation1hRatio: %f, QuotaToPreConsume: %d, ImageRatio: %f, ImageCompletionRatio: %f, AudioRatio: %f, AudioCompletionRatio: %f, UseTieredPricing: %t", p.ModelPrice, p.ModelRatio, p.CompletionRatio, p.CacheRatio, p.GroupRatioInfo.GroupRatio, p.UsePrice, p.CacheCreationRatio, p.CacheCreation5mRatio, p.CacheCreation1hRatio, p.QuotaToPreConsume, p.ImageRatio, p.ImageCompletionRatio, p.AudioRatio, p.AudioCompletionRatio, p.UseTieredPricing)
 
 	if p.UseTieredPricing && p.TieredPricingData != nil {
 		tieredStr := fmt.Sprintf(", TieredPricingData: InputPrice: %f, OutputPrice: %f, CacheHitPrice: %f, CacheStorePrice: %f, CacheStorePrice5m: %f, CacheStorePrice1h: %f, TierMinTokens: %d, TierMaxTokens: %d",

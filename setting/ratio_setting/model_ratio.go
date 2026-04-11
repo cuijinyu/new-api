@@ -319,6 +319,12 @@ var defaultAudioCompletionRatio = map[string]float64{
 	"gpt-4o-mini-realtime": 2,
 }
 
+var defaultImageCompletionRatio = map[string]float64{}
+var (
+	imageCompletionRatioMap      map[string]float64 = nil
+	imageCompletionRatioMapMutex                    = sync.RWMutex{}
+)
+
 var (
 	modelPriceMap      map[string]float64 = nil
 	modelPriceMapMutex                    = sync.RWMutex{}
@@ -376,6 +382,11 @@ func InitRatioSettings() {
 	audioCompletionRatioMapMutex.Lock()
 	audioCompletionRatioMap = defaultAudioCompletionRatio
 	audioCompletionRatioMapMutex.Unlock()
+
+	// initialize imageCompletionRatioMap
+	imageCompletionRatioMapMutex.Lock()
+	imageCompletionRatioMap = defaultImageCompletionRatio
+	imageCompletionRatioMapMutex.Unlock()
 }
 
 func GetModelPriceMap() map[string]float64 {
@@ -481,6 +492,10 @@ func GetDefaultAudioRatioMap() map[string]float64 {
 
 func GetDefaultAudioCompletionRatioMap() map[string]float64 {
 	return defaultAudioCompletionRatio
+}
+
+func GetDefaultImageCompletionRatioMap() map[string]float64 {
+	return defaultImageCompletionRatio
 }
 
 func GetCompletionRatioMap() map[string]float64 {
@@ -785,6 +800,49 @@ func GetAudioCompletionRatioCopy() map[string]float64 {
 	defer audioCompletionRatioMapMutex.RUnlock()
 	copyMap := make(map[string]float64, len(audioCompletionRatioMap))
 	for k, v := range audioCompletionRatioMap {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+func ImageCompletionRatio2JSONString() string {
+	imageCompletionRatioMapMutex.RLock()
+	defer imageCompletionRatioMapMutex.RUnlock()
+	jsonBytes, err := common.Marshal(imageCompletionRatioMap)
+	if err != nil {
+		common.SysError("error marshalling image completion ratio: " + err.Error())
+	}
+	return string(jsonBytes)
+}
+
+func UpdateImageCompletionRatioByJSONString(jsonStr string) error {
+	tmp := make(map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &tmp); err != nil {
+		return err
+	}
+	imageCompletionRatioMapMutex.Lock()
+	imageCompletionRatioMap = tmp
+	imageCompletionRatioMapMutex.Unlock()
+	InvalidateExposedDataCache()
+	return nil
+}
+
+func GetImageCompletionRatio(name string) (float64, bool) {
+	imageCompletionRatioMapMutex.RLock()
+	defer imageCompletionRatioMapMutex.RUnlock()
+	name = FormatMatchingModelName(name)
+	ratio, ok := imageCompletionRatioMap[name]
+	if !ok {
+		return 1, false
+	}
+	return ratio, true
+}
+
+func GetImageCompletionRatioCopy() map[string]float64 {
+	imageCompletionRatioMapMutex.RLock()
+	defer imageCompletionRatioMapMutex.RUnlock()
+	copyMap := make(map[string]float64, len(imageCompletionRatioMap))
+	for k, v := range imageCompletionRatioMap {
 		copyMap[k] = v
 	}
 	return copyMap

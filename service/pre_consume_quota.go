@@ -22,7 +22,11 @@ func ReturnPreConsumedQuota(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 
 			err := PostConsumeQuota(&relayInfoCopy, -relayInfoCopy.FinalPreConsumedQuota, 0, false)
 			if err != nil {
-				common.SysLog("error return pre-consumed quota: " + err.Error())
+				logger.LogError(c, fmt.Sprintf("error return pre-consumed quota: %s", err.Error()))
+				if logger.MetricsEnabled() {
+					channel := fmt.Sprintf("ch%d", c.GetInt("channel_id"))
+					logger.RecordBilling(channel, 0, 1)
+				}
 			}
 		})
 	}

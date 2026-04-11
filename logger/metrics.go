@@ -144,7 +144,50 @@ func EmitPipelineMetrics(pipeline string, queueDepth int, uploadFailures int64, 
 		Metric("LogUploadFailureCount", uploadFailures).
 		Metric("LogDropCount", drops).
 		Emit()
+
+	pipelineGlobalMu.Lock()
+	pipelineGlobalQueueDepth += queueDepth
+	pipelineGlobalUploadFail += uploadFailures
+	pipelineGlobalDrops += drops
+	pipelineGlobalMu.Unlock()
 }
+
+// FlushPipelineGlobalMetrics emits dimensionless pipeline totals for alarms.
+func FlushPipelineGlobalMetrics() {
+	if !metricsEnabled {
+		return
+	}
+	pipelineGlobalMu.Lock()
+	qd := pipelineGlobalQueueDepth
+	uf := pipelineGlobalUploadFail
+	dr := pipelineGlobalDrops
+	pipelineGlobalQueueDepth = 0
+	pipelineGlobalUploadFail = 0
+	pipelineGlobalDrops = 0
+	pipelineGlobalMu.Unlock()
+
+	emf := NewEMF()
+	if emf == nil {
+		return
+	}
+	globalPipelineDefs := []MetricDef{
+		{Name: "TotalLogQueueDepth", Unit: UnitCount},
+		{Name: "TotalLogUploadFailureCount", Unit: UnitCount},
+		{Name: "TotalLogDropCount", Unit: UnitCount},
+	}
+	emf.AddMetricSet([][]string{{}}, globalPipelineDefs).
+		Metric("TotalLogQueueDepth", qd).
+		Metric("TotalLogUploadFailureCount", uf).
+		Metric("TotalLogDropCount", dr).
+		Emit()
+}
+
+var (
+	pipelineGlobalQueueDepth int
+	pipelineGlobalUploadFail int64
+	pipelineGlobalDrops      int64
+	pipelineGlobalMu         sync.Mutex
+)
 
 // Pre-defined metric sets to avoid repeated allocation.
 
@@ -198,4 +241,18 @@ var (
 		{Name: "RedisErrorCount", Unit: UnitCount},
 	}
 	RedisDims = [][]string{{"Command"}}
+
+	StreamFinishMetrics = []MetricDef{
+		{Name: "StreamFinishCount", Unit: UnitCount},
+		{Name: "StreamTimeoutCount", Unit: UnitCount},
+		{Name: "StreamClientDisconnectCount", Unit: UnitCount},
+		{Name: "StreamDurationMs", Unit: UnitMilliseconds},
+	}
+	StreamFinishDims = [][]string{{"Channel"}, {"Reason"}}
+
+	StreamInterruptBillingMetrics = []MetricDef{
+		{Name: "StreamInterruptCount", Unit: UnitCount},
+		{Name: "StreamInterruptPartialTokens", Unit: UnitCount},
+	}
+	StreamInterruptBillingDims = [][]string{{"Channel"}, {"Reason"}}
 )

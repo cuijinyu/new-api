@@ -85,6 +85,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+			if c.GetInt("channel_id") == 0 {
+				logger.LogWarn(c, fmt.Sprintf("relay pre-channel error: code=%s, status=%d", newAPIError.GetErrorCode(), newAPIError.StatusCode))
+			}
 
 			// Mask Bedrock "Operation not allowed" as 503 overloaded before
 			// sending the response, so callers treat it as transient and retry

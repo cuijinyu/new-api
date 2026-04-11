@@ -512,6 +512,53 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 	})
 }
 
+// RecordFailedDoRequest records a raw log entry when client.Do fails (e.g. timeout, connection refused).
+// In this case there is no *http.Response, so AttachRawLogCapture cannot be used.
+func RecordFailedDoRequest(c *gin.Context, info *relaycommon.RelayInfo, req *http.Request, doErr error) {
+	u := getRawLogUploader()
+	eu := getErrorLogUploader()
+	if (!u.enabled && !eu.enabled) || req == nil {
+		return
+	}
+	maxBytes := u.maxBytes
+	if !u.enabled && eu.enabled {
+		maxBytes = eu.maxBytes
+	}
+
+	reqBody := readRequestBody(req)
+	payload := rawLogPayload{
+		RequestID:      c.GetString(common.RequestIdKey),
+		CreatedAt:      time.Now().Format(time.RFC3339Nano),
+		Method:         req.Method,
+		Path:           c.Request.URL.Path,
+		URL:            req.URL.String(),
+		StatusCode:     0,
+		RequestHeaders: sanitizeHeaders(req.Header),
+		RequestBody:    truncateUTF8(string(reqBody), maxBytes),
+		ResponseError:  doErr.Error(),
+		ChannelID:      c.GetInt("channel_id"),
+		ChannelName:    c.GetString("channel_name"),
+		ChannelType:    c.GetInt("channel_type"),
+		UserID:         c.GetInt("id"),
+	}
+	if info != nil {
+		payload.Model = info.OriginModelName
+		payload.RelayMode = fmt.Sprintf("%d", info.RelayMode)
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logger.LogError(c, "failed to marshal failed-request raw log payload: "+err.Error())
+		return
+	}
+	if u.enabled {
+		u.enqueue(c, data)
+	}
+	if eu.enabled {
+		eu.enqueue(c, data)
+	}
+}
+
 func readRequestBody(req *http.Request) []byte {
 	if req.GetBody == nil {
 		return nil

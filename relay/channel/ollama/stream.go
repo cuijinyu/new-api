@@ -69,6 +69,9 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 	defer service.CloseResponseBodyGracefully(resp)
 
+	tracker := helper.NewStreamLifecycleTracker(c)
+	defer tracker.Finish()
+
 	helper.SetEventStreamHeaders(c)
 	scanner := bufio.NewScanner(resp.Body)
 	usage := &dto.Usage{}

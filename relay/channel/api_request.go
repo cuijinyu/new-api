@@ -43,6 +43,7 @@ func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Hea
 
 // processHeaderOverride 处理请求头覆盖，支持变量替换
 // 支持的变量：{api_key}
+// 值为空字符串时删除该 header
 func processHeaderOverride(info *common.RelayInfo) (map[string]string, error) {
 	headerOverride := make(map[string]string)
 	for k, v := range info.HeadersOverride {
@@ -51,7 +52,6 @@ func processHeaderOverride(info *common.RelayInfo) (map[string]string, error) {
 			return nil, types.NewError(nil, types.ErrorCodeChannelHeaderOverrideInvalid)
 		}
 
-		// 替换支持的变量
 		if strings.Contains(str, "{api_key}") {
 			str = strings.ReplaceAll(str, "{api_key}", info.ApiKey)
 		}
@@ -59,6 +59,16 @@ func processHeaderOverride(info *common.RelayInfo) (map[string]string, error) {
 		headerOverride[k] = str
 	}
 	return headerOverride, nil
+}
+
+func applyHeaderOverride(headers *http.Header, overrides map[string]string) {
+	for key, value := range overrides {
+		if value == "" {
+			headers.Del(key)
+		} else {
+			headers.Set(key, value)
+		}
+	}
 }
 
 // applyPassHeaders copies specified client request headers to the upstream request.
@@ -90,18 +100,16 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
 	headers := req.Header
-	headerOverride, err := processHeaderOverride(info)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range headerOverride {
-		headers.Set(key, value)
-	}
 	applyPassHeaders(c, info, &headers)
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
+	headerOverride, err := processHeaderOverride(info)
+	if err != nil {
+		return nil, err
+	}
+	applyHeaderOverride(&headers, headerOverride)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -127,18 +135,16 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	// set form data
 	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	headers := req.Header
-	headerOverride, err := processHeaderOverride(info)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range headerOverride {
-		headers.Set(key, value)
-	}
 	applyPassHeaders(c, info, &headers)
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
+	headerOverride, err := processHeaderOverride(info)
+	if err != nil {
+		return nil, err
+	}
+	applyHeaderOverride(&headers, headerOverride)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -152,18 +158,16 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
 	targetHeader := http.Header{}
-	headerOverride, err := processHeaderOverride(info)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range headerOverride {
-		targetHeader.Set(key, value)
-	}
 	applyPassHeaders(c, info, &targetHeader)
 	err = a.SetupRequestHeader(c, &targetHeader, info)
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
+	headerOverride, err := processHeaderOverride(info)
+	if err != nil {
+		return nil, err
+	}
+	applyHeaderOverride(&targetHeader, headerOverride)
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {
@@ -283,6 +287,8 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if info.ChannelSetting.Proxy != "" {
 		client, err = service.NewProxyHttpClient(info.ChannelSetting.Proxy)
 		if err != nil {
+			emitUpstreamMetric(c, 0, 0, false)
+			service.RecordFailedDoRequest(c, info, req, err)
 			return nil, fmt.Errorf("new proxy http client failed: %w", err)
 		}
 	} else {
@@ -317,10 +323,14 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		isTimeout := errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout")
 		emitUpstreamMetric(c, upstreamLatencyMs, 0, isTimeout)
 		logger.LogError(c, "do request failed: "+err.Error())
+		service.RecordFailedDoRequest(c, info, req, err)
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {
-		return nil, errors.New("resp is nil")
+		respNilErr := errors.New("resp is nil")
+		emitUpstreamMetric(c, upstreamLatencyMs, 0, false)
+		service.RecordFailedDoRequest(c, info, req, respNilErr)
+		return nil, respNilErr
 	}
 
 	emitUpstreamMetric(c, upstreamLatencyMs, resp.StatusCode, false)

@@ -214,10 +214,13 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	modelName := relayInfo.OriginModelName
 
+	completionImageTokens := usage.CompletionTokenDetails.ImageTokens
+
 	tokenName := ctx.GetString("token_name")
 	completionRatio := relayInfo.PriceData.CompletionRatio
 	cacheRatio := relayInfo.PriceData.CacheRatio
 	imageRatio := relayInfo.PriceData.ImageRatio
+	imageCompletionRatio := relayInfo.PriceData.ImageCompletionRatio
 	modelRatio := relayInfo.PriceData.ModelRatio
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
 	modelPrice := relayInfo.PriceData.ModelPrice
@@ -229,10 +232,12 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	dImageTokens := decimal.NewFromInt(int64(imageTokens))
 	dAudioTokens := decimal.NewFromInt(int64(audioTokens))
 	dCompletionTokens := decimal.NewFromInt(int64(completionTokens))
+	dCompletionImageTokens := decimal.NewFromInt(int64(completionImageTokens))
 	dCachedCreationTokens := decimal.NewFromInt(int64(cachedCreationTokens))
 	dCompletionRatio := decimal.NewFromFloat(completionRatio)
 	dCacheRatio := decimal.NewFromFloat(cacheRatio)
 	dImageRatio := decimal.NewFromFloat(imageRatio)
+	dImageCompletionRatio := decimal.NewFromFloat(imageCompletionRatio)
 	dModelRatio := decimal.NewFromFloat(modelRatio)
 	dGroupRatio := decimal.NewFromFloat(groupRatio)
 	dModelPrice := decimal.NewFromFloat(modelPrice)
@@ -442,7 +447,14 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 				Add(dCachedCreationTokensWithRatio)
 		}
 
-		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
+		// 拆分 completion：图片输出 token 使用独立倍率
+		dTextCompletionTokens := dCompletionTokens
+		var completionImageQuota decimal.Decimal
+		if !dCompletionImageTokens.IsZero() {
+			dTextCompletionTokens = dCompletionTokens.Sub(dCompletionImageTokens)
+			completionImageQuota = dCompletionImageTokens.Mul(dImageCompletionRatio)
+		}
+		completionQuota := dTextCompletionTokens.Mul(dCompletionRatio).Add(completionImageQuota)
 
 		if claudeInputMult != 1.0 || claudeOutputMult != 1.0 {
 			dOutputMult := decimal.NewFromFloat(claudeOutputMult)
@@ -471,6 +483,15 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	totalTokens := promptTokens + completionTokens
 
 	var logContent string
+
+	streamFinishReason := ctx.GetString("stream_finish_reason")
+	if streamFinishReason == "timeout" || streamFinishReason == "client_disconnect" {
+		streamDurationMs := ctx.GetInt64("stream_duration_ms")
+		logContent += fmt.Sprintf("（流式中断：%s，持续 %dms）", streamFinishReason, streamDurationMs)
+		logger.LogWarn(ctx, fmt.Sprintf("stream interrupted: reason=%s, duration=%dms, channelId=%d, model=%s, promptTokens=%d, completionTokens=%d, quota=%d",
+			streamFinishReason, streamDurationMs, relayInfo.ChannelId, modelName, promptTokens, completionTokens, quota))
+		emitStreamInterruptBillingMetric(ctx, streamFinishReason, completionTokens)
+	}
 
 	// record all the consume log even if quota is 0
 	if totalTokens == 0 {
@@ -533,6 +554,11 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		other["image"] = true
 		other["image_ratio"] = imageRatio
 		other["image_output"] = imageTokens
+	}
+	if completionImageTokens != 0 {
+		other["image_completion"] = true
+		other["image_completion_ratio"] = imageCompletionRatio
+		other["image_completion_tokens"] = completionImageTokens
 	}
 	if cachedCreationTokens != 0 {
 		other["cache_creation_tokens"] = cachedCreationTokens
@@ -630,4 +656,12 @@ func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
 	}
 	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
 	logger.RecordBilling(channel, quota, failCount)
+}
+
+func emitStreamInterruptBillingMetric(ctx *gin.Context, reason string, partialCompletionTokens int) {
+	if !logger.MetricsEnabled() {
+		return
+	}
+	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
+	logger.RecordStreamInterruptBilling(channel, reason, partialCompletionTokens)
 }

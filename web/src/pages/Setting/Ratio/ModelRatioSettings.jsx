@@ -46,6 +46,7 @@ export default function ModelRatioSettings(props) {
     TieredPricing: '',
     CompletionRatio: '',
     ImageRatio: '',
+    ImageCompletionRatio: '',
     AudioRatio: '',
     AudioCompletionRatio: '',
     ExposeRatioEnabled: false,
@@ -266,6 +267,32 @@ export default function ModelRatioSettings(props) {
                 },
               ]}
               onChange={(value) => setInputs({ ...inputs, ImageRatio: value })}
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('图片输出补全倍率（仅 Gemini 生图模型支持）')}
+              extraText={t(
+                '图片输出 token 的独立倍率，用于 Gemini 生图模型文本/图片分开计费。键为模型名称，值为倍率（相对于模型倍率的乘数）',
+              )}
+              placeholder={t(
+                '为一个 JSON 文本，键为模型名称，值为倍率，例如：{"gemini-2.5-flash-image": 4.27}',
+              )}
+              field={'ImageCompletionRatio'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => verifyJSON(value),
+                  message: '不是合法的 JSON 字符串',
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, ImageCompletionRatio: value })
+              }
             />
           </Col>
         </Row>

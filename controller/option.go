@@ -164,6 +164,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "ImageCompletionRatio":
+		err = ratio_setting.UpdateImageCompletionRatioByJSONString(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "图片补全倍率设置失败: " + err.Error(),
+			})
+			return
+		}
 	case "ModelRequestRateLimitGroup":
 		err = setting.CheckModelRequestRateLimitGroup(option.Value.(string))
 		if err != nil {

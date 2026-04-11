@@ -165,11 +165,13 @@ func roundTo(v float64, decimals int) float64 {
 // --- Global aggregator registry ---
 
 var (
-	aggRequest  *metricSetAggregator
-	aggUpstream *metricSetAggregator
-	aggBilling  *metricSetAggregator
-	aggDB       *metricSetAggregator
-	aggRedis    *metricSetAggregator
+	aggRequest      *metricSetAggregator
+	aggUpstream     *metricSetAggregator
+	aggBilling      *metricSetAggregator
+	aggDB           *metricSetAggregator
+	aggRedis        *metricSetAggregator
+	aggStreamFinish          *metricSetAggregator
+	aggStreamInterruptBill   *metricSetAggregator
 
 	aggStopCh chan struct{}
 	aggWg     sync.WaitGroup
@@ -182,6 +184,8 @@ func initAggregators() {
 	aggBilling = newMetricSetAggregator(BillingDims, BillingMetrics)
 	aggDB = newMetricSetAggregator(DBDims, DBMetrics)
 	aggRedis = newMetricSetAggregator(RedisDims, RedisMetrics)
+	aggStreamFinish = newMetricSetAggregator(StreamFinishDims, StreamFinishMetrics)
+	aggStreamInterruptBill = newMetricSetAggregator(StreamInterruptBillingDims, StreamInterruptBillingMetrics)
 }
 
 // StartAggregator starts the background flush loop. Call after InitMetrics.
@@ -241,6 +245,12 @@ func flushAll() {
 	}
 	if aggRedis != nil {
 		aggRedis.flush()
+	}
+	if aggStreamFinish != nil {
+		aggStreamFinish.flush()
+	}
+	if aggStreamInterruptBill != nil {
+		aggStreamInterruptBill.flush()
 	}
 }
 
@@ -323,6 +333,42 @@ func RecordRedis(command string, latencyMs float64, errCount int) {
 	aggRedis.record(dims, map[string]float64{
 		"RedisLatencyMs": latencyMs,
 		"RedisErrorCount": float64(errCount),
+	})
+}
+
+// RecordStreamFinish records how a streaming request ended.
+// reason should be one of: "completed", "timeout", "client_disconnect".
+func RecordStreamFinish(channel, reason string, durationMs int64) {
+	if aggStreamFinish == nil {
+		return
+	}
+	var timeoutCount, disconnectCount float64
+	switch reason {
+	case "timeout":
+		timeoutCount = 1
+	case "client_disconnect":
+		disconnectCount = 1
+	}
+	dims := map[string]string{"Channel": normDim(channel), "Reason": normDim(reason)}
+	aggStreamFinish.record(dims, map[string]float64{
+		"StreamFinishCount":           1,
+		"StreamTimeoutCount":          timeoutCount,
+		"StreamClientDisconnectCount": disconnectCount,
+		"StreamDurationMs":            float64(durationMs),
+	})
+}
+
+// RecordStreamInterruptBilling records a billing event where streaming was interrupted
+// (timeout or client disconnect), meaning the billed tokens may be less than what
+// the upstream provider actually consumed.
+func RecordStreamInterruptBilling(channel, reason string, partialCompletionTokens int) {
+	if aggStreamInterruptBill == nil {
+		return
+	}
+	dims := map[string]string{"Channel": normDim(channel), "Reason": normDim(reason)}
+	aggStreamInterruptBill.record(dims, map[string]float64{
+		"StreamInterruptCount":         1,
+		"StreamInterruptPartialTokens": float64(partialCompletionTokens),
 	})
 }
 
