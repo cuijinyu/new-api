@@ -22,6 +22,40 @@ type GeminiChatRequest struct {
 	CachedContent      string                     `json:"cachedContent,omitempty"`
 }
 
+// UnmarshalJSON supports both array and single-object forms for the "contents" field.
+// Google's API requires contents to be an array, but some clients mistakenly send a
+// single object. This unmarshaler auto-wraps a single object into a one-element array.
+func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
+	type Alias GeminiChatRequest
+	aux := &struct {
+		Contents json.RawMessage `json:"contents"`
+		*Alias
+	}{
+		Alias: (*Alias)(r),
+	}
+
+	if err := common.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	if len(aux.Contents) == 0 {
+		return nil
+	}
+
+	// Detect whether contents is an array or a single object
+	trimmed := json.RawMessage(strings.TrimSpace(string(aux.Contents)))
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		return common.Unmarshal(trimmed, &r.Contents)
+	}
+	// Single object — wrap into array
+	var single GeminiChatContent
+	if err := common.Unmarshal(trimmed, &single); err != nil {
+		return err
+	}
+	r.Contents = []GeminiChatContent{single}
+	return nil
+}
+
 type ToolConfig struct {
 	FunctionCallingConfig *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
 	RetrievalConfig       *RetrievalConfig       `json:"retrievalConfig,omitempty"`

@@ -47,6 +47,24 @@ def _fmt(wb, bold=False, bg=None, num_fmt=None, align="left"):
 EXCEL_MAX_DATA_ROWS = 500_000
 
 
+def _normalize_channel_ids(channel_id: int = None, channel_ids: list[int] = None) -> list[int]:
+    ids = []
+    if channel_ids:
+        ids.extend(int(x) for x in channel_ids if x is not None)
+    elif channel_id is not None:
+        ids.append(int(channel_id))
+    return sorted(set(ids))
+
+
+def _channel_suffix(channel_id: int = None, channel_ids: list[int] = None) -> str:
+    ids = _normalize_channel_ids(channel_id=channel_id, channel_ids=channel_ids)
+    if not ids:
+        return ""
+    if len(ids) == 1:
+        return f"_ch{ids[0]}"
+    return "_chs" + "-".join(str(x) for x in ids)
+
+
 def write_sheet(wb, title, sheet_name, headers, col_widths, data_rows, num_fmts,
                 total_row=None, total_fmts=None):
     total_data = len(data_rows)
@@ -133,6 +151,7 @@ def _write_info_sheet(wb, ws, row, items):
 def generate_monthly_bill(year_month: str, output_dir: str,
                           user_id: int = None,
                           channel_id: int = None,
+                          channel_ids: list[int] = None,
                           currency: str = "USD",
                           exchange_rate: float = 7.3,
                           flat_tier: bool = False,
@@ -170,7 +189,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     eff_end = end_time or end_day
 
     suffix = f"_user{user_id}" if user_id else ""
-    ch_suffix = f"_ch{channel_id}" if channel_id else ""
+    ch_suffix = _channel_suffix(channel_id=channel_id, channel_ids=channel_ids)
     tier_suffix = "_flattier" if flat_tier else ""
     from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
     day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
@@ -185,12 +204,14 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     df_full = run_query_cached(
         queries.monthly_bill_full(year_month, user_id=user_id,
                                   channel_id=channel_id,
+                                  channel_ids=channel_ids,
                                   start_day=start_day, end_day=end_day,
                                   start_time=start_time, end_time=end_time),
         no_cache=no_cache)
     df_trend = run_query_cached(
         queries.daily_trend(year_month, user_id=user_id,
                             channel_id=channel_id,
+                            channel_ids=channel_ids,
                             start_day=start_day, end_day=end_day,
                             start_time=start_time, end_time=end_time),
         no_cache=no_cache)
@@ -465,6 +486,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     if detail:
         detail_path = _export_detail_csv(year_month, output_dir, user_id=user_id,
                                          channel_id=channel_id,
+                                         channel_ids=channel_ids,
                                          flat_tier=flat_tier,
                                          flat_tier_since=flat_tier_since,
                                          start_day=start_day,
@@ -512,6 +534,7 @@ def _upload_results(xlsx_path: str, detail_path: str = None) -> dict:
 
 def _export_detail_csv(year_month: str, output_dir: str,
                        user_id: int = None, channel_id: int = None,
+                       channel_ids: list[int] = None,
                        model: str = None,
                        flat_tier: bool = False,
                        flat_tier_since: str = None,
@@ -536,7 +559,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     eff_end = end_time or end_day
 
     suffix = f"_user{user_id}" if user_id else ""
-    ch_suffix = f"_ch{channel_id}" if channel_id else ""
+    ch_suffix = _channel_suffix(channel_id=channel_id, channel_ids=channel_ids)
     tier_suffix = "_flattier" if flat_tier else ""
     from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
     day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
@@ -548,6 +571,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
         queries.raw_usage_detail_daily(year_month, day=d,
                                        user_id=user_id,
                                        channel_id=channel_id,
+                                       channel_ids=channel_ids,
                                        model=model)
         for d in days
     ]
@@ -606,7 +630,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     if customer_view:
         out_path = _write_detail_xlsx_customer(
             df_all, year_month, output_dir, user_id=user_id,
-            channel_id=channel_id,
+            channel_id=channel_id, channel_ids=channel_ids,
             flat_tier=flat_tier,
             start_day=start_time or start_day,
             end_day=end_time or end_day,
@@ -673,13 +697,14 @@ _CUSTOMER_DETAIL_COLS = [
 def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
                                 output_dir: str, user_id: int = None,
                                 channel_id: int = None,
+                                channel_ids: list[int] = None,
                                 flat_tier: bool = False,
                                 start_day: str = None, end_day: str = None,
                                 tier_suffix: str = "", from_suffix: str = "",
                                 day_suffix: str = "") -> str:
     """Write customer-facing detail as xlsx with auto-split sheets."""
     suffix = f"_user{user_id}" if user_id else ""
-    ch_suffix = f"_ch{channel_id}" if channel_id else ""
+    ch_suffix = _channel_suffix(channel_id=channel_id, channel_ids=channel_ids)
     xlsx_filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}_detail_customer.xlsx"
     xlsx_path = os.path.join(output_dir, xlsx_filename)
 

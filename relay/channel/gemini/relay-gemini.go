@@ -613,14 +613,20 @@ func cleanFunctionParameters(params interface{}) interface{} {
 			cleanedMap["items"] = cleanedItemsArray
 		}
 
-		// Recursively clean other schema composition keywords
-		for _, field := range []string{"allOf", "anyOf", "oneOf"} {
-			if nested, ok := cleanedMap[field].([]interface{}); ok {
-				cleanedNested := make([]interface{}, len(nested))
-				for i, item := range nested {
-					cleanedNested[i] = cleanFunctionParameters(item)
+		// Convert anyOf nullable pattern to Gemini-compatible type+nullable
+		// e.g. {"anyOf": [{"type":"integer"}, {"type":"null"}]} → {"type":"integer", "nullable":true}
+		if resolved, ok := resolveAnyOfNullable(cleanedMap); ok {
+			cleanedMap = resolved
+		} else {
+			// Recursively clean schema composition keywords that were not resolved
+			for _, field := range []string{"allOf", "anyOf", "oneOf"} {
+				if nested, ok := cleanedMap[field].([]interface{}); ok {
+					cleanedNested := make([]interface{}, len(nested))
+					for i, item := range nested {
+						cleanedNested[i] = cleanFunctionParameters(item)
+					}
+					cleanedMap[field] = cleanedNested
 				}
-				cleanedMap[field] = cleanedNested
 			}
 		}
 
@@ -672,6 +678,64 @@ func cleanFunctionParameters(params interface{}) interface{} {
 		// Not a map or array, return as is (e.g., could be a primitive)
 		return params
 	}
+}
+
+// resolveAnyOfNullable detects the common OpenAI SDK pattern:
+//
+//	{"anyOf": [{"type":"<real_type>", ...}, {"type":"null"}]}
+//
+// and converts it to the Gemini-compatible form:
+//
+//	{"type":"<real_type>", "nullable":true, ...}
+//
+// Returns the resolved map and true if conversion was applied, otherwise
+// returns the original map and false.
+func resolveAnyOfNullable(m map[string]interface{}) (map[string]interface{}, bool) {
+	anyOfRaw, exists := m["anyOf"]
+	if !exists {
+		return m, false
+	}
+	anyOf, ok := anyOfRaw.([]interface{})
+	if !ok || len(anyOf) != 2 {
+		return m, false
+	}
+
+	var realSchema map[string]interface{}
+	hasNull := false
+
+	for _, item := range anyOf {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			return m, false
+		}
+		t, _ := itemMap["type"].(string)
+		if t == "null" && len(itemMap) == 1 {
+			hasNull = true
+		} else if t != "" {
+			realSchema = itemMap
+		}
+	}
+
+	if !hasNull || realSchema == nil {
+		return m, false
+	}
+
+	result := make(map[string]interface{})
+	// Carry over sibling fields (description, title, etc.) from the original map
+	for k, v := range m {
+		if k == "anyOf" {
+			continue
+		}
+		result[k] = v
+	}
+	// Merge fields from the real type schema
+	for k, v := range realSchema {
+		result[k] = v
+	}
+	result["nullable"] = true
+
+	// Recursively clean the merged result
+	return cleanFunctionParameters(result).(map[string]interface{}), true
 }
 
 func removeAdditionalPropertiesWithDepth(schema interface{}, depth int) interface{} {

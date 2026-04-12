@@ -15,7 +15,7 @@ services:
   new-api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
     image: new-api:local
     container_name: new-api-local
     restart: always

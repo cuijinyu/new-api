@@ -7,6 +7,7 @@ EZModel 账单与分析仪表盘 — Streamlit
 
 import io
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,6 +80,22 @@ def load_users(ym, nc):
 @st.cache_data(ttl=600, show_spinner="正在查询...")
 def load_user_model(ym, nc):
     return run_query_cached(queries.monthly_bill_by_user_model(ym), no_cache=nc)
+
+
+def parse_channel_ids(text: str) -> list[int]:
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    parts = [p.strip() for p in re.split(r"[\s,，]+", raw) if p.strip()]
+    ids = []
+    for part in parts:
+        if not part.isdigit():
+            raise ValueError(f"无效渠道 ID: {part}")
+        value = int(part)
+        if value <= 0:
+            raise ValueError(f"渠道 ID 必须大于 0: {part}")
+        ids.append(value)
+    return sorted(set(ids))
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
 def load_trend(ym, nc):
@@ -664,6 +681,12 @@ with tab_export:
                                          value=0, step=1,
                                          help="指定上游渠道 ID，只出该渠道的账单")
 
+    exp_channel_ids_text = st.text_input(
+        "供应商渠道 IDs（可选，多渠道聚合导出）",
+        placeholder="例如: 25,54,89",
+        help="用于同一个上游供应商绑定多个渠道时合并导出。填写后将按这些渠道 ID 汇总，优先于上面的单个渠道 ID。"
+    )
+
     exp_col2b, exp_col2c = st.columns(2)
     with exp_col2b:
         exp_currency = st.selectbox("币种", ["USD", "CNY"])
@@ -762,9 +785,16 @@ with tab_export:
         import tempfile
         _exp_flat = exp_flat_tier or bool(exp_flat_since.strip())
         _exp_since = exp_flat_since.strip() or None
+        try:
+            exp_channel_ids = parse_channel_ids(exp_channel_ids_text)
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
         with tempfile.TemporaryDirectory() as tmpdir:
             uid = exp_user_id if exp_user_id > 0 else None
             chid = exp_channel_id if exp_channel_id > 0 else None
+            if exp_channel_ids:
+                chid = None
             spinner_msg = "正在生成账单..."
             if exp_detail:
                 spinner_msg += " (含逐条明细，请耐心等待)"
@@ -772,6 +802,7 @@ with tab_export:
                 result = report_builder.generate_monthly_bill(
                     year_month, tmpdir, user_id=uid,
                     channel_id=chid,
+                    channel_ids=exp_channel_ids,
                     currency=exp_currency,
                     flat_tier=_exp_flat, flat_tier_since=_exp_since,
                     start_day=exp_start_day,

@@ -18,6 +18,17 @@ def _q(value) -> str:
     return f"'{s}'"
 
 
+def _channel_where(channel_id: int = None, channel_ids: list[int] = None) -> str:
+    """Build channel filter SQL for either one channel or a channel set."""
+    if channel_ids:
+        ids = sorted({int(x) for x in channel_ids if x is not None})
+        if ids:
+            return " AND channel_id IN (" + ", ".join(str(x) for x in ids) + ")"
+    if channel_id is not None:
+        return f" AND channel_id = {int(channel_id)}"
+    return ""
+
+
 def _year_month(year_month: str) -> tuple[str, str]:
     """Parse 'YYYY-MM' into (year, month) strings."""
     m = re.match(r"^(\d{4})-(\d{2})$", year_month)
@@ -158,6 +169,7 @@ def _build_time_where(year: str, month: str, year_month: str,
 
 def monthly_bill_by_user(year_month: str, user_id: int = None,
                          channel_id: int = None,
+                         channel_ids: list[int] = None,
                          start_day: str = None, end_day: str = None,
                          start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -167,8 +179,7 @@ def monthly_bill_by_user(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
 SELECT
     user_id,
@@ -188,6 +199,7 @@ ORDER BY total_usd DESC
 
 def monthly_bill_by_user_model(year_month: str, user_id: int = None,
                                channel_id: int = None,
+                               channel_ids: list[int] = None,
                                start_day: str = None, end_day: str = None,
                                start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -197,8 +209,7 @@ def monthly_bill_by_user_model(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
 SELECT
     user_id,
@@ -218,6 +229,7 @@ ORDER BY user_id, total_usd DESC
 
 def monthly_bill_full(year_month: str, user_id: int = None,
                       channel_id: int = None,
+                      channel_ids: list[int] = None,
                       start_day: str = None, end_day: str = None,
                       start_time: str = None, end_time: str = None) -> str:
     """Full billing detail with cache token breakdown from other JSON.
@@ -236,8 +248,7 @@ def monthly_bill_full(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
 SELECT
     user_id,
@@ -270,6 +281,7 @@ ORDER BY user_id, total_usd DESC
 
 def daily_trend(year_month: str, user_id: int = None,
                 channel_id: int = None,
+                channel_ids: list[int] = None,
                 start_day: str = None, end_day: str = None,
                 start_time: str = None, end_time: str = None) -> str:
     """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
@@ -279,8 +291,7 @@ def daily_trend(year_month: str, user_id: int = None,
                               start_time=start_time, end_time=end_time)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
 SELECT
     day,
@@ -367,6 +378,7 @@ ORDER BY hour
 
 def raw_usage_detail(start_date: str, end_date: str,
                      user_id: int = None, channel_id: int = None,
+                     channel_ids: list[int] = None,
                      model: str = None) -> str:
     """Row-level usage_logs with all fields (incl. other) for local recalc.
 
@@ -397,8 +409,7 @@ def raw_usage_detail(start_date: str, end_date: str,
 
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     if model:
         where += f" AND model_name = {_q(model)}"
 
@@ -429,6 +440,7 @@ ORDER BY created_at
 
 def usage_by_created_at_range(ts_min: int, ts_max: int,
                               channel_id: int = None,
+                              channel_ids: list[int] = None,
                               user_id: int = None) -> str:
     """Row-level usage_logs filtered by created_at unix timestamp range.
 
@@ -454,8 +466,7 @@ def usage_by_created_at_range(ts_min: int, ts_max: int,
 
     where += f" AND created_at >= {int(ts_min)} AND created_at < {int(ts_max)}"
 
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
 
@@ -482,6 +493,7 @@ ORDER BY created_at
 
 def usage_summary_by_created_at_range(ts_min: int, ts_max: int,
                                       channel_id: int = None,
+                                      channel_ids: list[int] = None,
                                       user_id: int = None) -> str:
     """Aggregated usage by model for a created_at timestamp range.
 
@@ -505,8 +517,7 @@ def usage_summary_by_created_at_range(ts_min: int, ts_max: int,
 
     where += f" AND created_at >= {int(ts_min)} AND created_at < {int(ts_max)}"
 
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
 
@@ -531,6 +542,7 @@ ORDER BY total_usd DESC
 
 def raw_usage_detail_daily(year_month: str, day: str,
                            user_id: int = None, channel_id: int = None,
+                           channel_ids: list[int] = None,
                            model: str = None) -> str:
     """Row-level usage_logs for a single day with cache tokens extracted server-side.
 
@@ -542,8 +554,7 @@ def raw_usage_detail_daily(year_month: str, day: str,
 
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
-    if channel_id is not None:
-        where += f" AND channel_id = {int(channel_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     if model:
         where += f" AND model_name = {_q(model)}"
 
