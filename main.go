@@ -54,9 +54,11 @@ func main() {
 	}
 
 	defer func() {
+		service.StopBillingRetryWorker()
 		logger.StopAggregator()
 		logger.StopRuntimeCollector()
 		logger.ShutdownCloudWatch()
+		service.ShutdownBillingRetryUploader()
 		service.ShutdownUsageLogUploader()
 		service.ShutdownRawLogUploader()
 		service.ShutdownErrorLogUploader()
@@ -65,6 +67,10 @@ func main() {
 			common.FatalLog("failed to close database: " + err.Error())
 		}
 	}()
+
+	if service.BillingRetryS3Enabled() {
+		service.StartBillingRetryWorker()
+	}
 
 	if service.UsageLogS3Enabled() {
 		model.ConsumeLogHook = func(c *gin.Context, l *model.Log, other map[string]interface{}) {

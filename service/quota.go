@@ -418,6 +418,7 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
 			emitBillingMetric(ctx, quotaDelta, true)
+			EnqueueBillingRetry(relayInfo, quotaDelta, ctx.GetString(common.RequestIdKey), "post_consume_claude", err)
 		} else {
 			emitBillingMetric(ctx, quotaDelta, false)
 		}
@@ -594,6 +595,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
 			emitBillingMetric(ctx, quotaDelta, true)
+			EnqueueBillingRetry(relayInfo, quotaDelta, ctx.GetString(common.RequestIdKey), "post_consume_audio", err)
 		} else {
 			emitBillingMetric(ctx, quotaDelta, false)
 		}

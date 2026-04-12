@@ -179,6 +179,7 @@ var (
 	aggQuotaReject         *metricSetAggregator
 	aggAffinity            *metricSetAggregator
 	aggFinishReason        *metricSetAggregator
+	aggBillingRetry        *metricSetAggregator
 
 	aggStopCh chan struct{}
 	aggWg     sync.WaitGroup
@@ -200,6 +201,7 @@ func initAggregators() {
 	aggQuotaReject = newMetricSetAggregator(QuotaRejectDims, QuotaRejectMetrics)
 	aggAffinity = newMetricSetAggregator(AffinityDims, AffinityMetrics)
 	aggFinishReason = newMetricSetAggregator(FinishReasonDims, FinishReasonMetrics)
+	aggBillingRetry = newMetricSetAggregator(BillingRetryDims, BillingRetryMetrics)
 }
 
 // StartAggregator starts the background flush loop. Call after InitMetrics.
@@ -509,6 +511,28 @@ func RecordFinishReason(model, reason string) {
 	dims := map[string]string{"Model": normDim(model), "FinishReason": normDim(reason)}
 	aggFinishReason.record(dims, map[string]float64{
 		"FinishReasonCount": 1,
+	})
+}
+
+// RecordBillingRetry records the outcome of the billing retry worker cycle.
+func RecordBillingRetry(succeeded, failed int) {
+	if aggBillingRetry == nil {
+		return
+	}
+	aggBillingRetry.record(map[string]string{}, map[string]float64{
+		"BillingRetrySuccessCount": float64(succeeded),
+		"BillingRetryFailCount":    float64(failed),
+	})
+}
+
+// RecordBillingRetryUploader records uploader-side drop and upload failure counts.
+func RecordBillingRetryUploader(dropped, uploadFailed int64) {
+	if aggBillingRetry == nil {
+		return
+	}
+	aggBillingRetry.record(map[string]string{}, map[string]float64{
+		"BillingRetryDropCount":       float64(dropped),
+		"BillingRetryUploadFailCount": float64(uploadFailed),
 	})
 }
 

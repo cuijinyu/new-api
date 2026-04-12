@@ -17,6 +17,7 @@ import (
 func ReturnPreConsumedQuota(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 	if relayInfo.FinalPreConsumedQuota != 0 {
 		logger.LogInfo(c, fmt.Sprintf("用户 %d 请求失败, 返还预扣费额度 %s", relayInfo.UserId, logger.FormatQuota(relayInfo.FinalPreConsumedQuota)))
+		requestID := c.GetString(common.RequestIdKey)
 		gopool.Go(func() {
 			relayInfoCopy := *relayInfo
 
@@ -27,6 +28,7 @@ func ReturnPreConsumedQuota(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 					channel := fmt.Sprintf("ch%d", c.GetInt("channel_id"))
 					logger.RecordBilling(channel, 0, 1, 0)
 				}
+				EnqueueBillingRetry(&relayInfoCopy, -relayInfoCopy.FinalPreConsumedQuota, requestID, "return_pre_consumed", err)
 			}
 		})
 	}

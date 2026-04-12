@@ -304,4 +304,12 @@ var (
 		{Name: "FinishReasonCount", Unit: UnitCount},
 	}
 	FinishReasonDims = [][]string{{"Model", "FinishReason"}}
+
+	BillingRetryMetrics = []MetricDef{
+		{Name: "BillingRetrySuccessCount", Unit: UnitCount},
+		{Name: "BillingRetryFailCount", Unit: UnitCount},
+		{Name: "BillingRetryDropCount", Unit: UnitCount},
+		{Name: "BillingRetryUploadFailCount", Unit: UnitCount},
+	}
+	BillingRetryDims = [][]string{{}}
 )

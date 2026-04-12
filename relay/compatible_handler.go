@@ -546,6 +546,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		if err != nil {
 			logger.LogError(ctx, "error consuming token remain quota: "+err.Error())
 			emitBillingMetric(ctx, quotaDelta, true)
+			service.EnqueueBillingRetry(relayInfo, quotaDelta, ctx.GetString(common.RequestIdKey), "post_consume_compatible", err)
 		} else {
 			emitBillingMetric(ctx, quotaDelta, false)
 		}
