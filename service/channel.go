@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -29,6 +30,7 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
 	if success {
+		logger.RecordChannelHealthEvent(fmt.Sprintf("ch%d", channelError.ChannelId), "auto_disabled")
 		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
 		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
@@ -38,6 +40,7 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
+		logger.RecordChannelHealthEvent(fmt.Sprintf("ch%d", channelId), "enabled")
 		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
 		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
 		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)

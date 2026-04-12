@@ -386,6 +386,15 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 
 	ctx.Set("metric_input_tokens", usage.PromptTokens)
 	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+	ctx.Set("metric_cached_tokens", usage.PromptTokensDetails.CachedTokens)
+	ctx.Set("metric_cache_creation_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	ctx.Set("metric_cache_creation_5m_tokens", usage.ClaudeCacheCreation5mTokens)
+	ctx.Set("metric_cache_creation_1h_tokens", usage.ClaudeCacheCreation1hTokens)
+	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
+	ctx.Set("metric_is_stream", relayInfo.IsStream)
+	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {
+		ctx.Set("metric_output_tps", float64(usage.CompletionTokens)/float64(useTimeSeconds))
+	}
 
 	if quotaDelta > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
@@ -550,6 +559,15 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 
 	ctx.Set("metric_input_tokens", usage.PromptTokens)
 	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+	ctx.Set("metric_cached_tokens", usage.PromptTokensDetails.CachedTokens)
+	ctx.Set("metric_cache_creation_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	ctx.Set("metric_cache_creation_5m_tokens", usage.ClaudeCacheCreation5mTokens)
+	ctx.Set("metric_cache_creation_1h_tokens", usage.ClaudeCacheCreation1hTokens)
+	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
+	ctx.Set("metric_is_stream", relayInfo.IsStream)
+	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {
+		ctx.Set("metric_output_tps", float64(usage.CompletionTokens)/float64(useTimeSeconds))
+	}
 
 	if quotaDelta > 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
@@ -700,7 +718,7 @@ func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preCon
 	})
 }
 
-func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
+func emitBillingMetric(ctx *gin.Context, quotaDelta int, failed bool) {
 	if !logger.MetricsEnabled() {
 		return
 	}
@@ -709,5 +727,5 @@ func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
 		failCount = 1
 	}
 	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
-	logger.RecordBilling(channel, quota, failCount)
+	logger.RecordBilling(channel, quotaDelta, failCount, quotaDelta)
 }

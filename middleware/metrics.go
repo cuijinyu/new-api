@@ -28,13 +28,33 @@ func MetricsMiddleware() gin.HandlerFunc {
 
 		inputTokens := c.GetInt("metric_input_tokens")
 		outputTokens := c.GetInt("metric_output_tokens")
+		cachedTokens := c.GetInt("metric_cached_tokens")
+		cacheCreationTokens := c.GetInt("metric_cache_creation_tokens")
+		cacheCreation5mTokens := c.GetInt("metric_cache_creation_5m_tokens")
+		cacheCreation1hTokens := c.GetInt("metric_cache_creation_1h_tokens")
+		reasoningTokens := c.GetInt("metric_reasoning_tokens")
+		isStream, _ := c.Get("metric_is_stream")
+		isStreamBool, _ := isStream.(bool)
+
+		outputTPS := -1.0
+		if tps, exists := c.Get("metric_output_tps"); exists {
+			if v, ok := tps.(float64); ok {
+				outputTPS = v
+			}
+		}
 
 		var errCount int
 		if statusCode >= 400 {
 			errCount = 1
 		}
 
-		logger.RecordRequest(channel, model, latencyMs, errCount, inputTokens, outputTokens)
+		logger.RecordRequest(channel, model, isStreamBool, latencyMs, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens, outputTPS)
+
+		if finishReason, exists := c.Get("metric_finish_reason"); exists {
+			if reason, ok := finishReason.(string); ok && reason != "" {
+				logger.RecordFinishReason(model, reason)
+			}
+		}
 	}
 }
 

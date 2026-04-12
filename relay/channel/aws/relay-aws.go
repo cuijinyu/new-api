@@ -93,7 +93,6 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 			return nil, types.NewError(errors.Wrap(err, "decode nova request fail"), types.ErrorCodeBadRequestBody)
 		}
 
-		// 使用InvokeModel API，但使用Nova格式的请求体
 		awsReq := &bedrockruntime.InvokeModelInput{
 			ModelId:     aws.String(awsModelId),
 			Accept:      aws.String("application/json"),
@@ -105,6 +104,7 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 			return nil, types.NewError(errors.Wrap(err, "marshal nova request"), types.ErrorCodeBadResponseBody)
 		}
 		awsReq.Body = reqBody
+		a.AwsReq = awsReq
 		return nil, nil
 	} else {
 		awsClaudeReq, err := formatRequest(requestBody, requestHeader)
@@ -229,8 +229,32 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 		}
 	}
 
+	if err := stream.Err(); err != nil {
+		return types.NewOpenAIError(errors.Wrap(err, "aws stream error"), types.ErrorCodeAwsInvokeError, http.StatusBadGateway), nil
+	}
+
 	claude.HandleStreamFinalResponse(c, info, claudeInfo, claude.RequestModeMessage)
 	return nil, claudeInfo.Usage
+}
+
+func novaStopReasonToOpenAI(reason string) string {
+	switch reason {
+	case "end_turn":
+		return "stop"
+	case "max_tokens":
+		return "length"
+	case "tool_use":
+		return "tool_calls"
+	case "content_filtered":
+		return "content_filter"
+	case "stop_sequence":
+		return "stop"
+	default:
+		if reason == "" {
+			return "stop"
+		}
+		return reason
+	}
 }
 
 // Nova模型处理函数
@@ -241,7 +265,6 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		return types.NewError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeChannelAwsClientError), nil
 	}
 
-	// 解析Nova响应
 	var novaResp struct {
 		Output struct {
 			Message struct {
@@ -250,7 +273,8 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 				} `json:"content"`
 			} `json:"message"`
 		} `json:"output"`
-		Usage struct {
+		StopReason string `json:"stopReason"`
+		Usage      struct {
 			InputTokens  int `json:"inputTokens"`
 			OutputTokens int `json:"outputTokens"`
 			TotalTokens  int `json:"totalTokens"`
@@ -261,7 +285,13 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		return types.NewError(errors.Wrap(err, "unmarshal nova response"), types.ErrorCodeBadResponseBody), nil
 	}
 
-	// 构造OpenAI格式响应
+	var contentText string
+	if len(novaResp.Output.Message.Content) > 0 {
+		contentText = novaResp.Output.Message.Content[0].Text
+	}
+
+	finishReason := novaStopReasonToOpenAI(novaResp.StopReason)
+
 	response := dto.OpenAITextResponse{
 		Id:      helper.GetResponseID(c),
 		Object:  "chat.completion",
@@ -271,9 +301,9 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 			Index: 0,
 			Message: dto.Message{
 				Role:    "assistant",
-				Content: novaResp.Output.Message.Content[0].Text,
+				Content: contentText,
 			},
-			FinishReason: "stop",
+			FinishReason: finishReason,
 		}},
 		Usage: dto.Usage{
 			PromptTokens:     novaResp.Usage.InputTokens,
@@ -282,6 +312,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		},
 	}
 
+	c.Set("metric_finish_reason", finishReason)
 	c.JSON(http.StatusOK, response)
 	return nil, &response.Usage
 }

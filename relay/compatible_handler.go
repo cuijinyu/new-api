@@ -203,8 +203,18 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	ctx.Set("metric_input_tokens", usage.PromptTokens)
 	ctx.Set("metric_output_tokens", usage.CompletionTokens)
+	ctx.Set("metric_cached_tokens", usage.PromptTokensDetails.CachedTokens)
+	ctx.Set("metric_cache_creation_tokens", usage.PromptTokensDetails.CachedCreationTokens)
+	ctx.Set("metric_cache_creation_5m_tokens", usage.ClaudeCacheCreation5mTokens)
+	ctx.Set("metric_cache_creation_1h_tokens", usage.ClaudeCacheCreation1hTokens)
+	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
+	ctx.Set("metric_is_stream", relayInfo.IsStream)
 
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
+
+	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {
+		ctx.Set("metric_output_tps", float64(usage.CompletionTokens)/float64(useTimeSeconds))
+	}
 	promptTokens := usage.PromptTokens
 	cacheTokens := usage.PromptTokensDetails.CachedTokens
 	imageTokens := usage.PromptTokensDetails.ImageTokens
@@ -646,7 +656,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	})
 }
 
-func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
+func emitBillingMetric(ctx *gin.Context, quotaDelta int, failed bool) {
 	if !logger.MetricsEnabled() {
 		return
 	}
@@ -655,7 +665,7 @@ func emitBillingMetric(ctx *gin.Context, quota int, failed bool) {
 		failCount = 1
 	}
 	channel := fmt.Sprintf("ch%d", ctx.GetInt("channel_id"))
-	logger.RecordBilling(channel, quota, failCount)
+	logger.RecordBilling(channel, quotaDelta, failCount, quotaDelta)
 }
 
 func emitStreamInterruptBillingMetric(ctx *gin.Context, reason string, partialCompletionTokens int) {

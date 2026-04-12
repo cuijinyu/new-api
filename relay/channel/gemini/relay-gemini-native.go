@@ -56,6 +56,10 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
+	if len(geminiResponse.Candidates) > 0 && geminiResponse.Candidates[0].FinishReason != nil {
+		c.Set("metric_finish_reason", geminiFinishReasonToOpenAI(*geminiResponse.Candidates[0].FinishReason))
+	}
+
 	return &usage, nil
 }
 

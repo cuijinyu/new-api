@@ -1043,6 +1043,7 @@ func handleFinalStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.Ch
 func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (*dto.Usage, *types.NewAPIError) {
 	var usage = &dto.Usage{}
 	var imageCount int
+	var lastFinishReason string
 	responseText := strings.Builder{}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
@@ -1055,12 +1056,18 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 		// 统计图片数量
 		for _, candidate := range geminiResponse.Candidates {
+			if candidate.FinishReason != nil && *candidate.FinishReason != "" {
+				lastFinishReason = *candidate.FinishReason
+			}
 			for _, part := range candidate.Content.Parts {
 				if part.InlineData != nil && part.InlineData.MimeType != "" {
 					imageCount++
 				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
+				}
+				if part.FunctionCall != nil {
+					lastFinishReason = "TOOL_USE"
 				}
 			}
 		}
@@ -1106,6 +1113,14 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			usage = service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.PromptTokens)
 		} else {
 			usage = &dto.Usage{}
+		}
+	}
+
+	if lastFinishReason != "" {
+		if lastFinishReason == "TOOL_USE" {
+			c.Set("metric_finish_reason", constant.FinishReasonToolCalls)
+		} else {
+			c.Set("metric_finish_reason", geminiFinishReasonToOpenAI(lastFinishReason))
 		}
 	}
 
@@ -1169,6 +1184,8 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	if err != nil {
 		return usage, err
 	}
+
+	c.Set("metric_finish_reason", finishReason)
 
 	response := helper.GenerateFinalUsageResponse(id, createAt, info.UpstreamModelName, *usage)
 	handleErr := handleFinalStream(c, info, response)
@@ -1245,6 +1262,10 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	if len(fullTextResponse.Choices) > 0 && fullTextResponse.Choices[0].FinishReason != "" {
+		c.Set("metric_finish_reason", fullTextResponse.Choices[0].FinishReason)
+	}
 
 	return &usage, nil
 }
@@ -1417,4 +1438,15 @@ func ChatImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	}
 
 	return usage, nil
+}
+
+func geminiFinishReasonToOpenAI(reason string) string {
+	switch reason {
+	case "STOP":
+		return constant.FinishReasonStop
+	case "MAX_TOKENS":
+		return constant.FinishReasonLength
+	default:
+		return constant.FinishReasonContentFilter
+	}
 }

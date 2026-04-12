@@ -739,6 +739,10 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
+	if claudeResponse.Type == "message_delta" && claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
+		c.Set("metric_finish_reason", stopReasonClaude2OpenAI(*claudeResponse.Delta.StopReason))
+	}
+
 	if info.RelayFormat == types.RelayFormatClaude {
 		FormatClaudeResponseInfo(requestMode, &claudeResponse, nil, claudeInfo)
 
@@ -869,6 +873,10 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 
 	if claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
 		c.Set("claude_web_search_requests", claudeResponse.Usage.ServerToolUse.WebSearchRequests)
+	}
+
+	if claudeResponse.StopReason != "" {
+		c.Set("metric_finish_reason", stopReasonClaude2OpenAI(claudeResponse.StopReason))
 	}
 
 	service.IOCopyBytesGracefully(c, httpResp, responseData)

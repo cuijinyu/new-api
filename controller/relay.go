@@ -172,7 +172,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}()
 
+	retryAttempts := 0
 	for i := 0; i <= common.RetryTimes; i++ {
+		retryAttempts = i + 1
 		channel, err := getChannel(c, group, originalModel, i)
 		if err != nil {
 			logger.LogError(c, err.Error())
@@ -196,6 +198,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		if newAPIError == nil {
+			logger.RecordRetryResult(originalModel, retryAttempts, true)
 			return
 		}
 
@@ -212,6 +215,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		emitChannelFallbackMetric(channel.Id)
 	}
+
+	logger.RecordRetryResult(originalModel, retryAttempts, false)
 
 	useChannel := c.GetStringSlice("use_channel")
 	if len(useChannel) > 1 {

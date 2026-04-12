@@ -25,7 +25,7 @@ func ReturnPreConsumedQuota(c *gin.Context, relayInfo *relaycommon.RelayInfo) {
 				logger.LogError(c, fmt.Sprintf("error return pre-consumed quota: %s", err.Error()))
 				if logger.MetricsEnabled() {
 					channel := fmt.Sprintf("ch%d", c.GetInt("channel_id"))
-					logger.RecordBilling(channel, 0, 1)
+					logger.RecordBilling(channel, 0, 1, 0)
 				}
 			}
 		})
@@ -40,9 +40,11 @@ func PreConsumeQuota(c *gin.Context, preConsumedQuota int, relayInfo *relaycommo
 		return types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 	}
 	if userQuota <= 0 {
+		logger.RecordQuotaReject()
 		return types.NewErrorWithStatusCode(fmt.Errorf("用户额度不足, 剩余额度: %s", logger.FormatQuota(userQuota)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 	}
 	if userQuota-preConsumedQuota < 0 {
+		logger.RecordQuotaReject()
 		return types.NewErrorWithStatusCode(fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(preConsumedQuota)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 	}
 

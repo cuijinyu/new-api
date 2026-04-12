@@ -171,6 +171,18 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
 	}
 
+	if lastStreamData != "" {
+		var lastChunk dto.ChatCompletionsStreamResponse
+		if err := json.Unmarshal(common.StringToByteSlice(lastStreamData), &lastChunk); err == nil {
+			for _, ch := range lastChunk.Choices {
+				if ch.FinishReason != nil && *ch.FinishReason != "" {
+					c.Set("metric_finish_reason", *ch.FinishReason)
+					break
+				}
+			}
+		}
+	}
+
 	if info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
 			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
@@ -290,6 +302,10 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	if len(simpleResponse.Choices) > 0 && simpleResponse.Choices[0].FinishReason != "" {
+		c.Set("metric_finish_reason", simpleResponse.Choices[0].FinishReason)
+	}
 
 	return &simpleResponse.Usage, nil
 }

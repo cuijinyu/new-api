@@ -355,6 +355,25 @@ func emitUpstreamMetric(c *gin.Context, latencyMs int64, statusCode int, isTimeo
 		timeoutCount = 1
 	}
 	logger.RecordUpstream(channel, latencyMs, errCount, timeoutCount)
+
+	var statusGroup string
+	switch {
+	case isTimeout:
+		statusGroup = "timeout"
+	case statusCode == 0:
+		statusGroup = "conn_error"
+	case statusCode >= 200 && statusCode < 300:
+		statusGroup = "2xx"
+	case statusCode == 429:
+		statusGroup = "4xx_429"
+	case statusCode >= 400 && statusCode < 500:
+		statusGroup = "4xx_other"
+	case statusCode >= 500:
+		statusGroup = "5xx"
+	default:
+		statusGroup = "other"
+	}
+	logger.RecordUpstreamStatus(channel, statusGroup)
 }
 
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {

@@ -120,6 +120,7 @@ func Distribute() func(c *gin.Context) {
 							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 						}
 					}
+					logger.RecordAffinityResult(modelRequest.Model, channel != nil)
 				}
 
 				if channel == nil {

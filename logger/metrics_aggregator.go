@@ -165,13 +165,20 @@ func roundTo(v float64, decimals int) float64 {
 // --- Global aggregator registry ---
 
 var (
-	aggRequest      *metricSetAggregator
-	aggUpstream     *metricSetAggregator
-	aggBilling      *metricSetAggregator
-	aggDB           *metricSetAggregator
-	aggRedis        *metricSetAggregator
-	aggStreamFinish          *metricSetAggregator
-	aggStreamInterruptBill   *metricSetAggregator
+	aggRequest             *metricSetAggregator
+	aggUpstream            *metricSetAggregator
+	aggUpstreamStatus      *metricSetAggregator
+	aggBilling             *metricSetAggregator
+	aggDB                  *metricSetAggregator
+	aggRedis               *metricSetAggregator
+	aggStreamFinish        *metricSetAggregator
+	aggStreamInterruptBill *metricSetAggregator
+	aggRateLimit           *metricSetAggregator
+	aggChannelHealth       *metricSetAggregator
+	aggRetry               *metricSetAggregator
+	aggQuotaReject         *metricSetAggregator
+	aggAffinity            *metricSetAggregator
+	aggFinishReason        *metricSetAggregator
 
 	aggStopCh chan struct{}
 	aggWg     sync.WaitGroup
@@ -181,11 +188,18 @@ var (
 func initAggregators() {
 	aggRequest = newMetricSetAggregator(RequestDims, RequestMetrics)
 	aggUpstream = newMetricSetAggregator(UpstreamDims, UpstreamMetrics)
+	aggUpstreamStatus = newMetricSetAggregator(UpstreamStatusDims, UpstreamStatusMetrics)
 	aggBilling = newMetricSetAggregator(BillingDims, BillingMetrics)
 	aggDB = newMetricSetAggregator(DBDims, DBMetrics)
 	aggRedis = newMetricSetAggregator(RedisDims, RedisMetrics)
 	aggStreamFinish = newMetricSetAggregator(StreamFinishDims, StreamFinishMetrics)
 	aggStreamInterruptBill = newMetricSetAggregator(StreamInterruptBillingDims, StreamInterruptBillingMetrics)
+	aggRateLimit = newMetricSetAggregator(RateLimitDims, RateLimitMetrics)
+	aggChannelHealth = newMetricSetAggregator(ChannelHealthDims, ChannelHealthMetrics)
+	aggRetry = newMetricSetAggregator(RetryDims, RetryMetrics)
+	aggQuotaReject = newMetricSetAggregator(QuotaRejectDims, QuotaRejectMetrics)
+	aggAffinity = newMetricSetAggregator(AffinityDims, AffinityMetrics)
+	aggFinishReason = newMetricSetAggregator(FinishReasonDims, FinishReasonMetrics)
 }
 
 // StartAggregator starts the background flush loop. Call after InitMetrics.
@@ -231,43 +245,57 @@ func runAggregatorLoop() {
 }
 
 func flushAll() {
-	if aggRequest != nil {
-		aggRequest.flush()
-	}
-	if aggUpstream != nil {
-		aggUpstream.flush()
-	}
-	if aggBilling != nil {
-		aggBilling.flush()
-	}
-	if aggDB != nil {
-		aggDB.flush()
-	}
-	if aggRedis != nil {
-		aggRedis.flush()
-	}
-	if aggStreamFinish != nil {
-		aggStreamFinish.flush()
-	}
-	if aggStreamInterruptBill != nil {
-		aggStreamInterruptBill.flush()
+	for _, agg := range []*metricSetAggregator{
+		aggRequest, aggUpstream, aggUpstreamStatus, aggBilling,
+		aggDB, aggRedis, aggStreamFinish, aggStreamInterruptBill,
+		aggRateLimit, aggChannelHealth, aggRetry, aggQuotaReject,
+		aggAffinity, aggFinishReason,
+	} {
+		if agg != nil {
+			agg.flush()
+		}
 	}
 }
 
 // --- Public recording functions (called from hot paths) ---
 
 // RecordRequest records API request metrics into the aggregator.
-func RecordRequest(channel, model string, latencyMs int64, errCount, inputTokens, outputTokens int) {
+func RecordRequest(channel, model string, isStream bool, latencyMs int64, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens int, outputTokensPerSec float64) {
 	if aggRequest == nil {
 		return
 	}
-	dims := map[string]string{"Channel": normDim(channel), "Model": normDim(model)}
+	var cacheHitCount float64
+	if cachedTokens > 0 {
+		cacheHitCount = 1
+	}
+	var cacheCreationCount float64
+	if cacheCreationTokens > 0 {
+		cacheCreationCount = 1
+	}
+	streamDim := "false"
+	if isStream {
+		streamDim = "true"
+	}
+	// Negative outputTokensPerSec means not applicable; skip it.
+	tps := outputTokensPerSec
+	if tps < 0 {
+		tps = 0
+	}
+	dims := map[string]string{"Channel": normDim(channel), "Model": normDim(model), "IsStream": streamDim}
 	aggRequest.record(dims, map[string]float64{
-		"RequestCount":    1,
-		"RequestLatencyMs": float64(latencyMs),
-		"ErrorCount":      float64(errCount),
-		"InputTokens":     float64(inputTokens),
-		"OutputTokens":    float64(outputTokens),
+		"RequestCount":          1,
+		"RequestLatencyMs":      float64(latencyMs),
+		"ErrorCount":            float64(errCount),
+		"InputTokens":           float64(inputTokens),
+		"OutputTokens":          float64(outputTokens),
+		"CachedTokens":          float64(cachedTokens),
+		"CacheHitCount":         cacheHitCount,
+		"CacheCreationTokens":   float64(cacheCreationTokens),
+		"CacheCreationCount":    cacheCreationCount,
+		"CacheCreation5mTokens": float64(cacheCreation5mTokens),
+		"CacheCreation1hTokens": float64(cacheCreation1hTokens),
+		"ReasoningTokens":       float64(reasoningTokens),
+		"OutputTokensPerSec":    tps,
 	})
 }
 
@@ -301,14 +329,28 @@ func RecordChannelFallback(channel string) {
 
 // RecordBilling records billing/quota consumption metrics.
 // quotaConsumed is in internal quota units; it is converted to USD for the metric.
-func RecordBilling(channel string, quotaConsumed int, failCount int) {
+// quotaDelta is the difference between actual and pre-consumed quota (positive = underestimate).
+func RecordBilling(channel string, quotaConsumed int, failCount int, quotaDelta int) {
 	if aggBilling == nil {
 		return
 	}
+	var overcharge, undercharge float64
+	if quotaDelta > 0 {
+		undercharge = 1
+	} else if quotaDelta < 0 {
+		overcharge = 1
+	}
+	absD := float64(quotaDelta)
+	if absD < 0 {
+		absD = -absD
+	}
 	dims := map[string]string{"Channel": normDim(channel)}
 	aggBilling.record(dims, map[string]float64{
-		"CostUSD":             float64(quotaConsumed) / quotaPerUnitUSD,
-		"BillingFailureCount": float64(failCount),
+		"CostUSD":                float64(quotaConsumed) / quotaPerUnitUSD,
+		"BillingFailureCount":    float64(failCount),
+		"QuotaDeltaAbs":          absD / quotaPerUnitUSD,
+		"QuotaOverchargeCount":   overcharge,
+		"QuotaUnderchargeCount":  undercharge,
 	})
 }
 
@@ -369,6 +411,98 @@ func RecordStreamInterruptBilling(channel, reason string, partialCompletionToken
 	aggStreamInterruptBill.record(dims, map[string]float64{
 		"StreamInterruptCount":         1,
 		"StreamInterruptPartialTokens": float64(partialCompletionTokens),
+	})
+}
+
+// RecordUpstreamStatus records upstream HTTP status code distribution.
+// statusGroup should be one of: "2xx", "4xx_429", "4xx_other", "5xx", "timeout", "conn_error".
+func RecordUpstreamStatus(channel, statusGroup string) {
+	if aggUpstreamStatus == nil {
+		return
+	}
+	dims := map[string]string{"Channel": normDim(channel), "StatusGroup": normDim(statusGroup)}
+	aggUpstreamStatus.record(dims, map[string]float64{
+		"UpstreamStatusCount": 1,
+	})
+}
+
+// RecordRateLimitReject records a rate-limit rejection event.
+// limitType should be one of: "global_api", "global_web", "model_total", "model_success".
+func RecordRateLimitReject(limitType string) {
+	if aggRateLimit == nil {
+		return
+	}
+	dims := map[string]string{"LimitType": normDim(limitType)}
+	aggRateLimit.record(dims, map[string]float64{
+		"RateLimitRejectCount": 1,
+	})
+}
+
+// RecordChannelHealthEvent records a channel auto-disable or re-enable event.
+func RecordChannelHealthEvent(channel, event string) {
+	if aggChannelHealth == nil {
+		return
+	}
+	dims := map[string]string{"Channel": normDim(channel), "Event": normDim(event)}
+	aggChannelHealth.record(dims, map[string]float64{
+		"ChannelHealthEventCount": 1,
+	})
+}
+
+// RecordRetryResult records the outcome of a request retry loop.
+func RecordRetryResult(model string, attempts int, success bool) {
+	if aggRetry == nil {
+		return
+	}
+	result := "success"
+	var exhaustedCount float64
+	if !success {
+		result = "exhausted"
+		exhaustedCount = 1
+	}
+	dims := map[string]string{"Model": normDim(model), "Result": result}
+	aggRetry.record(dims, map[string]float64{
+		"RetryAttempts":       float64(attempts),
+		"RetryExhaustedCount": exhaustedCount,
+	})
+}
+
+// RecordQuotaReject records a request rejection due to insufficient user quota.
+func RecordQuotaReject() {
+	if aggQuotaReject == nil {
+		return
+	}
+	aggQuotaReject.record(map[string]string{}, map[string]float64{
+		"QuotaRejectCount": 1,
+	})
+}
+
+// RecordAffinityResult records whether channel affinity cache was hit or missed.
+func RecordAffinityResult(model string, hit bool) {
+	if aggAffinity == nil {
+		return
+	}
+	var hitCount, missCount float64
+	if hit {
+		hitCount = 1
+	} else {
+		missCount = 1
+	}
+	dims := map[string]string{"Model": normDim(model)}
+	aggAffinity.record(dims, map[string]float64{
+		"AffinityHitCount":  hitCount,
+		"AffinityMissCount": missCount,
+	})
+}
+
+// RecordFinishReason records the model-level finish_reason for a completed request.
+func RecordFinishReason(model, reason string) {
+	if aggFinishReason == nil {
+		return
+	}
+	dims := map[string]string{"Model": normDim(model), "FinishReason": normDim(reason)}
+	aggFinishReason.record(dims, map[string]float64{
+		"FinishReasonCount": 1,
 	})
 }
 

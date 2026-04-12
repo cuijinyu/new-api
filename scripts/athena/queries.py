@@ -785,3 +785,110 @@ UNION ALL
 SELECT 'error_logs' AS source, COUNT(*) AS record_count
 FROM ezmodel_logs.error_logs WHERE {where}
 """
+
+
+# ---------------------------------------------------------------------------
+# G. Cache hit rate analysis (usage_logs)
+# ---------------------------------------------------------------------------
+
+def cache_hit_rate_by_user(year_month: str, user_id: int = None,
+                           channel_id: int = None,
+                           channel_ids: list[int] = None,
+                           model: str = None,
+                           start_day: str = None, end_day: str = None,
+                           start_time: str = None, end_time: str = None) -> str:
+    """Cache hit rate aggregated by user_id, channel_id, model_name.
+
+    Reports total requests, cache-hit request count, cached token totals,
+    cache creation token totals, and hit-rate percentages.
+
+    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision.
+    """
+    year, month = _year_month(year_month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    if model:
+        where += f" AND model_name = {_q(model)}"
+    return f"""
+SELECT
+    user_id,
+    username,
+    channel_id,
+    model_name,
+    COUNT(*)  AS total_requests,
+    SUM(CASE WHEN COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0) > 0
+             THEN 1 ELSE 0 END)
+        AS cache_hit_requests,
+    ROUND(SUM(CASE WHEN COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0) > 0
+                   THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+        AS cache_hit_rate_pct,
+    SUM(prompt_tokens)  AS total_prompt_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cached_tokens,
+    ROUND(SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)) * 100.0
+          / NULLIF(SUM(prompt_tokens), 0), 2)
+        AS cached_token_ratio_pct,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_creation_tokens,
+    SUM(CASE WHEN COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0) > 0
+             THEN 1 ELSE 0 END)
+        AS cache_creation_requests,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m') AS BIGINT), 0))
+        AS total_cache_creation_5m_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h') AS BIGINT), 0))
+        AS total_cache_creation_1h_tokens
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY user_id, username, channel_id, model_name
+HAVING SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)) > 0
+    OR SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0)) > 0
+ORDER BY total_cached_tokens DESC
+"""
+
+
+def cache_hit_rate_summary(year_month: str,
+                           channel_id: int = None,
+                           channel_ids: list[int] = None,
+                           start_day: str = None, end_day: str = None,
+                           start_time: str = None, end_time: str = None) -> str:
+    """Cache hit rate aggregated by channel_id and model_name (no user dimension).
+
+    Useful for overall cache effectiveness monitoring per channel/model.
+    """
+    year, month = _year_month(year_month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time)
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    return f"""
+SELECT
+    channel_id,
+    model_name,
+    COUNT(*)  AS total_requests,
+    SUM(CASE WHEN COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0) > 0
+             THEN 1 ELSE 0 END)
+        AS cache_hit_requests,
+    ROUND(SUM(CASE WHEN COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0) > 0
+                   THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2)
+        AS cache_hit_rate_pct,
+    SUM(prompt_tokens)  AS total_prompt_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cached_tokens,
+    ROUND(SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)) * 100.0
+          / NULLIF(SUM(prompt_tokens), 0), 2)
+        AS cached_token_ratio_pct,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_creation_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m') AS BIGINT), 0))
+        AS total_cache_creation_5m_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h') AS BIGINT), 0))
+        AS total_cache_creation_1h_tokens
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY channel_id, model_name
+ORDER BY total_cached_tokens DESC
+"""

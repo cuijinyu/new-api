@@ -198,8 +198,16 @@ var (
 		{Name: "ErrorCount", Unit: UnitCount},
 		{Name: "InputTokens", Unit: UnitCount},
 		{Name: "OutputTokens", Unit: UnitCount},
+		{Name: "CachedTokens", Unit: UnitCount},
+		{Name: "CacheHitCount", Unit: UnitCount},
+		{Name: "CacheCreationTokens", Unit: UnitCount},
+		{Name: "CacheCreationCount", Unit: UnitCount},
+		{Name: "CacheCreation5mTokens", Unit: UnitCount},
+		{Name: "CacheCreation1hTokens", Unit: UnitCount},
+		{Name: "ReasoningTokens", Unit: UnitCount},
+		{Name: "OutputTokensPerSec", Unit: UnitNone},
 	}
-	RequestDims = [][]string{{"Channel"}, {"Model"}}
+	RequestDims = [][]string{{"Channel"}, {"Model"}, {"IsStream"}}
 
 	UpstreamMetrics = []MetricDef{
 		{Name: "UpstreamLatencyMs", Unit: UnitMilliseconds},
@@ -209,9 +217,17 @@ var (
 	}
 	UpstreamDims = [][]string{{"Channel"}}
 
+	UpstreamStatusMetrics = []MetricDef{
+		{Name: "UpstreamStatusCount", Unit: UnitCount},
+	}
+	UpstreamStatusDims = [][]string{{"Channel", "StatusGroup"}}
+
 	BillingMetrics = []MetricDef{
 		{Name: "CostUSD", Unit: UnitNone},
 		{Name: "BillingFailureCount", Unit: UnitCount},
+		{Name: "QuotaDeltaAbs", Unit: UnitNone},
+		{Name: "QuotaOverchargeCount", Unit: UnitCount},
+		{Name: "QuotaUnderchargeCount", Unit: UnitCount},
 	}
 	BillingDims = [][]string{{"Channel"}}
 
@@ -255,4 +271,36 @@ var (
 		{Name: "StreamInterruptPartialTokens", Unit: UnitCount},
 	}
 	StreamInterruptBillingDims = [][]string{{"Channel"}, {"Reason"}}
+
+	RateLimitMetrics = []MetricDef{
+		{Name: "RateLimitRejectCount", Unit: UnitCount},
+	}
+	RateLimitDims = [][]string{{"LimitType"}}
+
+	ChannelHealthMetrics = []MetricDef{
+		{Name: "ChannelHealthEventCount", Unit: UnitCount},
+	}
+	ChannelHealthDims = [][]string{{"Channel", "Event"}}
+
+	RetryMetrics = []MetricDef{
+		{Name: "RetryAttempts", Unit: UnitCount},
+		{Name: "RetryExhaustedCount", Unit: UnitCount},
+	}
+	RetryDims = [][]string{{"Model", "Result"}}
+
+	QuotaRejectMetrics = []MetricDef{
+		{Name: "QuotaRejectCount", Unit: UnitCount},
+	}
+	QuotaRejectDims = [][]string{{}}
+
+	AffinityMetrics = []MetricDef{
+		{Name: "AffinityHitCount", Unit: UnitCount},
+		{Name: "AffinityMissCount", Unit: UnitCount},
+	}
+	AffinityDims = [][]string{{"Model"}}
+
+	FinishReasonMetrics = []MetricDef{
+		{Name: "FinishReasonCount", Unit: UnitCount},
+	}
+	FinishReasonDims = [][]string{{"Model", "FinishReason"}}
 )
