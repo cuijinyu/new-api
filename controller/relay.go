@@ -204,6 +204,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !shouldRetry(c, newAPIError, common.RetryTimes-i) {
 			break
 		}
+		if i == 0 {
+			service.InvalidateChannelAffinityOnFailure(c)
+		}
+		if service.ShouldRecordAffinityPoison(newAPIError.StatusCode) {
+			service.RecordChannelAffinityPoison(c, channel.Id)
+		}
 		emitChannelFallbackMetric(channel.Id)
 	}
 
@@ -443,6 +449,12 @@ func RelayTask(c *gin.Context) {
 	taskErr := taskRelayHandler(c, relayInfo)
 	if taskErr == nil {
 		retryTimes = 0
+	}
+	if taskErr != nil && retryTimes > 0 {
+		service.InvalidateChannelAffinityOnFailure(c)
+		if service.ShouldRecordAffinityPoison(taskErr.StatusCode) {
+			service.RecordChannelAffinityPoison(c, channelId)
+		}
 	}
 	for i := 0; shouldRetryTaskRelay(c, channelId, taskErr, retryTimes) && i < retryTimes; i++ {
 		channel, newAPIError := getChannel(c, group, originalModel, i)

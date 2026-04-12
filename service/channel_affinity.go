@@ -27,12 +27,16 @@ const (
 	ginKeyChannelAffinitySkipRetry  = "channel_affinity_skip_retry_on_failure"
 
 	channelAffinityCacheNamespace           = "new-api:channel_affinity:v1"
+	channelAffinityPoisonCacheNamespace     = "new-api:channel_affinity_poison:v1"
 	channelAffinityUsageCacheStatsNamespace = "new-api:channel_affinity_usage_cache_stats:v1"
 )
 
 var (
 	channelAffinityCacheOnce sync.Once
 	channelAffinityCache     *cachex.HybridCache[int]
+
+	channelAffinityPoisonCacheOnce sync.Once
+	channelAffinityPoisonCache     *cachex.HybridCache[string]
 
 	channelAffinityUsageCacheStatsOnce  sync.Once
 	channelAffinityUsageCacheStatsCache *cachex.HybridCache[ChannelAffinityUsageCacheCounters]
@@ -680,6 +684,184 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 	if err := cache.SetWithTTL(cacheKey, channelID, time.Duration(ttlSeconds)*time.Second); err != nil {
 		common.SysError(fmt.Sprintf("channel affinity cache set failed: key=%s, err=%v", cacheKey, err))
 	}
+}
+
+// --- Affinity Failure Handling ---
+
+func getChannelAffinityPoisonCache() *cachex.HybridCache[string] {
+	channelAffinityPoisonCacheOnce.Do(func() {
+		setting := operation_setting.GetChannelAffinitySetting()
+		capacity := 50_000
+		defaultTTLSeconds := 3600
+		if setting != nil {
+			if setting.MaxEntries > 0 {
+				capacity = setting.MaxEntries / 2
+				if capacity < 1000 {
+					capacity = 1000
+				}
+			}
+			if setting.DefaultTTLSeconds > 0 {
+				defaultTTLSeconds = setting.DefaultTTLSeconds
+			}
+		}
+
+		channelAffinityPoisonCache = cachex.NewHybridCache[string](cachex.HybridCacheConfig[string]{
+			Namespace: cachex.Namespace(channelAffinityPoisonCacheNamespace),
+			Redis:     common.RDB,
+			RedisEnabled: func() bool {
+				return common.RedisEnabled && common.RDB != nil
+			},
+			RedisCodec: cachex.StringCodec{},
+			Memory: func() *hot.HotCache[string, string] {
+				return hot.NewHotCache[string, string](hot.LRU, capacity).
+					WithTTL(time.Duration(defaultTTLSeconds) * time.Second).
+					WithJanitor().
+					Build()
+			},
+		})
+	})
+	return channelAffinityPoisonCache
+}
+
+func buildPoisonCacheKey(channelID int, affinityValue string) string {
+	return fmt.Sprintf("%d:%s", channelID, affinityValue)
+}
+
+// ShouldRecordAffinityPoison returns true when the upstream status code
+// indicates a per-account issue that poison rewrite can mitigate:
+//   - 429: rate-limited on a specific downstream sub-account
+//   - 401: credential/token invalid for a specific sub-account
+//   - 403: sub-account banned or permission revoked
+func ShouldRecordAffinityPoison(statusCode int) bool {
+	return statusCode == 429 || statusCode == 401 || statusCode == 403
+}
+
+// InvalidateChannelAffinityOnFailure clears the affinity cache entry for the
+// current request when the affinity-selected channel fails with a retryable error.
+func InvalidateChannelAffinityOnFailure(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	cacheKey, _, ok := getChannelAffinityContext(c)
+	if !ok || cacheKey == "" {
+		return
+	}
+	cache := getChannelAffinityCache()
+	if _, err := cache.DeleteMany([]string{cacheKey}); err != nil {
+		common.SysError(fmt.Sprintf("channel affinity invalidate failed: key=%s, err=%v", cacheKey, err))
+	}
+}
+
+// RecordChannelAffinityPoison marks a (channelID, affinityValue) pair as poisoned
+// so that future requests rewrite the affinity key field before forwarding to
+// that channel. This breaks the downstream affinity binding to a bad account.
+func RecordChannelAffinityPoison(c *gin.Context, channelID int) {
+	if c == nil || channelID <= 0 {
+		return
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok {
+		return
+	}
+	affinityValue := extractAffinityValueFromContext(c, meta)
+	if affinityValue == "" {
+		return
+	}
+
+	ttlSeconds := meta.TTLSeconds
+	if ttlSeconds <= 0 {
+		setting := operation_setting.GetChannelAffinitySetting()
+		if setting != nil && setting.DefaultTTLSeconds > 0 {
+			ttlSeconds = setting.DefaultTTLSeconds
+		}
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = 3600
+	}
+
+	suffix := fmt.Sprintf("::r%d", time.Now().UnixMilli()%10000)
+	poisonKey := buildPoisonCacheKey(channelID, affinityValue)
+	cache := getChannelAffinityPoisonCache()
+	if err := cache.SetWithTTL(poisonKey, suffix, time.Duration(ttlSeconds)*time.Second); err != nil {
+		common.SysError(fmt.Sprintf("channel affinity poison set failed: key=%s, err=%v", poisonKey, err))
+	}
+}
+
+// GetChannelAffinityPoisonRewrite checks whether the current request's affinity
+// value is poisoned for the given channel. If so, it returns the gjson path of
+// the field to rewrite and the suffix to append.
+func GetChannelAffinityPoisonRewrite(c *gin.Context, channelID int) (gjsonPath string, suffix string, found bool) {
+	if c == nil || channelID <= 0 {
+		return "", "", false
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok {
+		return "", "", false
+	}
+	if meta.KeySourceType != "gjson" || meta.KeySourcePath == "" {
+		return "", "", false
+	}
+	affinityValue := extractAffinityValueFromContext(c, meta)
+	if affinityValue == "" {
+		return "", "", false
+	}
+
+	poisonKey := buildPoisonCacheKey(channelID, affinityValue)
+	cache := getChannelAffinityPoisonCache()
+	rewriteSuffix, hit, err := cache.Get(poisonKey)
+	if err != nil || !hit || rewriteSuffix == "" {
+		return "", "", false
+	}
+	return meta.KeySourcePath, rewriteSuffix, true
+}
+
+// ApplyChannelAffinityPoisonRewrite checks the poison cache and, if a match is
+// found, injects an "append" operation into paramOverride to rewrite the affinity
+// key field (e.g. metadata.user_id) with a suffix. This breaks the downstream
+// affinity binding to a throttled/banned account.
+func ApplyChannelAffinityPoisonRewrite(c *gin.Context, channelID int, paramOverride map[string]interface{}) (map[string]interface{}, bool) {
+	gjsonPath, suffix, found := GetChannelAffinityPoisonRewrite(c, channelID)
+	if !found {
+		return paramOverride, false
+	}
+
+	appendOp := map[string]interface{}{
+		"path":  gjsonPath,
+		"mode":  "append",
+		"value": suffix,
+	}
+
+	if paramOverride == nil {
+		paramOverride = make(map[string]interface{})
+	}
+
+	merged := make(map[string]interface{}, len(paramOverride)+1)
+	for k, v := range paramOverride {
+		merged[k] = v
+	}
+
+	if existingOps, ok := merged["operations"]; ok {
+		if opsSlice, ok := existingOps.([]interface{}); ok {
+			merged["operations"] = append(opsSlice, appendOp)
+		} else {
+			merged["operations"] = []interface{}{appendOp}
+		}
+	} else {
+		merged["operations"] = []interface{}{appendOp}
+	}
+
+	return merged, true
+}
+
+func extractAffinityValueFromContext(c *gin.Context, meta channelAffinityMeta) string {
+	if meta.KeySourceType == "" {
+		return ""
+	}
+	return extractChannelAffinityValue(c, operation_setting.ChannelAffinityKeySource{
+		Type: meta.KeySourceType,
+		Key:  meta.KeySourceKey,
+		Path: meta.KeySourcePath,
+	})
 }
 
 // --- Usage Cache Stats ---
