@@ -260,7 +260,7 @@ func flushAll() {
 // --- Public recording functions (called from hot paths) ---
 
 // RecordRequest records API request metrics into the aggregator.
-func RecordRequest(channel, model string, isStream bool, latencyMs int64, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens int, outputTokensPerSec float64) {
+func RecordRequest(channel, model string, isStream bool, latencyMs int64, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens int, outputTokensPerSec float64, ttftMs int64) {
 	if aggRequest == nil {
 		return
 	}
@@ -281,6 +281,11 @@ func RecordRequest(channel, model string, isStream bool, latencyMs int64, errCou
 	if tps < 0 {
 		tps = 0
 	}
+	// ttftMs <= 0 means not applicable (non-stream or not recorded).
+	ttft := float64(ttftMs)
+	if ttft <= 0 {
+		ttft = 0
+	}
 	dims := map[string]string{"Channel": normDim(channel), "Model": normDim(model), "IsStream": streamDim}
 	aggRequest.record(dims, map[string]float64{
 		"RequestCount":          1,
@@ -296,6 +301,7 @@ func RecordRequest(channel, model string, isStream bool, latencyMs int64, errCou
 		"CacheCreation1hTokens": float64(cacheCreation1hTokens),
 		"ReasoningTokens":       float64(reasoningTokens),
 		"OutputTokensPerSec":    tps,
+		"TTFTMs":                ttft,
 	})
 }
 

@@ -43,12 +43,19 @@ func MetricsMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		var ttftMs int64
+		if v, exists := c.Get("metric_ttft_ms"); exists {
+			if ms, ok := v.(int64); ok {
+				ttftMs = ms
+			}
+		}
+
 		var errCount int
 		if statusCode >= 400 {
 			errCount = 1
 		}
 
-		logger.RecordRequest(channel, model, isStreamBool, latencyMs, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens, outputTPS)
+		logger.RecordRequest(channel, model, isStreamBool, latencyMs, errCount, inputTokens, outputTokens, cachedTokens, cacheCreationTokens, cacheCreation5mTokens, cacheCreation1hTokens, reasoningTokens, outputTPS, ttftMs)
 
 		if finishReason, exists := c.Get("metric_finish_reason"); exists {
 			if reason, ok := finishReason.(string); ok && reason != "" {

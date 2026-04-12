@@ -1,0 +1,3486 @@
+{
+  "widgets": [
+    {
+      "type": "text",
+      "width": 24,
+      "height": 2,
+      "properties": {
+        "markdown": "# EZModel API 监控面板\n架构: ECS Fargate (ezmodel-maas) | ALB: ezmodel + maas-doc | RDS: Aurora MySQL Serverless | 命名空间: `EZModel/API`"
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🌐 ALB 负载均衡器 (ezmodel)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求总数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "RequestCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "目标响应时间",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "TargetResponseTime",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "活跃连接数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "ActiveConnectionCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 5xx 错误",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_ELB_5XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            {
+              "stat": "Sum",
+              "label": "ELB 5xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_5XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Sum",
+              "label": "目标 5xx"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 4xx 错误",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_ELB_4XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            {
+              "stat": "Sum",
+              "label": "ELB 4xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_4XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Sum",
+              "label": "目标 4xx"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 2xx / 3xx 成功",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_2XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Sum",
+              "label": "2xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_3XX_Count",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Sum",
+              "label": "3xx"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "健康/不健康主机数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HealthyHostCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Average",
+              "label": "健康"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "UnHealthyHostCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Average",
+              "label": "不健康"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "台"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "处理字节数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "ProcessedBytes",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "目标连接错误",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "TargetConnectionErrorCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/maas-slave/8dcf80d27ff96a70",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📄 ALB 文档服务 (maas-doc)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求总数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "RequestCount",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "目标响应时间",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "TargetResponseTime",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            "TargetGroup",
+            "targetgroup/maas-doc/7aa4acd8f819d683",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "HTTP 错误",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_ELB_5XX_Count",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            {
+              "stat": "Sum",
+              "label": "ELB 5xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_5XX_Count",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            "TargetGroup",
+            "targetgroup/maas-doc/7aa4acd8f819d683",
+            {
+              "stat": "Sum",
+              "label": "目标 5xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_ELB_4XX_Count",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            {
+              "stat": "Sum",
+              "label": "ELB 4xx"
+            }
+          ],
+          [
+            "AWS/ApplicationELB",
+            "HTTPCode_Target_4XX_Count",
+            "LoadBalancer",
+            "app/maas-doc/d976fed671a2d32a",
+            "TargetGroup",
+            "targetgroup/maas-doc/7aa4acd8f819d683",
+            {
+              "stat": "Sum",
+              "label": "目标 4xx"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🐳 ECS 主服务 (maas-slave, 3 副本)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "CPU 使用量 / 预留量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "CpuUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "CpuReserved",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "预留量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "CPU 单位"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "内存使用量 / 预留量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "MemoryUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "MemoryReserved",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "预留量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "MB"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "运行 / 期望 / 待定 Task",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "RunningTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "运行中"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "DesiredTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "期望"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "PendingTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "待定"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "网络接收字节",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "NetworkRxBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Sum",
+              "label": "接收"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "网络发送字节",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "NetworkTxBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Sum",
+              "label": "发送"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "存储读写字节",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "StorageReadBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Sum",
+              "label": "读取"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "StorageWriteBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Sum",
+              "label": "写入"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "临时存储使用量 / 预留量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "EphemeralStorageUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "EphemeralStorageReserved",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average",
+              "label": "预留量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "GB"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "部署数量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "DeploymentCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "TaskSet 数量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "TaskSetCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas-slave-service-k084m8dy",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📄 ECS 文档服务 (maas_doc, 1 副本)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "CPU 使用量 / 预留量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "CpuUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "CpuReserved",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "预留量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "CPU 单位"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "内存使用量 / 预留量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "MemoryUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "MemoryReserved",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "预留量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "MB"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "运行 / 期望 Task",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "RunningTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "运行中"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "DesiredTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "期望"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "PendingTaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Average",
+              "label": "待定"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "网络收发字节",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "NetworkRxBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Sum",
+              "label": "接收"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "NetworkTxBytes",
+            "ClusterName",
+            "ezmodel-maas",
+            "ServiceName",
+            "maas_doc-service-ep33w09z",
+            {
+              "stat": "Sum",
+              "label": "发送"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📦 ECS 集群概览 (ezmodel-maas)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "集群总 Task 数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "TaskCount",
+            "ClusterName",
+            "ezmodel-maas",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "集群 Service 数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "ServiceCount",
+            "ClusterName",
+            "ezmodel-maas",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "集群 CPU / 内存使用量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "ECS/ContainerInsights",
+            "CpuUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            {
+              "stat": "Average",
+              "label": "CPU 使用量"
+            }
+          ],
+          [
+            "ECS/ContainerInsights",
+            "MemoryUtilized",
+            "ClusterName",
+            "ezmodel-maas",
+            {
+              "stat": "Average",
+              "label": "内存使用量"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "单位"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## ⚠️ EC2 灰度残留 (Prod1, 权重1% — 灰度结束后移除)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Prod1 CPU 使用率",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/EC2",
+            "CPUUtilization",
+            "InstanceId",
+            "i-0190ef914c2383547",
+            {
+              "stat": "Average",
+              "label": "Prod1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Prod1 网络流入/流出",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/EC2",
+            "NetworkIn",
+            "InstanceId",
+            "i-0190ef914c2383547",
+            {
+              "stat": "Sum",
+              "label": "流入"
+            }
+          ],
+          [
+            "AWS/EC2",
+            "NetworkOut",
+            "InstanceId",
+            "i-0190ef914c2383547",
+            {
+              "stat": "Sum",
+              "label": "流出"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "旧 TG 健康主机",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/ApplicationELB",
+            "HealthyHostCount",
+            "LoadBalancer",
+            "app/ezmodel/99bb1582c031cf23",
+            "TargetGroup",
+            "targetgroup/ezmodel-host/e9ff8c38e1ff9378",
+            {
+              "stat": "Average",
+              "label": "ezmodel-host"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "台"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🐬 RDS Aurora MySQL (database-1, Serverless)"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "CPU 使用率",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "CPUUtilization",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "CPUUtilization",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Serverless 容量 (ACU)",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "ServerlessDatabaseCapacity",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "ServerlessDatabaseCapacity",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "ACU"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "ACU 使用率",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "ACUUtilization",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "ACUUtilization",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库连接数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DatabaseConnections",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DatabaseConnections",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "活跃事务数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "ActiveTransactions",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "ActiveTransactions",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "死锁次数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "Deadlocks",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Sum",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "Deadlocks",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Sum",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "DML 延迟",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DMLLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DMLLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Select 延迟",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "SelectLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "SelectLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Commit 延迟",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "CommitLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "CommitLatency",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "DML 吞吐量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DMLThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DMLThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Select 吞吐量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "SelectThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "SelectThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "查询总量 (QPS)",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "Queries",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "Queries",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "读 IOPS",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "ReadIOPS",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "ReadIOPS",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "写 IOPS",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "WriteIOPS",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "WriteIOPS",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "磁盘队列深度",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DiskQueueDepth",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DiskQueueDepth",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "可用内存",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "FreeableMemory",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "FreeableMemory",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Buffer Cache 命中率",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "BufferCacheHitRatio",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "BufferCacheHitRatio",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "存储使用量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "VolumeBytesUsed",
+            "DBClusterIdentifier",
+            "database-1",
+            {
+              "stat": "Average",
+              "label": "集群"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "网络接收吞吐",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "NetworkReceiveThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "NetworkReceiveThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "网络发送吞吐",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "NetworkTransmitThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "NetworkTransmitThroughput",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "字节/秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Aurora 副本延迟",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "AuroraReplicaLag",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库负载 (DBLoad)",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DBLoad",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DBLoad",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "活跃会话"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库 CPU 负载",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DBLoadCPU",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DBLoadCPU",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "活跃会话"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库非 CPU 负载 (IO/锁等待)",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "AWS/RDS",
+            "DBLoadNonCPU",
+            "DBInstanceIdentifier",
+            "database-1-instance-1",
+            {
+              "stat": "Average",
+              "label": "Writer"
+            }
+          ],
+          [
+            "AWS/RDS",
+            "DBLoadNonCPU",
+            "DBInstanceIdentifier",
+            "database-1-instance-1-ap-southeast-1b",
+            {
+              "stat": "Average",
+              "label": "Reader"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "活跃会话"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📊 API 请求概览（按渠道）"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"RequestCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "错误次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"ErrorCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求延迟（按渠道，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"RequestLatencyMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📊 API 请求概览（按模型）"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求次数（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"RequestCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "错误次数（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"ErrorCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求延迟（按模型，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"RequestLatencyMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🔤 Token 消耗"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "输入 Token（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"InputTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "输出 Token（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"OutputTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "缓存命中 Token（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"CachedTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "缓存创建 Token（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"CacheCreationTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "推理 Token（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"ReasoningTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🔗 上游渠道健康度"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "上游延迟（按渠道，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"UpstreamLatencyMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "上游错误次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"UpstreamErrorCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "上游超时次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"UpstreamTimeoutCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "渠道降级次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"ChannelFallbackCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "上游状态码分布（按状态组）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel,StatusGroup} MetricName=\"UpstreamStatusCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "渠道自动禁用/启用事件",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel,Event} MetricName=\"ChannelHealthEventCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 💰 计费与配额"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "配额消耗（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"QuotaConsumed\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "额度"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "计费失败次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"BillingFailureCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "配额偏差（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"QuotaDeltaAbs\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "USD"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "多扣费次数（按渠道）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"QuotaOverchargeCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "额度不足拒绝",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API} MetricName=\"QuotaRejectCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 📝 日志管道健康度"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "日志队列深度",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "LogQueueDepth",
+            "Pipeline",
+            "usage",
+            {
+              "stat": "Average",
+              "label": "usage"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogQueueDepth",
+            "Pipeline",
+            "raw",
+            {
+              "stat": "Average",
+              "label": "raw"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogQueueDepth",
+            "Pipeline",
+            "error",
+            {
+              "stat": "Average",
+              "label": "error"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "条"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "日志上传失败次数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "LogUploadFailureCount",
+            "Pipeline",
+            "usage",
+            {
+              "stat": "Sum",
+              "label": "usage"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogUploadFailureCount",
+            "Pipeline",
+            "raw",
+            {
+              "stat": "Sum",
+              "label": "raw"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogUploadFailureCount",
+            "Pipeline",
+            "error",
+            {
+              "stat": "Sum",
+              "label": "error"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "日志丢弃次数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "LogDropCount",
+            "Pipeline",
+            "usage",
+            {
+              "stat": "Sum",
+              "label": "usage"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogDropCount",
+            "Pipeline",
+            "raw",
+            {
+              "stat": "Sum",
+              "label": "raw"
+            }
+          ],
+          [
+            "EZModel/API",
+            "LogDropCount",
+            "Pipeline",
+            "error",
+            {
+              "stat": "Sum",
+              "label": "error"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## ⚙️ 运行时指标"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "活跃连接数",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "ActiveConnections",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "Goroutine 数量",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "GoroutineCount",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "个"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "堆内存使用",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "HeapAllocMB",
+            {
+              "stat": "Average"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "MB"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "title": "GC 暂停时间",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            "EZModel/API",
+            "GCPauseMs",
+            {
+              "stat": "Maximum"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🚀 流式性能与完成原因"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "请求次数（按流式/非流式）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,IsStream} MetricName=\"RequestCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "输出 Token/秒（按模型，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"OutputTokensPerSec\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "TPS"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "完成原因分布",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model,FinishReason} MetricName=\"FinishReasonCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "TTFT 首 Token 延迟（按模型，P50/P90/Avg）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [{"expression": "SEARCH('{EZModel/API,Model} MetricName=\"TTFTMs\"', 'Average', 60)", "id": "e1", "label": "Avg"}],
+          [{"expression": "SEARCH('{EZModel/API,Model} MetricName=\"TTFTMs\"', 'p50', 60)", "id": "e2", "label": "P50", "visible": false}],
+          [{"expression": "SEARCH('{EZModel/API,Model} MetricName=\"TTFTMs\"', 'p90', 60)", "id": "e3", "label": "P90", "visible": false}]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "ms"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "TTFT 首 Token 延迟（按渠道，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Channel} MetricName=\"TTFTMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "ms"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🔄 重试与限流"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "重试次数（按模型/结果）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model,Result} MetricName=\"RetryAttempts\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "重试耗尽次数（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model,Result} MetricName=\"RetryExhaustedCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "限流拒绝次数（按类型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,LimitType} MetricName=\"RateLimitRejectCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🎯 亲和路由"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "亲和缓存命中（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"AffinityHitCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "亲和缓存未命中（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"AffinityMissCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 💾 缓存详情"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "缓存命中次数（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"CacheHitCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "缓存创建次数（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"CacheCreationCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "5m 缓存创建 Token（按模型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Model} MetricName=\"CacheCreation5mTokens\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "Token"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Prompt 缓存命中率（全局）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [{"expression": "SUM(SEARCH('{EZModel/API,Model} MetricName=\"CacheHitCount\"', 'Sum', 300))", "id": "hits", "visible": false}],
+          [{"expression": "SUM(SEARCH('{EZModel/API,Model} MetricName=\"CacheCreationCount\"', 'Sum', 300))", "id": "creates", "visible": false}],
+          [{"expression": "IF(hits + creates > 0, hits / (hits + creates) * 100, 0)", "id": "hitRate", "label": "命中率 %"}]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%",
+            "min": 0,
+            "max": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Prompt 缓存 Token 命中率（全局）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 300,
+        "metrics": [
+          [{"expression": "SUM(SEARCH('{EZModel/API,Model} MetricName=\"CachedTokens\"', 'Sum', 300))", "id": "hitTokens", "visible": false}],
+          [{"expression": "SUM(SEARCH('{EZModel/API,Model} MetricName=\"CacheCreationTokens\"', 'Sum', 300))", "id": "createTokens", "visible": false}],
+          [{"expression": "IF(hitTokens + createTokens > 0, hitTokens / (hitTokens + createTokens) * 100, 0)", "id": "tokenHitRate", "label": "Token 命中率 %"}]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "%",
+            "min": 0,
+            "max": 100
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "## 🗄️ 数据库 & Redis（应用层）"
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库查询延迟（按操作类型，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Operation} MetricName=\"DBQueryLatencyMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "数据库慢查询次数（按操作类型）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Operation} MetricName=\"DBSlowQueryCount\"', 'Sum', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "次"
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "Redis 延迟（按命令，平均）",
+        "region": "ap-southeast-1",
+        "view": "timeSeries",
+        "stacked": false,
+        "period": 60,
+        "metrics": [
+          [
+            {
+              "expression": "SEARCH('{EZModel/API,Command} MetricName=\"RedisLatencyMs\"', 'Average', 60)",
+              "id": "e1"
+            }
+          ]
+        ],
+        "yAxis": {
+          "left": {
+            "label": "毫秒"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -210,6 +210,10 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
 	ctx.Set("metric_is_stream", relayInfo.IsStream)
 
+	if relayInfo.IsStream && relayInfo.FirstResponseTime.After(relayInfo.StartTime) {
+		ctx.Set("metric_ttft_ms", relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds())
+	}
+
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 
 	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {

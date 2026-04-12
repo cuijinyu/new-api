@@ -392,6 +392,9 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	ctx.Set("metric_cache_creation_1h_tokens", usage.ClaudeCacheCreation1hTokens)
 	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
 	ctx.Set("metric_is_stream", relayInfo.IsStream)
+	if relayInfo.IsStream && relayInfo.FirstResponseTime.After(relayInfo.StartTime) {
+		ctx.Set("metric_ttft_ms", relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds())
+	}
 	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {
 		ctx.Set("metric_output_tps", float64(usage.CompletionTokens)/float64(useTimeSeconds))
 	}
@@ -565,6 +568,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	ctx.Set("metric_cache_creation_1h_tokens", usage.ClaudeCacheCreation1hTokens)
 	ctx.Set("metric_reasoning_tokens", usage.CompletionTokenDetails.ReasoningTokens)
 	ctx.Set("metric_is_stream", relayInfo.IsStream)
+	if relayInfo.IsStream && relayInfo.FirstResponseTime.After(relayInfo.StartTime) {
+		ctx.Set("metric_ttft_ms", relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds())
+	}
 	if useTimeSeconds > 0 && usage.CompletionTokens > 0 {
 		ctx.Set("metric_output_tps", float64(usage.CompletionTokens)/float64(useTimeSeconds))
 	}

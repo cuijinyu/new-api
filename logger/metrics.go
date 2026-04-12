@@ -206,6 +206,7 @@ var (
 		{Name: "CacheCreation1hTokens", Unit: UnitCount},
 		{Name: "ReasoningTokens", Unit: UnitCount},
 		{Name: "OutputTokensPerSec", Unit: UnitNone},
+		{Name: "TTFTMs", Unit: UnitMilliseconds},
 	}
 	RequestDims = [][]string{{"Channel"}, {"Model"}, {"IsStream"}}
 
