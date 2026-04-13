@@ -559,6 +559,59 @@ func RecordFailedDoRequest(c *gin.Context, info *relaycommon.RelayInfo, req *htt
 	}
 }
 
+// RecordBedrockError records an error log entry for AWS Bedrock SDK requests that
+// do not go through the standard http.Client path (and therefore cannot use
+// AttachRawLogCapture / RecordFailedDoRequest).
+// modelID is the Bedrock model ID used for the call (e.g. "anthropic.claude-3-5-sonnet-20241022-v2:0").
+func RecordBedrockError(c *gin.Context, info *relaycommon.RelayInfo, modelID string, invokeErr error) {
+	eu := getErrorLogUploader()
+	u := getRawLogUploader()
+	if !eu.enabled && !u.enabled {
+		return
+	}
+	maxBytes := u.maxBytes
+	if !u.enabled && eu.enabled {
+		maxBytes = eu.maxBytes
+	}
+
+	errMsg := ""
+	if invokeErr != nil {
+		errMsg = invokeErr.Error()
+	}
+
+	payload := rawLogPayload{
+		RequestID:     c.GetString(common.RequestIdKey),
+		CreatedAt:     time.Now().Format(time.RFC3339Nano),
+		Method:        c.Request.Method,
+		Path:          c.Request.URL.Path,
+		URL:           "bedrock-sdk://" + modelID,
+		StatusCode:    0,
+		Model:         modelID,
+		RelayMode:     fmt.Sprintf("%d", info.RelayMode),
+		ChannelID:     c.GetInt("channel_id"),
+		ChannelName:   c.GetString("channel_name"),
+		ChannelType:   c.GetInt("channel_type"),
+		UserID:        c.GetInt("id"),
+		ResponseError: errMsg,
+	}
+	if info != nil && info.OriginModelName != "" {
+		payload.Model = info.OriginModelName
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logger.LogError(c, "failed to marshal bedrock error log payload: "+err.Error())
+		return
+	}
+	_ = maxBytes
+	if u.enabled {
+		u.enqueue(c, data)
+	}
+	if eu.enabled {
+		eu.enqueue(c, data)
+	}
+}
+
 func readRequestBody(req *http.Request) []byte {
 	if req.GetBody == nil {
 		return nil

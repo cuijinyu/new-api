@@ -173,6 +173,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 
 	awsResp, err := a.AwsClient.InvokeModel(c.Request.Context(), a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
+		service.RecordBedrockError(c, info, *a.AwsReq.(*bedrockruntime.InvokeModelInput).ModelId, err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, http.StatusInternalServerError), nil
 	}
 
@@ -199,6 +200,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(c.Request.Context(), a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
 	if err != nil {
+		service.RecordBedrockError(c, info, *a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput).ModelId, err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, http.StatusInternalServerError), nil
 	}
 	stream := awsResp.GetStream()
@@ -230,6 +232,7 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	}
 
 	if err := stream.Err(); err != nil {
+		service.RecordBedrockError(c, info, *a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput).ModelId, err)
 		return types.NewOpenAIError(errors.Wrap(err, "aws stream error"), types.ErrorCodeAwsInvokeError, http.StatusBadGateway), nil
 	}
 
@@ -262,6 +265,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 
 	awsResp, err := a.AwsClient.InvokeModel(c.Request.Context(), a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
+		service.RecordBedrockError(c, info, *a.AwsReq.(*bedrockruntime.InvokeModelInput).ModelId, err)
 		return types.NewError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeChannelAwsClientError), nil
 	}
 
