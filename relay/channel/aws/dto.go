@@ -53,6 +53,7 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 	sanitizeCacheControlForBedrock(awsClaudeRequest.System)
 	for i := range awsClaudeRequest.Messages {
 		sanitizeCacheControlForBedrock(awsClaudeRequest.Messages[i].Content)
+		stripThinkingBlocksForBedrock(&awsClaudeRequest.Messages[i])
 	}
 
 	logger.LogJson(context.Background(), "json", awsClaudeRequest)
@@ -89,6 +90,41 @@ func sanitizeCacheControlForBedrock(content any) {
 			if !ok || !bedrockValidTTL[ttlStr] {
 				delete(ccMap, "ttl")
 			}
+		}
+	}
+}
+
+// stripThinkingBlocksForBedrock removes thinking/redacted_thinking content
+// blocks from assistant messages. In a multi-account Bedrock pool, thinking
+// block signatures are bound to the originating AWS account and cannot be
+// verified by a different account. Anthropic's API automatically strips
+// thinking blocks from prior turns, so removing them has no quality impact.
+func stripThinkingBlocksForBedrock(msg *dto.ClaudeMessage) {
+	if msg.Role != "assistant" {
+		return
+	}
+	blocks, ok := msg.Content.([]any)
+	if !ok {
+		return
+	}
+	filtered := make([]any, 0, len(blocks))
+	for _, block := range blocks {
+		blockMap, ok := block.(map[string]any)
+		if !ok {
+			filtered = append(filtered, block)
+			continue
+		}
+		blockType, _ := blockMap["type"].(string)
+		if blockType == "thinking" || blockType == "redacted_thinking" {
+			continue
+		}
+		filtered = append(filtered, block)
+	}
+	if len(filtered) != len(blocks) {
+		if len(filtered) == 0 {
+			msg.Content = ""
+		} else {
+			msg.Content = filtered
 		}
 	}
 }

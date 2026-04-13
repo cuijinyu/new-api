@@ -2,6 +2,8 @@ package aws
 
 import (
 	"testing"
+
+	"github.com/QuantumNous/new-api/dto"
 )
 
 func TestSanitizeCacheControlForBedrock(t *testing.T) {
@@ -135,6 +137,121 @@ func TestSanitizeCacheControlForBedrock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sanitizeCacheControlForBedrock(tt.content)
 			tt.check(t, tt.content)
+		})
+	}
+}
+
+func TestStripThinkingBlocksForBedrock(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      dto.ClaudeMessage
+		wantLen  int
+		wantText string
+	}{
+		{
+			name: "user message untouched",
+			msg: dto.ClaudeMessage{
+				Role: "user",
+				Content: []any{
+					map[string]any{"type": "text", "text": "hello"},
+				},
+			},
+			wantLen:  1,
+			wantText: "hello",
+		},
+		{
+			name: "assistant: thinking + text → only text remains",
+			msg: dto.ClaudeMessage{
+				Role: "assistant",
+				Content: []any{
+					map[string]any{"type": "thinking", "thinking": "let me think...", "signature": "abc123"},
+					map[string]any{"type": "text", "text": "the answer is 42"},
+				},
+			},
+			wantLen:  1,
+			wantText: "the answer is 42",
+		},
+		{
+			name: "assistant: redacted_thinking + text → only text remains",
+			msg: dto.ClaudeMessage{
+				Role: "assistant",
+				Content: []any{
+					map[string]any{"type": "redacted_thinking", "data": "encrypted"},
+					map[string]any{"type": "text", "text": "result"},
+				},
+			},
+			wantLen:  1,
+			wantText: "result",
+		},
+		{
+			name: "assistant: only thinking → content becomes empty string",
+			msg: dto.ClaudeMessage{
+				Role: "assistant",
+				Content: []any{
+					map[string]any{"type": "thinking", "thinking": "hmm", "signature": "sig"},
+				},
+			},
+			wantLen: -1, // special: content should be ""
+		},
+		{
+			name: "assistant: text + tool_use preserved, thinking stripped",
+			msg: dto.ClaudeMessage{
+				Role: "assistant",
+				Content: []any{
+					map[string]any{"type": "thinking", "thinking": "plan", "signature": "sig"},
+					map[string]any{"type": "text", "text": "calling tool"},
+					map[string]any{"type": "tool_use", "id": "t1", "name": "search"},
+				},
+			},
+			wantLen: 2,
+		},
+		{
+			name: "assistant: string content untouched",
+			msg: dto.ClaudeMessage{
+				Role:    "assistant",
+				Content: "simple text",
+			},
+			wantLen: -2, // special: remains string
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stripThinkingBlocksForBedrock(&tt.msg)
+			switch tt.wantLen {
+			case -1:
+				if tt.msg.Content != "" {
+					t.Errorf("expected empty string content, got %v", tt.msg.Content)
+				}
+			case -2:
+				if _, ok := tt.msg.Content.(string); !ok {
+					t.Errorf("expected string content, got %T", tt.msg.Content)
+				}
+			default:
+				blocks, ok := tt.msg.Content.([]any)
+				if !ok {
+					t.Fatalf("expected []any content, got %T", tt.msg.Content)
+				}
+				if len(blocks) != tt.wantLen {
+					t.Errorf("expected %d blocks, got %d", tt.wantLen, len(blocks))
+				}
+				if tt.wantText != "" && len(blocks) > 0 {
+					text, _ := blocks[0].(map[string]any)["text"].(string)
+					if text != tt.wantText {
+						t.Errorf("expected text %q, got %q", tt.wantText, text)
+					}
+				}
+				for _, b := range blocks {
+					bm, ok := b.(map[string]any)
+					if !ok {
+						continue
+					}
+					bt, _ := bm["type"].(string)
+					if bt == "thinking" || bt == "redacted_thinking" {
+						t.Errorf("thinking block should have been stripped, found type=%s", bt)
+					}
+				}
+			}
 		})
 	}
 }
