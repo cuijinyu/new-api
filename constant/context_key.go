@@ -49,4 +49,6 @@ const (
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
+
+	ContextKeyIsChannelRetry ContextKey = "is_channel_retry"
 )

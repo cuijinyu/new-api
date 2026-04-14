@@ -183,6 +183,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		if i > 0 {
+			c.Set(string(constant.ContextKeyIsChannelRetry), true)
+		}
 		requestBody, _ := common.GetRequestBody(c)
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
 
@@ -320,6 +323,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 var channelSideBadRequestPatterns = []string{
 	"the provided model identifier is invalid",
 	"invalid character '<' looking for beginning of value",
+	"invalid `signature` in `thinking` block",
 }
 
 func isChannelSideBadRequest(err *types.NewAPIError) bool {

@@ -108,6 +108,7 @@ func stripThinkingBlocksForBedrock(msg *dto.ClaudeMessage) {
 		return
 	}
 	filtered := make([]any, 0, len(blocks))
+	stripped := 0
 	for _, block := range blocks {
 		blockMap, ok := block.(map[string]any)
 		if !ok {
@@ -116,11 +117,12 @@ func stripThinkingBlocksForBedrock(msg *dto.ClaudeMessage) {
 		}
 		blockType, _ := blockMap["type"].(string)
 		if blockType == "thinking" || blockType == "redacted_thinking" {
+			stripped++
 			continue
 		}
 		filtered = append(filtered, block)
 	}
-	if len(filtered) != len(blocks) {
+	if stripped > 0 {
 		if len(filtered) == 0 {
 			msg.Content = ""
 		} else {

@@ -212,10 +212,11 @@ type ClaudeRequest struct {
 }
 
 // SanitizeThinkingBlocks removes thinking/redacted_thinking blocks with invalid
-// signatures from assistant messages. Anthropic requires that thinking blocks
-// replayed in multi-turn conversations carry the exact original signature;
-// blocks with placeholder, empty, or otherwise invalid signatures cause 400 errors.
-// Blocks with valid signatures are left untouched.
+// signatures from assistant messages. Blocks with valid-looking signatures
+// (genuine Anthropic-issued, base64-encoded, typically 200+ chars) are preserved
+// so the model retains its reasoning context when sticky routing keeps the same
+// upstream channel. Use StripAllThinkingBlocks for cross-channel retries where
+// signatures are guaranteed to be invalid.
 func (c *ClaudeRequest) SanitizeThinkingBlocks() {
 	for i, message := range c.Messages {
 		if message.Role != "assistant" {
@@ -241,7 +242,6 @@ func (c *ClaudeRequest) SanitizeThinkingBlocks() {
 			if isValidThinkingSignature(sig) {
 				filtered = append(filtered, block)
 			}
-			// invalid signature → drop the entire thinking block
 		}
 		if len(filtered) != len(contentArr) {
 			if len(filtered) == 0 {
@@ -253,8 +253,42 @@ func (c *ClaudeRequest) SanitizeThinkingBlocks() {
 	}
 }
 
-// isValidThinkingSignature checks whether a thinking block signature looks
-// like a genuine Anthropic-issued signature (base64-encoded, typically 200+ chars).
+// StripAllThinkingBlocks unconditionally removes all thinking/redacted_thinking
+// blocks from assistant messages. Used when retrying on a different channel where
+// the original signatures are guaranteed to be invalid (cross-account Bedrock
+// pool, different upstream proxy, etc.).
+func (c *ClaudeRequest) StripAllThinkingBlocks() {
+	for i, message := range c.Messages {
+		if message.Role != "assistant" {
+			continue
+		}
+		contentArr, ok := message.Content.([]any)
+		if !ok {
+			continue
+		}
+		filtered := make([]any, 0, len(contentArr))
+		for _, block := range contentArr {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				filtered = append(filtered, block)
+				continue
+			}
+			blockType, _ := blockMap["type"].(string)
+			if blockType == "thinking" || blockType == "redacted_thinking" {
+				continue
+			}
+			filtered = append(filtered, block)
+		}
+		if len(filtered) != len(contentArr) {
+			if len(filtered) == 0 {
+				c.Messages[i].Content = ""
+			} else {
+				c.Messages[i].Content = filtered
+			}
+		}
+	}
+}
+
 func isValidThinkingSignature(sig string) bool {
 	if len(sig) < 100 {
 		return false
