@@ -163,6 +163,8 @@ const EditChannelModal = (props) => {
     allow_service_tier: false,
     disable_store: false, // false = 允许透传（默认开启）
     allow_safety_identifier: false,
+    allow_context_management: false,
+    allow_cache_control_scope: false,
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -571,6 +573,10 @@ const EditChannelModal = (props) => {
           data.disable_store = parsedSettings.disable_store || false;
           data.allow_safety_identifier =
             parsedSettings.allow_safety_identifier || false;
+          data.allow_context_management =
+            parsedSettings.allow_context_management || false;
+          data.allow_cache_control_scope =
+            parsedSettings.allow_cache_control_scope || false;
         } catch (error) {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
@@ -581,6 +587,8 @@ const EditChannelModal = (props) => {
           data.allow_service_tier = false;
           data.disable_store = false;
           data.allow_safety_identifier = false;
+          data.allow_context_management = false;
+          data.allow_cache_control_scope = false;
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
@@ -590,6 +598,8 @@ const EditChannelModal = (props) => {
         data.allow_service_tier = false;
         data.disable_store = false;
         data.allow_safety_identifier = false;
+        data.allow_context_management = false;
+        data.allow_cache_control_scope = false;
       }
 
       if (
@@ -1197,6 +1207,13 @@ const EditChannelModal = (props) => {
         settings.allow_safety_identifier =
           localInputs.allow_safety_identifier === true;
       }
+      // 仅 Claude 渠道需要 context_management 与 cache_control.scope 开关
+      if (localInputs.type === 14) {
+        settings.allow_context_management =
+          localInputs.allow_context_management === true;
+        settings.allow_cache_control_scope =
+          localInputs.allow_cache_control_scope === true;
+      }
     }
 
     localInputs.settings = JSON.stringify(settings);
@@ -1217,6 +1234,8 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
     delete localInputs.allow_safety_identifier;
+    delete localInputs.allow_context_management;
+    delete localInputs.allow_cache_control_scope;
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
@@ -2882,6 +2901,38 @@ const EditChannelModal = (props) => {
                           }
                           extraText={t(
                             'service_tier 字段用于指定服务层级，允许透传可能导致实际计费高于预期。默认关闭以避免额外费用',
+                          )}
+                        />
+
+                        <Form.Switch
+                          field='allow_context_management'
+                          label={t('允许 context_management 透传')}
+                          checkedText={t('开')}
+                          uncheckedText={t('关')}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'allow_context_management',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            'context_management 字段仅 Anthropic 官方 API 支持，Bedrock 及多数代理会直接 400 拒绝。默认关闭以兼容非 Anthropic 上游',
+                          )}
+                        />
+
+                        <Form.Switch
+                          field='allow_cache_control_scope'
+                          label={t('允许 cache_control.scope 透传')}
+                          checkedText={t('开')}
+                          uncheckedText={t('关')}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'allow_cache_control_scope',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            'system/messages 中内嵌的 cache_control.scope 字段仅 Anthropic 官方支持，Bedrock 会直接 400 拒绝。默认关闭以兼容非 Anthropic 上游',
                           )}
                         />
                       </>
