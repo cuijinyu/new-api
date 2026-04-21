@@ -101,6 +101,10 @@ def parse_channel_ids(text: str) -> list[int]:
 def load_trend(ym, nc):
     return run_query_cached(queries.daily_trend(ym), no_cache=nc)
 
+@st.cache_data(ttl=600, show_spinner="正在查询（时区偏移趋势）...")
+def load_trend_tz(ym, tz_offset, nc):
+    return run_query_cached(queries.daily_trend_tz(ym, tz_offset_hours=tz_offset), no_cache=nc)
+
 @st.cache_data(ttl=600, show_spinner="正在查询...")
 def load_models(ym, nc):
     return run_query_cached(queries.model_ranking(ym), no_cache=nc)
@@ -164,12 +168,43 @@ tab_trend, tab_profit, tab_recalc, tab_crosscheck, tab_models, tab_users, tab_ch
 
 # --- Tab: Daily Trend ---
 with tab_trend:
-    df_trend = load_trend(year_month, no_cache)
+    trend_tz_presets = {
+        "UTC (UTC+0)": 0.0,
+        "UTC+4（供应商常用）": 4.0,
+        "北京时间 (UTC+8)": 8.0,
+        "自定义": None,
+    }
+    trend_tz_col1, trend_tz_col2 = st.columns([3, 1])
+    with trend_tz_col1:
+        trend_tz_choice = st.selectbox(
+            "时区划分",
+            options=list(trend_tz_presets.keys()),
+            index=0,
+            key="trend_tz_choice",
+            help="按所选时区重新划分每日边界。UTC+0 即按原始 UTC 分区统计。",
+        )
+    trend_tz_val = trend_tz_presets[trend_tz_choice]
+    with trend_tz_col2:
+        if trend_tz_val is None:
+            trend_tz_val = st.number_input(
+                "UTC 偏移（小时）", min_value=-12.0, max_value=14.0,
+                value=8.0, step=0.5, key="trend_tz_custom")
+
+    if trend_tz_val == 0.0:
+        df_trend = load_trend(year_month, no_cache)
+        if not df_trend.empty:
+            df_trend["date"] = df_trend["day"].apply(
+                lambda d: f"{year_month}-{int(d):02d}")
+        tz_note = ""
+    else:
+        df_trend = load_trend_tz(year_month, trend_tz_val, no_cache)
+        if not df_trend.empty:
+            df_trend["date"] = df_trend["local_date"]
+        tz_note = f" (UTC{float(trend_tz_val):+g})"
+
     if not df_trend.empty:
-        df_trend["date"] = df_trend["day"].apply(
-            lambda d: f"{year_month}-{int(d):02d}")
         fig = px.bar(df_trend, x="date", y="total_usd",
-                     title="每日费用 (USD)",
+                     title=f"每日费用 (USD){tz_note}",
                      labels={"date": "日期", "total_usd": "费用 (USD)"},
                      text_auto=".2f")
         fig.update_layout(xaxis_tickangle=-45, height=400)
@@ -178,12 +213,12 @@ with tab_trend:
         col1, col2 = st.columns(2)
         with col1:
             fig2 = px.line(df_trend, x="date", y="call_count",
-                           title="每日调用量",
+                           title=f"每日调用量{tz_note}",
                            labels={"date": "日期", "call_count": "调用次数"})
             st.plotly_chart(fig2, width="stretch")
         with col2:
             fig3 = px.line(df_trend, x="date", y="total_tokens",
-                           title="每日 Token 消耗",
+                           title=f"每日 Token 消耗{tz_note}",
                            labels={"date": "日期", "total_tokens": "Tokens"})
             st.plotly_chart(fig3, width="stretch")
     else:
@@ -708,6 +743,37 @@ with tab_export:
 
     # ── 时间范围配置 ──
     st.markdown("**时间范围**")
+    exp_tz_presets = {
+        "UTC (UTC+0)": 0.0,
+        "UTC+4（供应商常用）": 4.0,
+        "北京时间 (UTC+8)": 8.0,
+        "自定义（下方填写小时数）": None,
+    }
+    exp_tz_choice = st.selectbox(
+        "时区偏移（用于子日精度起止时间）",
+        options=list(exp_tz_presets.keys()),
+        index=2,
+        key="exp_tz_choice",
+        help="仅当勾选「指定起始时间」或「指定截止时间」时，日期与小时按所选时区解释；"
+             "未勾选时导出整月，与此处无关。",
+    )
+    exp_tz_offset = exp_tz_presets[exp_tz_choice]
+    if exp_tz_offset is None:
+        exp_tz_offset = st.number_input(
+            "自定义 UTC 偏移（小时）",
+            min_value=-12.0,
+            max_value=14.0,
+            value=8.0,
+            step=0.5,
+            key="exp_tz_custom",
+            help="东八区为 +8，迪拜等为 +4。",
+        )
+    tz_label = f"UTC{float(exp_tz_offset):+g}"
+    st.caption(
+        f"当前子日精度起止时间将按 **{tz_label}** 墙上时间解释；"
+        "与供应商对账时可选 UTC+4，内部口径常用 UTC+8。"
+    )
+
     exp_col5, exp_col6 = st.columns(2)
     with exp_col5:
         exp_start_toggle = st.checkbox("指定起始时间", key="exp_start_toggle",
@@ -721,10 +787,10 @@ with tab_export:
                 key="exp_start_day_picker",
             )
             exp_start_hour = st.selectbox(
-                "起始小时（UTC，留空=当天 00:00）",
+                f"起始小时（{tz_label} 本地，留空=当天 00:00）",
                 options=[""] + [f"{h:02d}" for h in range(24)],
                 key="exp_start_hour",
-                help="精确到小时，时区为 UTC",
+                help=f"该小时与上方起始日期组成 {tz_label} 的本地时刻，再换算为 UTC 与 created_at 比较。",
             )
         else:
             exp_start_date = None
@@ -742,10 +808,10 @@ with tab_export:
                 help="仅统计到该日期（含当天）",
             )
             exp_end_hour = st.selectbox(
-                "截止小时（UTC，留空=当天 23:59）",
+                f"截止小时（{tz_label} 本地，留空=当天 23:59）",
                 options=[""] + [f"{h:02d}" for h in range(24)],
                 key="exp_end_hour",
-                help="精确到小时，时区为 UTC",
+                help=f"该小时与上方截止日期组成 {tz_label} 的本地时刻（含该小时 00:00–59:59 的完整分钟）。",
             )
         else:
             exp_end_day_date = None
@@ -764,6 +830,13 @@ with tab_export:
             exp_end_time = f"{exp_end_day_date.strftime('%Y-%m-%d')} {exp_end_hour}:59"
         else:
             exp_end_day = exp_end_day_date.strftime("%Y-%m-%d")
+
+    # 仅在有「小时级」起止时间时传入偏移，避免整月导出文件名误带 _utc+8
+    exp_tz_hours = (
+        float(exp_tz_offset)
+        if (exp_start_time or exp_end_time)
+        else 0.0
+    )
 
     exp_col7, exp_col8 = st.columns(2)
     with exp_col7:
@@ -809,6 +882,7 @@ with tab_export:
                     end_day=exp_end_day,
                     start_time=exp_start_time,
                     end_time=exp_end_time,
+                    time_zone_offset_hours=exp_tz_hours,
                     detail=exp_detail,
                     customer_view=exp_customer_view,
                     upload_s3=exp_upload,
@@ -863,6 +937,163 @@ with tab_export:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
                 st.success(f"账单已生成，点击上方按钮下载")
+
+    # ── 时区偏移导出 ──
+    st.markdown("---")
+    st.subheader("🕐 时区偏移导出")
+    st.caption(
+        "按所选时区重新划分每日边界后导出。例如选择 UTC+4 后，每天按迪拜时间 00:00~23:59 统计；"
+        "适用于与不同时区供应商对账时，日期口径需对齐的场景。"
+    )
+
+    tz_presets = {
+        "UTC (UTC+0)": 0.0,
+        "UTC+4（供应商常用）": 4.0,
+        "北京时间 (UTC+8)": 8.0,
+        "自定义（下方填写小时数）": None,
+    }
+    tz_col1, tz_col2 = st.columns(2)
+    with tz_col1:
+        tz_choice = st.selectbox(
+            "时区偏移",
+            options=list(tz_presets.keys()),
+            index=2,
+            key="tz_export_choice",
+        )
+    tz_offset = tz_presets[tz_choice]
+    with tz_col2:
+        if tz_offset is None:
+            tz_offset = st.number_input(
+                "自定义 UTC 偏移（小时）",
+                min_value=-12.0, max_value=14.0,
+                value=8.0, step=0.5,
+                key="tz_export_custom",
+            )
+        else:
+            st.text_input("当前偏移", value=f"UTC{float(tz_offset):+g}", disabled=True,
+                          key="tz_export_display")
+
+    tz_col3, tz_col4 = st.columns(2)
+    with tz_col3:
+        tz_user_id = st.number_input("用户 ID（0=全平台）", min_value=0,
+                                     value=0, step=1, key="tz_user")
+    with tz_col4:
+        tz_channel_id = st.number_input("渠道 ID（0=全渠道）", min_value=0,
+                                        value=0, step=1, key="tz_channel")
+
+    tz_channel_ids_text = st.text_input(
+        "供应商渠道 IDs（可选，多渠道聚合）",
+        placeholder="例如: 25,54,89",
+        key="tz_channel_ids",
+    )
+
+    tz_col5, tz_col6 = st.columns(2)
+    with tz_col5:
+        tz_currency = st.selectbox("币种", ["USD", "CNY"], key="tz_currency")
+    with tz_col6:
+        tz_flat_tier = st.checkbox("降档模式", key="tz_flat")
+
+    tz_flat_since = st.text_input("降档起始日期 (YYYY-MM-DD)", key="tz_flat_since",
+                                  placeholder="留空=全量降档")
+
+    tz_col7, tz_col8 = st.columns(2)
+    with tz_col7:
+        tz_detail = st.checkbox("含逐条明细", key="tz_detail",
+                                help="同时导出每一条请求的明细数据（按时区日期并行查询）")
+    with tz_col8:
+        tz_customer_view = st.checkbox("客户版本（隐藏成本/利润）", key="tz_customer_view")
+
+    tz_col9, tz_col10 = st.columns(2)
+    with tz_col9:
+        tz_upload = st.checkbox("上传到 S3 并生成下载链接", key="tz_upload", value=True)
+    with tz_col10:
+        pass
+
+    if st.button("生成时区偏移账单", key="btn_tz_export"):
+        import tempfile
+        _tz_flat = tz_flat_tier or bool(tz_flat_since.strip())
+        _tz_since = tz_flat_since.strip() or None
+        try:
+            tz_ch_ids = parse_channel_ids(tz_channel_ids_text)
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            uid = tz_user_id if tz_user_id > 0 else None
+            chid = tz_channel_id if tz_channel_id > 0 else None
+            if tz_ch_ids:
+                chid = None
+            spinner_msg = f"正在按 UTC{float(tz_offset):+g} 时区生成账单..."
+            if tz_detail:
+                spinner_msg += " (含逐条明细，请耐心等待)"
+            with st.spinner(spinner_msg):
+                result = report_builder.generate_tz_offset_export(
+                    year_month, tmpdir,
+                    tz_offset_hours=tz_offset,
+                    user_id=uid,
+                    channel_id=chid,
+                    channel_ids=tz_ch_ids,
+                    currency=tz_currency,
+                    flat_tier=_tz_flat, flat_tier_since=_tz_since,
+                    detail=tz_detail,
+                    customer_view=tz_customer_view,
+                    upload_s3=tz_upload,
+                    no_cache=no_cache)
+
+            if isinstance(result, dict):
+                st.success("账单已生成并上传到 S3")
+                st.markdown("**S3 下载链接（24h 有效）：**")
+                st.code(result["xlsx_url"], language=None)
+                if "detail_csv_url" in result:
+                    st.markdown("**明细数据下载链接：**")
+                    st.code(result["detail_csv_url"], language=None)
+                with open(result["xlsx"], "rb") as f:
+                    st.download_button(
+                        label="📥 本地下载汇总账单",
+                        data=f.read(),
+                        file_name=os.path.basename(result["xlsx"]),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="tz_dl_xlsx",
+                    )
+            elif isinstance(result, list):
+                xlsx_path, detail_path = result
+                with open(xlsx_path, "rb") as f:
+                    st.download_button(
+                        label="📥 下载汇总账单 (Excel)",
+                        data=f.read(),
+                        file_name=os.path.basename(xlsx_path),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="tz_dl_xlsx2",
+                    )
+                detail_size_mb = os.path.getsize(detail_path) / 1024 / 1024
+                detail_basename = os.path.basename(detail_path)
+                is_xlsx = detail_basename.endswith(".xlsx")
+                detail_label = (f"📥 下载逐条明细 (Excel, {detail_size_mb:.1f} MB)"
+                                if is_xlsx
+                                else f"📥 下载逐条明细 (CSV.zip, {detail_size_mb:.1f} MB)")
+                detail_mime = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                               if is_xlsx else "application/zip")
+                with open(detail_path, "rb") as f:
+                    st.download_button(
+                        label=detail_label,
+                        data=f.read(),
+                        file_name=detail_basename,
+                        mime=detail_mime,
+                        key="tz_dl_detail",
+                    )
+                st.success("账单 + 明细已生成，点击上方按钮下载")
+            else:
+                with open(result, "rb") as f:
+                    data = f.read()
+                st.download_button(
+                    label="📥 下载账单",
+                    data=data,
+                    file_name=os.path.basename(result),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="tz_dl_single",
+                )
+                st.success("账单已生成，点击上方按钮下载")
 
     st.markdown("---")
 

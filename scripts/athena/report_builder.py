@@ -160,6 +160,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                           end_day: str = None,
                           start_time: str = None,
                           end_time: str = None,
+                          time_zone_offset_hours: float = 0,
                           detail: bool = False,
                           customer_view: bool = False,
                           upload_s3: bool = False,
@@ -170,8 +171,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     at the summary level. For row-level precision, use generate_recalc_report.
 
     start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
-    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision;
-        takes precedence over start_day / end_day when provided.
+    start_time / end_time: 'YYYY-MM-DD HH:MM' for sub-day precision;
+        takes precedence over start_day / end_day when provided and is
+        interpreted in time_zone_offset_hours.
 
     When detail=True, also exports row-level data as compressed CSV alongside
     the summary Excel.
@@ -193,8 +195,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     tier_suffix = "_flattier" if flat_tier else ""
     from_suffix = f"_from{eff_start.replace('-', '').replace(' ', '').replace(':', '')}" if eff_start else ""
     day_suffix = f"_to{eff_end.replace('-', '').replace(' ', '').replace(':', '')}" if eff_end else ""
+    tz_suffix = "" if not time_zone_offset_hours else f"_utc{float(time_zone_offset_hours):+g}"
     cv_suffix = "_customer" if customer_view else ""
-    filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}{cv_suffix}.xlsx"
+    filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}{tz_suffix}{cv_suffix}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     rate = exchange_rate if currency == "CNY" else 1.0
@@ -206,14 +209,16 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                                   channel_id=channel_id,
                                   channel_ids=channel_ids,
                                   start_day=start_day, end_day=end_day,
-                                  start_time=start_time, end_time=end_time),
+                                  start_time=start_time, end_time=end_time,
+                                  time_zone_offset_hours=time_zone_offset_hours),
         no_cache=no_cache)
     df_trend = run_query_cached(
         queries.daily_trend(year_month, user_id=user_id,
                             channel_id=channel_id,
                             channel_ids=channel_ids,
                             start_day=start_day, end_day=end_day,
-                            start_time=start_time, end_time=end_time),
+                            start_time=start_time, end_time=end_time,
+                            time_zone_offset_hours=time_zone_offset_hours),
         no_cache=no_cache)
 
     if df_full.empty:
@@ -237,6 +242,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         tier_tag += f"（自 {eff_start}）"
     if eff_end:
         tier_tag += f"（截至 {eff_end}）"
+
+    if time_zone_offset_hours:
+        tier_tag += f" (UTC{float(time_zone_offset_hours):+g})"
 
     wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
 
@@ -493,6 +501,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                                          end_day=end_day,
                                          start_time=start_time,
                                          end_time=end_time,
+                                         time_zone_offset_hours=time_zone_offset_hours,
                                          customer_view=customer_view)
 
     if upload_s3:
@@ -542,6 +551,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
                        end_day: str = None,
                        start_time: str = None,
                        end_time: str = None,
+                       time_zone_offset_hours: float = 0,
                        customer_view: bool = False) -> str:
     """Export row-level detail as xlsx (customer_view) or zip-compressed CSV.
 
@@ -553,7 +563,8 @@ def _export_detail_csv(year_month: str, output_dir: str,
       - Outputs .csv.zip (internal full-field format)
 
     start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
-    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision.
+    start_time / end_time: 'YYYY-MM-DD HH:MM' for sub-day precision,
+    interpreted in time_zone_offset_hours.
     """
     eff_start = start_time or start_day
     eff_end = end_time or end_day
@@ -566,7 +577,8 @@ def _export_detail_csv(year_month: str, output_dir: str,
     cv_suffix = "_customer" if customer_view else ""
 
     days = queries.detail_day_list(year_month, start_day=start_day, end_day=end_day,
-                                   start_time=start_time, end_time=end_time)
+                                   start_time=start_time, end_time=end_time,
+                                   time_zone_offset_hours=time_zone_offset_hours)
     sqls = [
         queries.raw_usage_detail_daily(year_month, day=d,
                                        user_id=user_id,
@@ -580,10 +592,12 @@ def _export_detail_csv(year_month: str, output_dir: str,
     _start_ts = _end_ts = None
     _start_day_str = _end_day_str = None
     if start_time:
-        sy, sm, sd, _sh, _start_ts = queries._parse_datetime(start_time)
+        sy, sm, sd, _sh, _start_ts = queries._parse_datetime(
+            start_time, time_zone_offset_hours)
         _start_day_str = f"{sy}-{sm}-{sd}"
     if end_time:
-        ey, em, ed, _eh, _end_ts = queries._parse_datetime(end_time)
+        ey, em, ed, _eh, _end_ts = queries._parse_datetime(
+            end_time, time_zone_offset_hours)
         _end_day_str = f"{ey}-{em}-{ed}"
 
     print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
@@ -1210,6 +1224,368 @@ def generate_crosscheck_report(year_month: str, vendor_bill_path: str,
 # ---------------------------------------------------------------------------
 # Row-level crosscheck report (request_id matching)
 # ---------------------------------------------------------------------------
+
+def generate_tz_offset_export(year_month: str, output_dir: str,
+                              tz_offset_hours: float = 8.0,
+                              user_id: int = None,
+                              channel_id: int = None,
+                              channel_ids: list[int] = None,
+                              currency: str = "USD",
+                              exchange_rate: float = 7.3,
+                              flat_tier: bool = False,
+                              flat_tier_since: str = None,
+                              detail: bool = False,
+                              customer_view: bool = False,
+                              upload_s3: bool = False,
+                              no_cache: bool = False) -> str | list[str] | dict:
+    """Generate monthly bill with dates re-partitioned by timezone offset.
+
+    Unlike generate_monthly_bill which uses UTC partition boundaries,
+    this groups all data by local-date (created_at + tz_offset), so each
+    date row reflects a wall-clock day in the target timezone.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    if flat_tier_since:
+        flat_tier = True
+
+    tz_label = f"utc{float(tz_offset_hours):+g}"
+    suffix = f"_user{user_id}" if user_id else ""
+    ch_suffix = _channel_suffix(channel_id=channel_id, channel_ids=channel_ids)
+    tier_suffix = "_flattier" if flat_tier else ""
+    cv_suffix = "_customer" if customer_view else ""
+    filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}_{tz_label}{cv_suffix}.xlsx"
+    filepath = os.path.join(output_dir, filename)
+
+    rate = exchange_rate if currency == "CNY" else 1.0
+    symbol = "¥" if currency == "CNY" else "$"
+
+    # Query with tz-shifted grouping
+    df_full = run_query_cached(
+        queries.monthly_bill_full_tz(year_month, tz_offset_hours=tz_offset_hours,
+                                     user_id=user_id,
+                                     channel_id=channel_id,
+                                     channel_ids=channel_ids),
+        no_cache=no_cache)
+    df_trend = run_query_cached(
+        queries.daily_trend_tz(year_month, tz_offset_hours=tz_offset_hours,
+                               user_id=user_id,
+                               channel_id=channel_id,
+                               channel_ids=channel_ids),
+        no_cache=no_cache)
+
+    if df_full.empty:
+        wb = xlsxwriter.Workbook(filepath)
+        ws = wb.add_worksheet("无数据")
+        ws.write(0, 0, "指定时间段内无数据")
+        wb.close()
+        return filepath
+
+    df_full = pricing_engine.apply_pricing_summary(
+        df_full, flat_tier=flat_tier, flat_tier_since=flat_tier_since)
+
+    tier_tag = ""
+    if flat_tier:
+        tier_tag = f"（降档自 {flat_tier_since}）" if flat_tier_since else "（统一低档价）"
+    tz_display = f"UTC{float(tz_offset_hours):+g}"
+    tier_tag += f" ({tz_display} 时区划分)"
+
+    wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
+
+    # ── Tab 1: 按用户汇总 ──
+    user_agg = df_full.groupby(["user_id", "username"]).agg({
+        "call_count": "sum",
+        "total_input_tokens": "sum",
+        "total_output_tokens": "sum",
+        "list_price_usd": "sum",
+        "revenue_usd": "sum",
+        "cost_usd": "sum",
+        "profit_usd": "sum",
+    }).reset_index().sort_values("list_price_usd", ascending=False)
+    user_agg["margin"] = user_agg["profit_usd"] / user_agg["revenue_usd"].replace(0, np.nan)
+
+    if customer_view:
+        u_hdrs = ["用户 ID", "用户名", "调用次数",
+                  "输入 Tokens", "输出 Tokens",
+                  f"刊例价 ({symbol})", f"应付金额 ({symbol})"]
+        u_wids = [10, 16, 12, 14, 14, 16, 16]
+        u_fmts = [TOK, None, TOK, TOK, TOK, USD2, USD2]
+    else:
+        u_hdrs = ["用户 ID", "用户名", "调用次数",
+                  "输入 Tokens", "输出 Tokens",
+                  f"刊例价 ({symbol})", f"客户应付 ({symbol})",
+                  f"成本 ({symbol})", f"利润 ({symbol})", "利润率"]
+        u_wids = [10, 16, 12, 14, 14, 16, 16, 16, 14, 10]
+        u_fmts = [TOK, None, TOK, TOK, TOK, USD2, USD2, USD2, USD2, PCT]
+
+    u_data = []
+    for _, r in user_agg.iterrows():
+        row = [int(r["user_id"]), r["username"], int(r["call_count"]),
+               int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+               float(r["list_price_usd"]) * rate,
+               float(r["revenue_usd"]) * rate]
+        if not customer_view:
+            row += [float(r["cost_usd"]) * rate,
+                    float(r["profit_usd"]) * rate,
+                    float(r["margin"]) if pd.notna(r["margin"]) else 0]
+        u_data.append(row)
+
+    u_tots = {c: float(user_agg[c].sum()) for c in
+              ["call_count", "total_input_tokens", "total_output_tokens",
+               "list_price_usd", "revenue_usd"]}
+    u_tot = ["合计", "", int(u_tots["call_count"]),
+             int(u_tots["total_input_tokens"]), int(u_tots["total_output_tokens"]),
+             u_tots["list_price_usd"] * rate, u_tots["revenue_usd"] * rate]
+    if not customer_view:
+        u_tots.update({c: float(user_agg[c].sum()) for c in ["cost_usd", "profit_usd"]})
+        u_tot_margin = u_tots["profit_usd"] / u_tots["revenue_usd"] if u_tots["revenue_usd"] else 0
+        u_tot += [u_tots["cost_usd"] * rate, u_tots["profit_usd"] * rate, u_tot_margin]
+
+    write_sheet(wb, f"API 账单 -- {year_month} (用户汇总){tier_tag}",
+                "用户汇总", u_hdrs, u_wids, u_data, u_fmts,
+                total_row=u_tot, total_fmts=u_fmts)
+
+    # ── Tab 2: 按模型汇总 ──
+    has_cache = "total_cache_hit_tokens" in df_full.columns
+    cache_agg_cols = {}
+    if has_cache:
+        cache_agg_cols = {
+            "total_cache_hit_tokens": "sum",
+            "total_cache_write_tokens": "sum",
+            "total_cw_5m": "sum", "total_cw_1h": "sum",
+            "total_cw_remaining": "sum",
+        }
+    model_agg = df_full.groupby("model_name").agg({
+        "call_count": "sum",
+        "total_input_tokens": "sum",
+        "total_output_tokens": "sum",
+        "total_quota": "sum",
+        "list_price_usd": "sum",
+        "revenue_usd": "sum",
+        "cost_usd": "sum",
+        "profit_usd": "sum",
+        **cache_agg_cols,
+    }).reset_index().sort_values("list_price_usd", ascending=False)
+    model_agg["billed_usd"] = model_agg["total_quota"].astype(float) / QUOTA_TO_USD
+    model_agg["margin"] = model_agg["profit_usd"] / model_agg["revenue_usd"].replace(0, np.nan)
+
+    if has_cache:
+        model_agg["cw_5m_total"] = (model_agg["total_cw_5m"].astype(float)
+                                    + model_agg["total_cw_remaining"].astype(float))
+
+    m_hdrs = ["模型名称", "调用次数"]
+    m_wids = [28, 10]
+    m_fmts = [None, TOK]
+    if has_cache:
+        m_hdrs += ["输入 Tokens", "输出 Tokens", "缓存命中",
+                   "缓存写入\n(5min)", "缓存写入\n(1h)"]
+        m_wids += [14, 14, 14, 14, 14]
+        m_fmts += [TOK, TOK, TOK, TOK, TOK]
+    else:
+        m_hdrs += ["输入 Tokens", "输出 Tokens"]
+        m_wids += [14, 14]
+        m_fmts += [TOK, TOK]
+    if customer_view:
+        m_hdrs += [f"刊例价 ({symbol})", f"应付金额 ({symbol})"]
+        m_wids += [16, 16]
+        m_fmts += [USD2, USD2]
+    else:
+        m_hdrs += [f"刊例价\n(pricing重算)", "系统扣费\n(quota)",
+                   f"客户应付", f"成本", "利润", "利润率"]
+        m_wids += [16, 16, 16, 16, 14, 10]
+        m_fmts += [USD2, USD2, USD2, USD2, USD2, PCT]
+
+    m_data = []
+    for _, r in model_agg.iterrows():
+        row_data = [r["model_name"], int(r["call_count"])]
+        if has_cache:
+            row_data += [int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+                         int(r["total_cache_hit_tokens"]),
+                         int(r["cw_5m_total"]), int(r["total_cw_1h"])]
+        else:
+            row_data += [int(r["total_input_tokens"]), int(r["total_output_tokens"])]
+        if customer_view:
+            row_data += [float(r["list_price_usd"]) * rate,
+                         float(r["revenue_usd"]) * rate]
+        else:
+            row_data += [float(r["list_price_usd"]) * rate,
+                         float(r["billed_usd"]) * rate,
+                         float(r["revenue_usd"]) * rate,
+                         float(r["cost_usd"]) * rate,
+                         float(r["profit_usd"]) * rate,
+                         float(r["margin"]) if pd.notna(r["margin"]) else 0]
+        m_data.append(row_data)
+
+    write_sheet(wb, f"API 账单 -- {year_month} (模型汇总){tier_tag}",
+                "模型汇总", m_hdrs, m_wids, m_data, m_fmts)
+
+    # ── Tab 3: 按日期×模型明细 ──
+    if "local_date" in df_full.columns:
+        if customer_view:
+            date_model_agg = df_full.groupby(["local_date", "model_name"]).agg({
+                "call_count": "sum",
+                "total_input_tokens": "sum",
+                "total_output_tokens": "sum",
+                "list_price_usd": "sum",
+                "revenue_usd": "sum",
+            }).reset_index().sort_values(["local_date", "list_price_usd"], ascending=[True, False])
+            dm_hdrs = [f"日期 ({tz_display})", "模型名称", "调用次数",
+                       "输入 Tokens", "输出 Tokens",
+                       f"刊例价 ({symbol})", f"应付金额 ({symbol})"]
+            dm_wids = [14, 28, 10, 14, 14, 16, 16]
+            dm_fmts = [None, None, TOK, TOK, TOK, USD4, USD4]
+        else:
+            date_model_agg = df_full.groupby(["local_date", "model_name"]).agg({
+                "call_count": "sum",
+                "total_input_tokens": "sum",
+                "total_output_tokens": "sum",
+                "list_price_usd": "sum",
+                "revenue_usd": "sum",
+                "cost_usd": "sum",
+                "profit_usd": "sum",
+            }).reset_index().sort_values(["local_date", "list_price_usd"], ascending=[True, False])
+            dm_hdrs = [f"日期 ({tz_display})", "模型名称", "调用次数",
+                       "输入 Tokens", "输出 Tokens",
+                       f"刊例价 ({symbol})", f"客户应付 ({symbol})",
+                       f"成本 ({symbol})", f"利润 ({symbol})"]
+            dm_wids = [14, 28, 10, 14, 14, 16, 16, 16, 14]
+            dm_fmts = [None, None, TOK, TOK, TOK, USD4, USD4, USD4, USD4]
+
+        dm_data = []
+        for _, r in date_model_agg.iterrows():
+            row = [r["local_date"], r["model_name"], int(r["call_count"]),
+                   int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+                   float(r["list_price_usd"]) * rate,
+                   float(r["revenue_usd"]) * rate]
+            if not customer_view:
+                row += [float(r["cost_usd"]) * rate,
+                        float(r["profit_usd"]) * rate]
+            dm_data.append(row)
+
+        write_sheet(wb, f"API 账单 -- {year_month} (日期×模型){tier_tag}",
+                    "日期×模型", dm_hdrs, dm_wids, dm_data, dm_fmts)
+
+    # ── Tab 4: 每日趋势 ──
+    if customer_view:
+        t_hdrs = [f"日期 ({tz_display})", "调用次数", "总 Tokens", f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 14, 14]
+        t_fmts = [None, TOK, TOK, USD4]
+    else:
+        t_hdrs = [f"日期 ({tz_display})", "调用次数", "总 Tokens", "总额度", f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 14, 14, 14]
+        t_fmts = [None, TOK, TOK, TOK, USD4]
+    t_data = []
+    if not df_trend.empty:
+        for _, r in df_trend.iterrows():
+            row_data = [r["local_date"], int(r["call_count"]), int(r["total_tokens"])]
+            if not customer_view:
+                row_data.append(int(r["total_quota"]))
+            row_data.append(float(r["total_usd"]) * rate)
+            t_data.append(row_data)
+    write_sheet(wb, f"每日费用趋势 -- {year_month}{tier_tag}",
+                "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
+
+    wb.close()
+
+    if not detail and not upload_s3:
+        return filepath
+
+    detail_path = None
+    if detail:
+        detail_path = _export_detail_csv_tz(
+            year_month, output_dir,
+            tz_offset_hours=tz_offset_hours,
+            user_id=user_id,
+            channel_id=channel_id,
+            channel_ids=channel_ids,
+            flat_tier=flat_tier,
+            flat_tier_since=flat_tier_since,
+            customer_view=customer_view)
+
+    if upload_s3:
+        return _upload_results(filepath, detail_path)
+
+    if detail_path:
+        return [filepath, detail_path]
+    return filepath
+
+
+def _export_detail_csv_tz(year_month: str, output_dir: str,
+                          tz_offset_hours: float = 8.0,
+                          user_id: int = None,
+                          channel_id: int = None,
+                          channel_ids: list[int] = None,
+                          model: str = None,
+                          flat_tier: bool = False,
+                          flat_tier_since: str = None,
+                          customer_view: bool = False) -> str:
+    """Export row-level detail with dates partitioned by timezone offset."""
+    tz_label = f"utc{float(tz_offset_hours):+g}"
+    suffix = f"_user{user_id}" if user_id else ""
+    ch_suffix = _channel_suffix(channel_id=channel_id, channel_ids=channel_ids)
+    tier_suffix = "_flattier" if flat_tier else ""
+    cv_suffix = "_customer" if customer_view else ""
+
+    local_dates = queries.detail_day_list_tz(year_month, tz_offset_hours=tz_offset_hours)
+    sqls = [
+        queries.raw_usage_detail_daily_tz(year_month, local_date=ld,
+                                          tz_offset_hours=tz_offset_hours,
+                                          user_id=user_id,
+                                          channel_id=channel_id,
+                                          channel_ids=channel_ids,
+                                          model=model)
+        for ld in local_dates
+    ]
+
+    print(f"[detail-tz] 提交 {len(sqls)} 个每日查询（{tz_label}）...", file=sys.stderr)
+    t0 = time.time()
+    total_rows = 0
+    days_done = 0
+    all_chunks: list[pd.DataFrame] = []
+
+    for idx, df_day in run_queries_parallel_iter(sqls):
+        days_done += 1
+        if df_day.empty:
+            continue
+
+        df_day = _apply_detail_pricing(df_day, flat_tier=flat_tier,
+                                       flat_tier_since=flat_tier_since)
+        total_rows += len(df_day)
+        all_chunks.append(df_day)
+
+        elapsed = time.time() - t0
+        print(f"[detail-tz] {local_dates[idx]}: +{len(df_day):,} 行 "
+              f"({days_done}/{len(sqls)} done, "
+              f"累计 {total_rows:,}, {elapsed:.0f}s)",
+              file=sys.stderr)
+
+    elapsed = time.time() - t0
+
+    if total_rows == 0:
+        print("[detail-tz] 无数据", file=sys.stderr)
+        all_chunks = [pd.DataFrame()]
+
+    df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
+
+    if customer_view:
+        out_path = _write_detail_xlsx_customer(
+            df_all, year_month, output_dir, user_id=user_id,
+            channel_id=channel_id, channel_ids=channel_ids,
+            flat_tier=flat_tier,
+            tier_suffix=tier_suffix, from_suffix=f"_{tz_label}",
+            day_suffix=cv_suffix)
+    else:
+        out_path = _write_detail_csv_internal(
+            df_all, year_month, output_dir,
+            suffix=suffix, ch_suffix=ch_suffix, tier_suffix=tier_suffix,
+            from_suffix=f"_{tz_label}", day_suffix="")
+
+    size_mb = os.path.getsize(out_path) / 1024 / 1024
+    print(f"[detail-tz] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
+          f"耗时 {elapsed:.1f}s", file=sys.stderr)
+
+    return out_path
+
 
 def generate_row_level_crosscheck_report(
         vendor_files: list[str],

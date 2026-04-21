@@ -70,13 +70,14 @@ def _partition_filter(year: str, month: str, day: str = None, hour: str = None) 
     return " AND ".join(parts)
 
 
-def _parse_datetime(dt_str: str) -> tuple[str, str, str, str, int]:
+def _parse_datetime(dt_str: str, utc_offset_hours: float = 0) -> tuple[str, str, str, str, int]:
     """Parse 'YYYY-MM-DD HH:MM' or 'YYYY-MM-DD HH' into (year, month, day, hour_str, unix_ts).
 
-    Returns unix_ts as UTC epoch seconds (treats input as UTC).
+    Returns unix_ts as UTC epoch seconds. The input wall-clock time is
+    interpreted in the fixed UTC offset supplied by utc_offset_hours.
     hour_str is zero-padded, e.g. '09'.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     m = re.match(r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2})(?::(\d{2}))?$", dt_str.strip())
     if not m:
         raise ValueError(
@@ -85,7 +86,8 @@ def _parse_datetime(dt_str: str) -> tuple[str, str, str, str, int]:
     year, month, day = m.group(1), m.group(2), m.group(3)
     hour = int(m.group(4))
     minute = int(m.group(5)) if m.group(5) else 0
-    dt = datetime(int(year), int(month), int(day), hour, minute, tzinfo=timezone.utc)
+    tz = timezone(timedelta(hours=float(utc_offset_hours)))
+    dt = datetime(int(year), int(month), int(day), hour, minute, tzinfo=tz)
     return year, month, day, f"{hour:02d}", int(dt.timestamp())
 
 
@@ -123,12 +125,14 @@ def _hour_range_filter(year: str, month: str,
 
 def _build_time_where(year: str, month: str, year_month: str,
                       start_day: str = None, end_day: str = None,
-                      start_time: str = None, end_time: str = None) -> str:
+                      start_time: str = None, end_time: str = None,
+                      time_zone_offset_hours: float = 0) -> str:
     """Build WHERE clause with partition pruning + optional created_at row filter.
 
-    start_time / end_time: 'YYYY-MM-DD HH:MM' (UTC). When provided, they take
+    start_time / end_time: 'YYYY-MM-DD HH:MM'. When provided, they take
     precedence over start_day / end_day for the row-level created_at filter,
-    and the hour partition is also pruned to minimize scan cost.
+    and the hour partition is also pruned to minimize scan cost. The
+    wall-clock time is interpreted in time_zone_offset_hours.
 
     Returns (partition_where, extra_row_conditions) combined into one string.
     """
@@ -137,7 +141,7 @@ def _build_time_where(year: str, month: str, year_month: str,
     e_day = e_hour = e_ts = None
 
     if start_time:
-        sy, sm, sd, sh, s_ts = _parse_datetime(start_time)
+        sy, sm, sd, sh, s_ts = _parse_datetime(start_time, time_zone_offset_hours)
         s_day, s_hour = f"{sy}-{sm}-{sd}", sh
         _validate_start_day(s_day, year_month)
     elif start_day:
@@ -145,7 +149,7 @@ def _build_time_where(year: str, month: str, year_month: str,
         s_day = start_day
 
     if end_time:
-        ey, em, ed, eh, e_ts = _parse_datetime(end_time)
+        ey, em, ed, eh, e_ts = _parse_datetime(end_time, time_zone_offset_hours)
         e_day, e_hour = f"{ey}-{em}-{ed}", eh
         _validate_end_day(e_day, year_month)
     elif end_day:
@@ -231,7 +235,8 @@ def monthly_bill_full(year_month: str, user_id: int = None,
                       channel_id: int = None,
                       channel_ids: list[int] = None,
                       start_day: str = None, end_day: str = None,
-                      start_time: str = None, end_time: str = None) -> str:
+                      start_time: str = None, end_time: str = None,
+                      time_zone_offset_hours: float = 0) -> str:
     """Full billing detail with cache token breakdown from other JSON.
 
     Extracts cache_tokens, cache_creation_tokens (5m/1h/remaining) and
@@ -239,13 +244,15 @@ def monthly_bill_full(year_month: str, user_id: int = None,
     so the aggregation is done server-side for performance.
 
     start_day / end_day: day-level boundary 'YYYY-MM-DD' (inclusive).
-    start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision;
+    start_time / end_time: 'YYYY-MM-DD HH:MM' for sub-day precision;
         takes precedence over start_day / end_day when provided.
+        Interpreted in time_zone_offset_hours.
     """
     year, month = _year_month(year_month)
     where = _build_time_where(year, month, year_month,
                               start_day=start_day, end_day=end_day,
-                              start_time=start_time, end_time=end_time)
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
@@ -283,12 +290,14 @@ def daily_trend(year_month: str, user_id: int = None,
                 channel_id: int = None,
                 channel_ids: list[int] = None,
                 start_day: str = None, end_day: str = None,
-                start_time: str = None, end_time: str = None) -> str:
-    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
+                start_time: str = None, end_time: str = None,
+                time_zone_offset_hours: float = 0) -> str:
+    """start_time / end_time is interpreted in time_zone_offset_hours."""
     year, month = _year_month(year_month)
     where = _build_time_where(year, month, year_month,
                               start_day=start_day, end_day=end_day,
-                              start_time=start_time, end_time=end_time)
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
@@ -596,11 +605,14 @@ ORDER BY created_at
 
 
 def detail_day_list(year_month: str, start_day: str = None, end_day: str = None,
-                    start_time: str = None, end_time: str = None) -> list[str]:
+                    start_time: str = None, end_time: str = None,
+                    time_zone_offset_hours: float = 0) -> list[str]:
     """Return list of day strings (01..N) for the given month.
 
     start_time / end_time ('YYYY-MM-DD HH:MM') take precedence over
-    start_day / end_day when provided.
+    start_day / end_day when provided. The dates used for partition
+    selection are the supplied wall-clock dates; epoch filtering elsewhere
+    applies time_zone_offset_hours.
     Used by parallel detail export to generate per-day queries.
     """
     import calendar
@@ -612,10 +624,10 @@ def detail_day_list(year_month: str, start_day: str = None, end_day: str = None,
     eff_end_day = end_day
 
     if start_time:
-        sy, sm, sd, _sh, _ts = _parse_datetime(start_time)
+        sy, sm, sd, _sh, _ts = _parse_datetime(start_time, time_zone_offset_hours)
         eff_start_day = f"{sy}-{sm}-{sd}"
     if end_time:
-        ey, em, ed, _eh, _ts = _parse_datetime(end_time)
+        ey, em, ed, _eh, _ts = _parse_datetime(end_time, time_zone_offset_hours)
         eff_end_day = f"{ey}-{em}-{ed}"
 
     if eff_start_day:
@@ -790,6 +802,189 @@ FROM ezmodel_logs.error_logs WHERE {where}
 # ---------------------------------------------------------------------------
 # G. Cache hit rate analysis (usage_logs)
 # ---------------------------------------------------------------------------
+
+def _tz_offset_interval(offset_hours: float) -> str:
+    """Build a SQL INTERVAL literal for a timezone offset in hours.
+
+    Examples: 8.0 -> "INTERVAL '8' HOUR", -5.5 -> "INTERVAL '-330' MINUTE"
+    """
+    if offset_hours == int(offset_hours):
+        return f"INTERVAL '{int(offset_hours)}' HOUR"
+    minutes = int(offset_hours * 60)
+    return f"INTERVAL '{minutes}' MINUTE"
+
+
+def monthly_bill_full_tz(year_month: str,
+                         tz_offset_hours: float = 8.0,
+                         user_id: int = None,
+                         channel_id: int = None,
+                         channel_ids: list[int] = None) -> str:
+    """Full billing detail grouped by local-timezone date.
+
+    Re-partitions records by applying tz_offset_hours to created_at, so each
+    'local_date' row represents a wall-clock day in the target timezone.
+    Used for timezone-shifted export / reconciliation with vendors on UTC+4, etc.
+    """
+    year, month = _year_month(year_month)
+    where = _partition_filter(year, month)
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    interval = _tz_offset_interval(tz_offset_hours)
+    return f"""
+SELECT
+    DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d') AS local_date,
+    user_id,
+    username,
+    channel_id,
+    model_name,
+    COUNT(*)                                AS call_count,
+    SUM(prompt_tokens)                      AS total_input_tokens,
+    SUM(completion_tokens)                  AS total_output_tokens,
+    SUM(quota)                              AS total_quota,
+    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cache_hit_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_write_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0))
+        AS total_cw_5m,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
+        AS total_cw_1h,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
+        AS total_cw_remaining
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d'),
+         user_id, username, channel_id, model_name
+ORDER BY local_date, user_id, total_usd DESC
+"""
+
+
+def daily_trend_tz(year_month: str,
+                   tz_offset_hours: float = 8.0,
+                   user_id: int = None,
+                   channel_id: int = None,
+                   channel_ids: list[int] = None) -> str:
+    """Daily trend grouped by local-timezone date."""
+    year, month = _year_month(year_month)
+    where = _partition_filter(year, month)
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    interval = _tz_offset_interval(tz_offset_hours)
+    return f"""
+SELECT
+    DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d') AS local_date,
+    COUNT(*)                            AS call_count,
+    SUM(prompt_tokens + completion_tokens) AS total_tokens,
+    SUM(quota)                          AS total_quota,
+    ROUND(SUM(quota) / 500000.0, 4)     AS total_usd
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d')
+ORDER BY local_date
+"""
+
+
+def raw_usage_detail_daily_tz(year_month: str, local_date: str,
+                              tz_offset_hours: float = 8.0,
+                              user_id: int = None,
+                              channel_id: int = None,
+                              channel_ids: list[int] = None,
+                              model: str = None) -> str:
+    """Row-level usage_logs for a single local-timezone date.
+
+    Computes the UTC partition day range that could contain records for the
+    given local_date under tz_offset_hours, then filters rows by
+    created_at range corresponding to [local_date 00:00, local_date+1 00:00)
+    in the target timezone.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Parse local_date and compute UTC boundaries
+    ld = datetime.strptime(local_date, "%Y-%m-%d")
+    tz = timezone(timedelta(hours=tz_offset_hours))
+    local_start = ld.replace(tzinfo=tz)
+    local_end = local_start + timedelta(days=1)
+    ts_start = int(local_start.timestamp())
+    ts_end = int(local_end.timestamp())
+
+    # UTC day range for partition pruning
+    utc_start = datetime.fromtimestamp(ts_start, tz=timezone.utc)
+    utc_end = datetime.fromtimestamp(ts_end, tz=timezone.utc)
+
+    year, month = _year_month(year_month)
+    # Use broad partition filter covering the UTC month + day range
+    where = f"year = {_q(year)} AND month = {_q(month)}"
+    day_lo = f"{utc_start.day:02d}"
+    day_hi = f"{utc_end.day:02d}"
+    if utc_start.month == utc_end.month:
+        where += f" AND day >= {_q(day_lo)} AND day <= {_q(day_hi)}"
+
+    where += f" AND created_at >= {ts_start} AND created_at < {ts_end}"
+
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    if model:
+        where += f" AND model_name = {_q(model)}"
+
+    return f"""
+SELECT
+    request_id,
+    created_at,
+    user_id,
+    username,
+    channel_id,
+    model_name,
+    token_name,
+    prompt_tokens,
+    completion_tokens,
+    quota,
+    ROUND(quota / 500000.0, 6)  AS billed_usd,
+    use_time_seconds,
+    is_stream,
+    COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)
+        AS cache_hit_tokens,
+    COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0)
+        AS cache_write_tokens,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+             CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0)
+        AS cw_5m,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+             CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0)
+        AS cw_1h,
+    COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0)
+        AS cw_remaining,
+    CAST(json_extract_scalar(other, '$.tiered_input_price') AS DOUBLE)
+        AS tiered_ip,
+    CAST(json_extract_scalar(other, '$.tiered_output_price') AS DOUBLE)
+        AS tiered_op
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+ORDER BY created_at
+"""
+
+
+def detail_day_list_tz(year_month: str,
+                       tz_offset_hours: float = 8.0) -> list[str]:
+    """Return list of local-date strings for a month under given timezone offset.
+
+    Covers all local dates whose UTC footprint overlaps with the given month.
+    For UTC+8, 2026-03 covers local dates 2026-03-01 through 2026-03-31.
+    (The UTC partition for the month may miss the last few hours of the last
+    local date, but those will be caught by the previous UTC month.)
+    """
+    import calendar
+    from datetime import datetime, timedelta, timezone
+
+    ym_year, ym_month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
+    _, ndays = calendar.monthrange(ym_year, ym_month)
+    return [f"{ym_year}-{ym_month:02d}-{d:02d}" for d in range(1, ndays + 1)]
+
 
 def cache_hit_rate_by_user(year_month: str, user_id: int = None,
                            channel_id: int = None,

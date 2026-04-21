@@ -215,7 +215,8 @@ def _cache_read(key: str, ttl: int | None) -> pd.DataFrame | None:
     s3 = _get_s3()
     try:
         resp = s3.head_object(Bucket=CACHE_BUCKET, Key=key)
-    except s3.exceptions.ClientError:
+    except Exception:
+        # Catch all exceptions (network, ClientError, etc.) to fail fast
         return None
 
     if ttl is not None:
