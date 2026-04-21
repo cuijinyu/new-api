@@ -207,6 +207,8 @@ type ClaudeRequest struct {
 	Thinking          *Thinking       `json:"thinking,omitempty"`
 	McpServers        json.RawMessage `json:"mcp_servers,omitempty"`
 	Metadata          json.RawMessage `json:"metadata,omitempty"`
+	// OutputConfig 用于结构化输出（如 json_schema），透传给上游 Anthropic/Bedrock
+	OutputConfig json.RawMessage `json:"output_config,omitempty"`
 	// 服务层级字段，用于指定 API 服务等级。允许透传可能导致实际计费高于预期，默认应过滤
 	ServiceTier string `json:"service_tier,omitempty"`
 }

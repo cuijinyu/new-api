@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -576,7 +577,14 @@ func FailTaskInfo(reason string) *TaskInfo {
 // service_tier: 服务层级字段，可能导致额外计费（OpenAI、Claude、Responses API 支持）
 // store: 数据存储授权字段，涉及用户隐私（仅 OpenAI、Responses API 支持，默认允许透传，禁用后可能导致 Codex 无法使用）
 // safety_identifier: 安全标识符，用于向 OpenAI 报告违规用户（仅 OpenAI 支持，涉及用户隐私）
-func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings) ([]byte, error) {
+// context_management: Claude 上下文管理字段（仅 Claude 支持，默认过滤以避免被 Bedrock/代理等非 Anthropic 上游拒绝）
+// cache_control.scope: Claude system/messages 内嵌 cache_control 的 scope 子字段（默认过滤以兼容 Bedrock 等非 Anthropic 上游）
+// 当全局 PassThroughRequestEnabled 或渠道 PassThroughBodyEnabled 为 true 时，直接原样返回不做任何清洗。
+func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings, channelPassThroughEnabled bool) ([]byte, error) {
+	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || channelPassThroughEnabled {
+		return jsonData, nil
+	}
+
 	var data map[string]interface{}
 	if err := common.Unmarshal(jsonData, &data); err != nil {
 		common.SysError("RemoveDisabledFields Unmarshal error :" + err.Error())
@@ -604,10 +612,58 @@ func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOther
 		}
 	}
 
+	// 默认移除 context_management，除非明确允许（Bedrock/代理等上游不识别该字段会直接 400）
+	if !channelOtherSettings.AllowContextManagement {
+		if _, exists := data["context_management"]; exists {
+			delete(data, "context_management")
+		}
+	}
+
+	// 默认移除 system / messages 中 cache_control.scope，除非明确允许
+	if !channelOtherSettings.AllowCacheControlScope {
+		stripCacheControlScope(data)
+	}
+
 	jsonDataAfter, err := common.Marshal(data)
 	if err != nil {
 		common.SysError("RemoveDisabledFields Marshal error :" + err.Error())
 		return jsonData, nil
 	}
 	return jsonDataAfter, nil
+}
+
+// stripCacheControlScope 遍历 Claude 请求中的 system 和 messages，删除内嵌 cache_control 里的 scope 键。
+// system 可能是 string 或 []any；messages[].content 可能是 string 或 []any。只在 map[string]any 形式的内容块上生效。
+func stripCacheControlScope(data map[string]interface{}) {
+	if sys, ok := data["system"]; ok {
+		stripCacheControlScopeInContent(sys)
+	}
+	if msgs, ok := data["messages"].([]interface{}); ok {
+		for _, m := range msgs {
+			mm, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			stripCacheControlScopeInContent(mm["content"])
+		}
+	}
+}
+
+// stripCacheControlScopeInContent 只处理 []any 形式的内容块数组；string 形式不含 cache_control，直接忽略。
+func stripCacheControlScopeInContent(content any) {
+	blocks, ok := content.([]interface{})
+	if !ok {
+		return
+	}
+	for _, b := range blocks {
+		bm, ok := b.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cc, ok := bm["cache_control"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		delete(cc, "scope")
+	}
 }
