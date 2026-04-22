@@ -60,6 +60,7 @@ var defaultModelRatio = map[string]float64{
 	"gpt-4.1-nano":                     0.05, // $0.1 / 1M tokens
 	"gpt-4.1-nano-2025-04-14":          0.05, // $0.1 / 1M tokens
 	"gpt-image-1":                      2.5,  // $5 / 1M tokens
+	"gpt-image-2":                      4,    // $8 / 1M tokens
 	"o1":                               7.5,  // $15 / 1M tokens
 	"o1-2024-12-17":                    7.5,  // $15 / 1M tokens
 	"o1-preview":                       7.5,  // $15 / 1M tokens
@@ -95,10 +96,17 @@ var defaultModelRatio = map[string]float64{
 	"gpt-5":                            0.625,
 	"gpt-5-2025-08-07":                 0.625,
 	"gpt-5-chat-latest":                0.625,
+	"gpt-5-codex":                      0.625,
+	"gpt-5.1-codex":                    0.625,
+	"gpt-5.1-codex-mini":               0.125,
+	"gpt-5.1-codex-max":                0.625,
+	"gpt-5.2-codex":                    0.875,
+	"gpt-5.3-codex":                    0.875,
 	"gpt-5-mini":                       0.125,
 	"gpt-5-mini-2025-08-07":            0.125,
 	"gpt-5-nano":                       0.025,
 	"gpt-5-nano-2025-08-07":            0.025,
+	"codex-mini-latest":                0.75,
 	//"gpt-3.5-turbo-0301":           0.75, //deprecated
 	"gpt-3.5-turbo":          0.25,
 	"gpt-3.5-turbo-0613":     0.75,
@@ -304,7 +312,7 @@ var defaultModelPrice = map[string]float64{
 	"kling-lip-sync":       0.14,  // 对口型: 每5秒0.5元，PriceScale 直接返回官方价格倍率
 	"kling-identify-face":  0.14,  // 人脸识别: 每次0.05元，PriceScale=0.05/0.14≈0.357
 	"kling-tts":            0.14,  // 语音合成: 每次0.05元，PriceScale=0.05/0.14≈0.357
-	
+
 }
 
 var defaultAudioRatio = map[string]float64{
@@ -340,10 +348,12 @@ var (
 )
 
 var defaultCompletionRatio = map[string]float64{
-	"gpt-4-gizmo-*":  2,
-	"gpt-4o-gizmo-*": 3,
-	"gpt-4-all":      2,
-	"gpt-image-1":    8,
+	"gpt-4-gizmo-*":     2,
+	"gpt-4o-gizmo-*":    3,
+	"gpt-4-all":         2,
+	"gpt-image-1":       8,
+	"gpt-image-2":       3.75, // $30 output / $8 input
+	"codex-mini-latest": 4,
 }
 
 // InitRatioSettings initializes all model related settings maps
@@ -700,7 +710,8 @@ func ModelRatio2JSONString() string {
 }
 
 var defaultImageRatio = map[string]float64{
-	"gpt-image-1": 2,
+	"gpt-image-1": 2, // $10 image input / $5 text input = 2
+	"gpt-image-2": 1, // $8 image input / $8 text input = 1
 }
 var imageRatioMap map[string]float64
 var imageRatioMapMutex sync.RWMutex

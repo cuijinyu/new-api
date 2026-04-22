@@ -26,13 +26,20 @@ var (
 		"dall-e-3",
 		"dall-e-2",
 		"gpt-image-1",
+		"gpt-image-2",
 		"prefix:imagen-",
 		"flux-",
 		"flux.1-",
 	}
 )
 
+func IsCodexModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	return modelName == "codex-mini-latest" || strings.Contains(modelName, "codex")
+}
+
 func IsOpenAIResponseOnlyModel(modelName string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
 	for _, m := range OpenAIResponseOnlyModels {
 		if strings.HasPrefix(m, "prefix:") {
 			if strings.HasPrefix(modelName, strings.TrimPrefix(m, "prefix:")) {
