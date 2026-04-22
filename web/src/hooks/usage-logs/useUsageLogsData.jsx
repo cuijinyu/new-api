@@ -361,8 +361,8 @@ export const useLogsData = () => {
                 other.group_ratio,
                 other?.user_group_ratio,
                 other.cache_ratio || 1.0,
-                false,
-                1.0,
+                other?.image || other?.image_completion || false,
+                other?.image_ratio || 1.0,
                 other.web_search || false,
                 other.web_search_call_count || 0,
                 other.file_search || false,
@@ -371,6 +371,8 @@ export const useLogsData = () => {
                 other?.tiered_input_price || 0,
                 other?.tiered_output_price || 0,
                 other?.tiered_tier_range || '',
+                other?.image_completion || false,
+                other?.image_completion_ratio || 1.0,
               )
             : other?.claude
             ? renderClaudeLogContent(
@@ -393,8 +395,8 @@ export const useLogsData = () => {
                 other.group_ratio,
                 other?.user_group_ratio,
                 other.cache_ratio || 1.0,
-                false,
-                1.0,
+                other?.image || other?.image_completion || false,
+                other?.image_ratio || 1.0,
                 other.web_search || false,
                 other.web_search_call_count || 0,
                 other.file_search || false,
@@ -403,6 +405,8 @@ export const useLogsData = () => {
                 0,
                 0,
                 '',
+                other?.image_completion || false,
+                other?.image_completion_ratio || 1.0,
               ),
         });
         if (logs[i]?.content) {
@@ -481,6 +485,9 @@ export const useLogsData = () => {
             other?.tiered_cache_creation_tokens_1h || 0,
             other?.tiered_cache_creation_tokens_remaining || 0,
             other?.tiered_prompt_tokens_include_cache ?? true,
+            false,
+            1.0,
+            0,
           );
         } else if (other?.claude) {
           content = renderClaudeModelPrice(
@@ -534,6 +541,16 @@ export const useLogsData = () => {
             other?.tiered_output_price || 0,
             other?.tiered_cache_hit_price || 0,
             other?.tiered_tier_range || '',
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            other?.tiered_prompt_tokens_include_cache ?? true,
+            other?.image_completion || false,
+            other?.image_completion_ratio || 1.0,
+            other?.image_completion_tokens || 0,
           );
         }
         expandDataLocal.push({

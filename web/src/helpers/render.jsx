@@ -1087,6 +1087,8 @@ function renderPriceSimpleCore({
   cacheCreationRatio1h = 1.0,
   image = false,
   imageRatio = 1.0,
+  imageCompletion = false,
+  imageCompletionRatio = 1.0,
   isSystemPromptOverride = false,
 }) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
@@ -1144,6 +1146,9 @@ function renderPriceSimpleCore({
   if (image) {
     parts.push(i18next.t('图片输入: {{imageRatio}}'));
   }
+  if (imageCompletion) {
+    parts.push(i18next.t('图片补全: {{imageCompletionRatio}}'));
+  }
 
   parts.push(`{{ratioType}}: {{groupRatio}}`);
 
@@ -1156,6 +1161,7 @@ function renderPriceSimpleCore({
     cacheCreationRatio5m: cacheCreationRatio5m,
     cacheCreationRatio1h: cacheCreationRatio1h,
     imageRatio: imageRatio,
+    imageCompletionRatio: imageCompletionRatio,
   });
 
   if (isSystemPromptOverride) {
@@ -1201,6 +1207,9 @@ export function renderModelPrice(
   tieredCacheCreationTokens1h = 0,
   tieredCacheCreationTokensRemaining = 0,
   tieredPromptTokensIncludeCache = true,
+  imageCompletion = false,
+  imageCompletionRatio = 1.0,
+  imageCompletionTokens = 0,
 ) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
@@ -1408,6 +1417,11 @@ export function renderModelPrice(
     let completionRatioPrice = modelRatio * 2.0 * completionRatio;
     let cacheRatioPrice = modelRatio * 2.0 * cacheRatio;
     let imageRatioPrice = modelRatio * 2.0 * imageRatio;
+    let imageCompletionRatioPrice = modelRatio * 2.0 * imageCompletionRatio;
+    const textCompletionTokens =
+      imageCompletion && imageCompletionTokens > 0
+        ? Math.max(0, completionTokens - imageCompletionTokens)
+        : completionTokens;
 
     // Calculate effective input tokens (non-cached + cached with ratio applied)
     let effectiveInputTokens =
@@ -1423,7 +1437,10 @@ export function renderModelPrice(
     let price =
       (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
       (audioInputTokens / 1000000) * audioInputPrice * groupRatio +
-      (completionTokens / 1000000) * completionRatioPrice * groupRatio +
+      (textCompletionTokens / 1000000) * completionRatioPrice * groupRatio +
+      (imageCompletionTokens / 1000000) *
+        imageCompletionRatioPrice *
+        groupRatio +
       (webSearchCallCount / 1000) * webSearchPrice * groupRatio +
       (fileSearchCallCount / 1000) * fileSearchPrice * groupRatio +
       imageGenerationCallPrice * groupRatio;
@@ -1477,6 +1494,24 @@ export function renderModelPrice(
                   ratio: groupRatio,
                   total: (imageRatioPrice * groupRatio * rate).toFixed(6),
                   imageRatio: imageRatio,
+                },
+              )}
+            </p>
+          )}
+          {imageCompletion && imageCompletionTokens > 0 && (
+            <p>
+              {i18next.t(
+                '图片补全价格：{{symbol}}{{price}} * {{ratio}} = {{symbol}}{{total}} / 1M tokens (图片补全倍率: {{imageCompletionRatio}})',
+                {
+                  symbol: symbol,
+                  price: (imageCompletionRatioPrice * rate).toFixed(6),
+                  ratio: groupRatio,
+                  total: (
+                    imageCompletionRatioPrice *
+                    groupRatio *
+                    rate
+                  ).toFixed(6),
+                  imageCompletionRatio: imageCompletionRatio,
                 },
               )}
             </p>
@@ -1554,16 +1589,34 @@ export function renderModelPrice(
               }
 
               // 构建输出部分描述
-              const outputDesc = i18next.t(
-                '输出 {{completion}} tokens / 1M tokens * {{symbol}}{{compPrice}}) * {{ratioType}} {{ratio}}',
-                {
-                  completion: completionTokens,
-                  symbol: symbol,
-                  compPrice: (completionRatioPrice * rate).toFixed(6),
-                  ratio: groupRatio,
-                  ratioType: ratioLabel,
-                },
-              );
+              let outputDesc = '';
+              if (imageCompletion && imageCompletionTokens > 0) {
+                outputDesc = i18next.t(
+                  '输出 {{completion}} tokens / 1M tokens * {{symbol}}{{compPrice}} + 图片补全 {{imageCompletion}} tokens / 1M tokens * {{symbol}}{{imageCompPrice}}) * {{ratioType}} {{ratio}}',
+                  {
+                    completion: textCompletionTokens,
+                    imageCompletion: imageCompletionTokens,
+                    symbol: symbol,
+                    compPrice: (completionRatioPrice * rate).toFixed(6),
+                    imageCompPrice: (
+                      imageCompletionRatioPrice * rate
+                    ).toFixed(6),
+                    ratio: groupRatio,
+                    ratioType: ratioLabel,
+                  },
+                );
+              } else {
+                outputDesc = i18next.t(
+                  '输出 {{completion}} tokens / 1M tokens * {{symbol}}{{compPrice}}) * {{ratioType}} {{ratio}}',
+                  {
+                    completion: completionTokens,
+                    symbol: symbol,
+                    compPrice: (completionRatioPrice * rate).toFixed(6),
+                    ratio: groupRatio,
+                    ratioType: ratioLabel,
+                  },
+                );
+              }
 
               // 构建额外服务描述
               const extraServices = [
@@ -1640,6 +1693,8 @@ export function renderLogContent(
   tieredInputPrice = 0,
   tieredOutputPrice = 0,
   tieredTierRange = '',
+  imageCompletion = false,
+  imageCompletionRatio = 1.0,
 ) {
   const {
     ratio,
@@ -1675,12 +1730,15 @@ export function renderLogContent(
   } else {
     if (image) {
       return i18next.t(
-        '模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，图片输入倍率 {{imageRatio}}，{{ratioType}} {{ratio}}',
+        imageCompletion
+          ? '模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，图片输入倍率 {{imageRatio}}，图片补全倍率 {{imageCompletionRatio}}，{{ratioType}} {{ratio}}'
+          : '模型倍率 {{modelRatio}}，缓存倍率 {{cacheRatio}}，输出倍率 {{completionRatio}}，图片输入倍率 {{imageRatio}}，{{ratioType}} {{ratio}}',
         {
           modelRatio: modelRatio,
           cacheRatio: cacheRatio,
           completionRatio: completionRatio,
           imageRatio: imageRatio,
+          imageCompletionRatio: imageCompletionRatio,
           ratioType: ratioLabel,
           ratio,
         },
@@ -1729,6 +1787,8 @@ export function renderModelPriceSimple(
   imageRatio = 1.0,
   isSystemPromptOverride = false,
   provider = 'openai',
+  imageCompletion = false,
+  imageCompletionRatio = 1.0,
 ) {
   return renderPriceSimpleCore({
     modelRatio,
@@ -1745,6 +1805,8 @@ export function renderModelPriceSimple(
     cacheCreationRatio1h,
     image,
     imageRatio,
+    imageCompletion,
+    imageCompletionRatio,
     isSystemPromptOverride,
   });
 }

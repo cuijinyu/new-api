@@ -575,6 +575,8 @@ export const getLogsColumns = ({
               1.0,
               other?.is_system_prompt_overwritten,
               'claude',
+              other?.image_completion || false,
+              other?.image_completion_ratio || 1.0,
             )
           : renderModelPriceSimple(
               other.model_ratio,
@@ -589,10 +591,12 @@ export const getLogsColumns = ({
               1.0,
               0,
               1.0,
-              false,
-              1.0,
+              other?.image || other?.image_completion || false,
+              other?.image_ratio || 1.0,
               other?.is_system_prompt_overwritten,
               'openai',
+              other?.image_completion || false,
+              other?.image_completion_ratio || 1.0,
             );
         return (
           <Typography.Paragraph
