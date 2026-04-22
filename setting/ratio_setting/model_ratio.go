@@ -554,6 +554,10 @@ func GetCompletionRatio(name string) float64 {
 	if ratio, ok := CompletionRatio[name]; ok {
 		return ratio
 	}
+	// 检查默认配置作为后备
+	if ratio, ok := defaultCompletionRatio[name]; ok {
+		return ratio
+	}
 	return hardCodedRatio
 }
 
@@ -581,6 +585,10 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 		}
 		if strings.HasPrefix(name, "gpt-4-turbo") || strings.HasSuffix(name, "gpt-4-1106") || strings.HasSuffix(name, "gpt-4-1105") {
 			return 3, true
+		}
+		// gpt-image 模型使用 defaultCompletionRatio 中的配置
+		if strings.HasPrefix(name, "gpt-image") {
+			return 0, false
 		}
 		// 没有特殊标记的 gpt-4 模型默认倍率为 2
 		return 2, false
