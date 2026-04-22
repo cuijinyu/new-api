@@ -37,20 +37,23 @@ import {
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 
+const INITIAL_INPUTS = {
+  ModelPrice: '',
+  ModelRatio: '',
+  CacheRatio: '',
+  TieredPricing: '',
+  CompletionRatio: '',
+  ImageRatio: '',
+  ImageCompletionRatio: '',
+  AudioRatio: '',
+  AudioCompletionRatio: '',
+  ExposeRatioEnabled: false,
+};
+const INITIAL_KEYS = Object.keys(INITIAL_INPUTS);
+
 export default function ModelRatioSettings(props) {
   const [loading, setLoading] = useState(false);
-  const [inputs, setInputs] = useState({
-    ModelPrice: '',
-    ModelRatio: '',
-    CacheRatio: '',
-    TieredPricing: '',
-    CompletionRatio: '',
-    ImageRatio: '',
-    ImageCompletionRatio: '',
-    AudioRatio: '',
-    AudioCompletionRatio: '',
-    ExposeRatioEnabled: false,
-  });
+  const [inputs, setInputs] = useState(INITIAL_INPUTS);
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
   const { t } = useTranslation();
@@ -126,7 +129,7 @@ export default function ModelRatioSettings(props) {
   useEffect(() => {
     const currentInputs = {};
     for (let key in props.options) {
-      if (Object.keys(inputs).includes(key)) {
+      if (INITIAL_KEYS.includes(key)) {
         currentInputs[key] = props.options[key];
       }
     }

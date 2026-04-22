@@ -42,6 +42,7 @@ const RatioSetting = () => {
     GroupRatio: '',
     GroupGroupRatio: '',
     ImageRatio: '',
+    ImageCompletionRatio: '',
     AudioRatio: '',
     AudioCompletionRatio: '',
     AutoGroups: '',
