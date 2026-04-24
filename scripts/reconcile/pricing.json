@@ -2,10 +2,10 @@
   "_comment": "模型价格配置。tiered_pricing 的 min/max_tokens_k 单位为千 tokens; per_call_price 为按次计费 USD/次; 其余价格单位 USD/1M tokens; web_search 单位 USD/千次",
   "models": {
     "claude-opus-4-6": {
-      "tiered_pricing": [
-        {"min_tokens_k": 0, "max_tokens_k": 200, "input_price": 5, "output_price": 25, "cache_hit_price": 0.5, "cache_write_price": 6.25, "cache_write_price_1h": 10},
-        {"min_tokens_k": 200, "max_tokens_k": -1, "input_price": 10, "output_price": 37.5, "cache_hit_price": 1, "cache_write_price": 12.5, "cache_write_price_1h": 20}
-      ]
+      "input_price": 5, "output_price": 25, "cache_hit_price": 0.5, "cache_write_price": 6.25, "cache_write_price_1h": 10
+    },
+    "claude-opus-4-7": {
+      "input_price": 5, "output_price": 25, "cache_hit_price": 0.5, "cache_write_price": 6.25, "cache_write_price_1h": 10
     },
     "claude-opus-4-5-20251101": {
       "tiered_pricing": [
