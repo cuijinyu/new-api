@@ -175,12 +175,14 @@ def monthly_bill_by_user(year_month: str, user_id: int = None,
                          channel_id: int = None,
                          channel_ids: list[int] = None,
                          start_day: str = None, end_day: str = None,
-                         start_time: str = None, end_time: str = None) -> str:
-    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
+                         start_time: str = None, end_time: str = None,
+                         time_zone_offset_hours: float = 0) -> str:
+    """start_time / end_time: 'YYYY-MM-DD HH:MM' interpreted in time_zone_offset_hours."""
     year, month = _year_month(year_month)
     where = _build_time_where(year, month, year_month,
                               start_day=start_day, end_day=end_day,
-                              start_time=start_time, end_time=end_time)
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
@@ -205,12 +207,14 @@ def monthly_bill_by_user_model(year_month: str, user_id: int = None,
                                channel_id: int = None,
                                channel_ids: list[int] = None,
                                start_day: str = None, end_day: str = None,
-                               start_time: str = None, end_time: str = None) -> str:
-    """start_time / end_time: 'YYYY-MM-DD HH:MM' UTC for sub-day precision."""
+                               start_time: str = None, end_time: str = None,
+                               time_zone_offset_hours: float = 0) -> str:
+    """start_time / end_time: 'YYYY-MM-DD HH:MM' interpreted in time_zone_offset_hours."""
     year, month = _year_month(year_month)
     where = _build_time_where(year, month, year_month,
                               start_day=start_day, end_day=end_day,
-                              start_time=start_time, end_time=end_time)
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
@@ -315,9 +319,15 @@ ORDER BY day
 """
 
 
-def model_ranking(year_month: str) -> str:
+def model_ranking(year_month: str,
+                  start_day: str = None, end_day: str = None,
+                  start_time: str = None, end_time: str = None,
+                  time_zone_offset_hours: float = 0) -> str:
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     return f"""
 SELECT
     model_name,
@@ -333,9 +343,15 @@ ORDER BY total_usd DESC
 """
 
 
-def channel_summary(year_month: str) -> str:
+def channel_summary(year_month: str,
+                    start_day: str = None, end_day: str = None,
+                    start_time: str = None, end_time: str = None,
+                    time_zone_offset_hours: float = 0) -> str:
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     return f"""
 SELECT
     channel_id,
@@ -643,9 +659,18 @@ def detail_day_list(year_month: str, start_day: str = None, end_day: str = None,
 # B. Anomaly detection (usage_logs)
 # ---------------------------------------------------------------------------
 
-def anomaly_zero_tokens(year_month: str, day: str = None) -> str:
+def anomaly_zero_tokens(year_month: str, day: str = None,
+                        start_day: str = None, end_day: str = None,
+                        start_time: str = None, end_time: str = None,
+                        time_zone_offset_hours: float = 0) -> str:
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month, day=day)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
+    # If day is specified (legacy), override with day filter
+    if day:
+        where = _partition_filter(year, month, day=day)
     return f"""
 SELECT
     request_id,
@@ -696,9 +721,15 @@ ORDER BY user_id, model_name, created_at
 # C. KPI summary (usage_logs)
 # ---------------------------------------------------------------------------
 
-def kpi_summary(year_month: str) -> str:
+def kpi_summary(year_month: str,
+                start_day: str = None, end_day: str = None,
+                start_time: str = None, end_time: str = None,
+                time_zone_offset_hours: float = 0) -> str:
     year, month = _year_month(year_month)
-    where = _partition_filter(year, month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
     return f"""
 SELECT
     COUNT(*)                            AS total_calls,
@@ -867,10 +898,48 @@ def daily_trend_tz(year_month: str,
                    tz_offset_hours: float = 8.0,
                    user_id: int = None,
                    channel_id: int = None,
-                   channel_ids: list[int] = None) -> str:
-    """Daily trend grouped by local-timezone date."""
+                   channel_ids: list[int] = None,
+                   start_day: str = None, end_day: str = None,
+                   start_time: str = None, end_time: str = None) -> str:
+    """Daily trend grouped by local-timezone date.
+
+    start_day/end_day: 'YYYY-MM-DD' boundary in the target timezone.
+    start_time/end_time: 'YYYY-MM-DD HH:MM' in the target timezone.
+    """
     year, month = _year_month(year_month)
+    # Build base partition filter
     where = _partition_filter(year, month)
+
+    # Apply date/time range filters in the target timezone
+    # Convert local datetime bounds to UTC timestamps for row-level filtering
+    if start_day:
+        # start_day 00:00 in target timezone -> UTC timestamp
+        from datetime import datetime, timedelta, timezone as tz
+        sy, sm, sd = start_day.split('-')
+        local_start = datetime(int(sy), int(sm), int(sd), 0, 0,
+                               tzinfo=tz(timedelta(hours=float(tz_offset_hours))))
+        start_ts = int(local_start.timestamp())
+        where += f" AND created_at >= {start_ts}"
+
+    if end_day:
+        # end_day 23:59:59 in target timezone -> UTC timestamp
+        from datetime import datetime, timedelta, timezone as tz
+        ey, em, ed = end_day.split('-')
+        local_end = datetime(int(ey), int(em), int(ed), 23, 59, 59,
+                              tzinfo=tz(timedelta(hours=float(tz_offset_hours))))
+        end_ts = int(local_end.timestamp())
+        where += f" AND created_at <= {end_ts}"
+
+    if start_time:
+        from datetime import datetime, timedelta, timezone as tz
+        sy, sm, sd, sh, smm = _parse_datetime(start_time, tz_offset_hours)
+        where += f" AND created_at >= {smm}"
+
+    if end_time:
+        from datetime import datetime, timedelta, timezone as tz
+        ey, em, ed, eh, e_ts = _parse_datetime(end_time, tz_offset_hours)
+        where += f" AND created_at < {e_ts + 60}"
+
     if user_id is not None:
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)

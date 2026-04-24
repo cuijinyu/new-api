@@ -60,6 +60,97 @@ available_months.reverse()
 year_month = st.sidebar.selectbox("选择月份", available_months, index=0)
 no_cache = st.sidebar.checkbox("跳过缓存", value=False)
 
+# 全局时区偏移设置
+st.sidebar.markdown("---")
+st.sidebar.markdown("**全局时区与日期范围**")
+
+tz_presets = {
+    "UTC (UTC+0)": 0.0,
+    "UTC+4（供应商常用）": 4.0,
+    "北京时间 (UTC+8)": 8.0,
+    "自定义": None,
+}
+tz_choice = st.sidebar.selectbox(
+    "时区偏移",
+    options=list(tz_presets.keys()),
+    index=2,
+    help="所有标签页的日期边界都会按此时区解释"
+)
+tz_offset = tz_presets[tz_choice]
+if tz_offset is None:
+    tz_offset = st.sidebar.number_input(
+        "自定义 UTC 偏移（小时）",
+        min_value=-12.0,
+        max_value=14.0,
+        value=8.0,
+        step=0.5
+    )
+
+# 全局日期范围
+use_date_range = st.sidebar.checkbox("指定日期范围", value=False,
+                                     help="勾选后可设置起止日期和时间")
+
+import calendar as _cal
+_ym_year, _ym_month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
+_month_first = datetime(_ym_year, _ym_month, 1).date()
+_month_last = datetime(_ym_year, _ym_month,
+                       _cal.monthrange(_ym_year, _ym_month)[1]).date()
+_today = datetime.now(timezone.utc).date()
+_end_day_default = min(_today, _month_last)
+
+global_start_day = None
+global_end_day = None
+global_start_time = None
+global_end_time = None
+
+if use_date_range:
+    # 日期选择
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        temp_start = st.date_input("起始日期", value=_month_first,
+                                   min_value=_month_first, max_value=_month_last,
+                                   label_visibility="collapsed")
+    with col2:
+        temp_end = st.date_input("截止日期", value=_end_day_default,
+                                 min_value=_month_first, max_value=_month_last,
+                                 label_visibility="collapsed")
+
+    # 时间精度选择
+    use_time_precision = st.sidebar.checkbox("精确到时分", value=False,
+                                            help="勾选后可设置具体的小时和分钟")
+
+    if use_time_precision:
+        # 起始时间（时:分）
+        t_col1, t_col2 = st.sidebar.columns(2)
+        with t_col1:
+            start_hour = st.selectbox("起始时", options=[f"{h:02d}" for h in range(24)],
+                                      index=0, key="sh")
+        with t_col2:
+            start_minute = st.selectbox("起始分", options=[f"{m:02d}" for m in range(60)],
+                                        index=0, key="sm")
+
+        # 截止时间（时:分）
+        t_col3, t_col4 = st.sidebar.columns(2)
+        with t_col3:
+            end_hour = st.selectbox("截止时", options=[f"{h:02d}" for h in range(24)],
+                                    index=23, key="eh")
+        with t_col4:
+            end_minute = st.selectbox("截止分", options=[f"{m:02d}" for m in range(60)],
+                                      index=59, key="em")
+
+        # 构建带时分的完整时间字符串
+        global_start_time = f"{temp_start.strftime('%Y-%m-%d')} {start_hour}:{start_minute}"
+        global_end_time = f"{temp_end.strftime('%Y-%m-%d')} {end_hour}:{end_minute}"
+    else:
+        # 只到日期级别
+        if float(tz_offset) != 0.0:
+            # 有时区偏移时，转换为当天00:00和23:59
+            global_start_time = f"{temp_start.strftime('%Y-%m-%d')} 00:00"
+            global_end_time = f"{temp_end.strftime('%Y-%m-%d')} 23:59"
+        else:
+            global_start_day = temp_start.strftime("%Y-%m-%d")
+            global_end_day = temp_end.strftime("%Y-%m-%d")
+
 st.sidebar.markdown("---")
 st.sidebar.caption(f"数据源: Athena `ezmodel_logs`")
 st.sidebar.caption(f"额度换算: quota ÷ 500,000 = USD")
@@ -70,16 +161,25 @@ st.sidebar.caption(f"额度换算: quota ÷ 500,000 = USD")
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=600, show_spinner="正在查询 Athena...")
-def load_kpi(ym, nc):
-    return run_query_cached(queries.kpi_summary(ym), no_cache=nc)
+def load_kpi(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.kpi_summary(ym,
+                                                 start_day=sd, end_day=ed,
+                                                 start_time=st, end_time=et,
+                                                 time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_users(ym, nc):
-    return run_query_cached(queries.monthly_bill_by_user(ym), no_cache=nc)
+def load_users(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.monthly_bill_by_user(ym,
+                                                          start_day=sd, end_day=ed,
+                                                          start_time=st, end_time=et,
+                                                          time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_user_model(ym, nc):
-    return run_query_cached(queries.monthly_bill_by_user_model(ym), no_cache=nc)
+def load_user_model(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.monthly_bill_by_user_model(ym,
+                                                               start_day=sd, end_day=ed,
+                                                               start_time=st, end_time=et,
+                                                               time_zone_offset_hours=tz_off), no_cache=nc)
 
 
 def parse_channel_ids(text: str) -> list[int]:
@@ -98,32 +198,50 @@ def parse_channel_ids(text: str) -> list[int]:
     return sorted(set(ids))
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_trend(ym, nc):
-    return run_query_cached(queries.daily_trend(ym), no_cache=nc)
+def load_trend(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.daily_trend(ym,
+                                                start_day=sd, end_day=ed,
+                                                start_time=st, end_time=et,
+                                                time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询（时区偏移趋势）...")
-def load_trend_tz(ym, tz_offset, nc):
-    return run_query_cached(queries.daily_trend_tz(ym, tz_offset_hours=tz_offset), no_cache=nc)
+def load_trend_tz(ym, tz_offset, nc, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.daily_trend_tz(ym, tz_offset_hours=tz_offset,
+                                                   start_day=sd, end_day=ed,
+                                                   start_time=st, end_time=et), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_models(ym, nc):
-    return run_query_cached(queries.model_ranking(ym), no_cache=nc)
+def load_models(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.model_ranking(ym,
+                                                  start_day=sd, end_day=ed,
+                                                  start_time=st, end_time=et,
+                                                  time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_channels(ym, nc):
-    return run_query_cached(queries.channel_summary(ym), no_cache=nc)
+def load_channels(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.channel_summary(ym,
+                                                    start_day=sd, end_day=ed,
+                                                    start_time=st, end_time=et,
+                                                    time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
-def load_anomaly_zero(ym, nc):
-    return run_query_cached(queries.anomaly_zero_tokens(ym), no_cache=nc)
+def load_anomaly_zero(ym, nc, tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    return run_query_cached(queries.anomaly_zero_tokens(ym,
+                                                        start_day=sd, end_day=ed,
+                                                        start_time=st, end_time=et,
+                                                        time_zone_offset_hours=tz_off), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询...")
 def load_errors(ym, day, nc):
     return run_query_cached(queries.error_distribution(ym, day), no_cache=nc)
 
 @st.cache_data(ttl=600, show_spinner="正在查询定价数据...")
-def load_full_billing(ym, nc, flat_tier=False, flat_tier_since=None):
-    df = run_query_cached(queries.monthly_bill_full(ym), no_cache=nc)
+def load_full_billing(ym, nc, flat_tier=False, flat_tier_since=None,
+                      tz_off=0.0, sd=None, ed=None, st=None, et=None):
+    df = run_query_cached(queries.monthly_bill_full(ym,
+                                                     start_day=sd, end_day=ed,
+                                                     start_time=st, end_time=et,
+                                                     time_zone_offset_hours=tz_off), no_cache=nc)
     if not df.empty:
         df = pricing_engine.apply_pricing_summary(
             df, flat_tier=flat_tier, flat_tier_since=flat_tier_since)
@@ -134,9 +252,27 @@ def load_full_billing(ym, nc, flat_tier=False, flat_tier_since=None):
 # KPI Cards
 # ---------------------------------------------------------------------------
 
-st.title(f"📊 月度概览 — {year_month}")
+# 构建标题显示日期范围
+date_range_label = ""
+if use_date_range:
+    if global_start_day and global_end_day:
+        date_range_label = f" ({global_start_day} ~ {global_end_day})"
+    elif global_start_time and global_end_time:
+        # 从时间字符串提取日期部分
+        s_date = global_start_time.split()[0]
+        e_date = global_end_time.split()[0]
+        date_range_label = f" ({s_date} ~ {e_date})"
 
-df_kpi = load_kpi(year_month, no_cache)
+tz_label = f"UTC{float(tz_offset):+g}" if float(tz_offset) != 0.0 else "UTC"
+title_suffix = f" — {year_month}{date_range_label}" if date_range_label else f" — {year_month}"
+if float(tz_offset) != 0.0:
+    title_suffix += f" [{tz_label}]"
+
+st.title(f"📊 月度概览{title_suffix}")
+
+df_kpi = load_kpi(year_month, no_cache, float(tz_offset),
+                  global_start_day, global_end_day,
+                  global_start_time, global_end_time)
 
 if not df_kpi.empty:
     kpi = df_kpi.iloc[0]
@@ -168,39 +304,23 @@ tab_trend, tab_profit, tab_recalc, tab_crosscheck, tab_models, tab_users, tab_ch
 
 # --- Tab: Daily Trend ---
 with tab_trend:
-    trend_tz_presets = {
-        "UTC (UTC+0)": 0.0,
-        "UTC+4（供应商常用）": 4.0,
-        "北京时间 (UTC+8)": 8.0,
-        "自定义": None,
-    }
-    trend_tz_col1, trend_tz_col2 = st.columns([3, 1])
-    with trend_tz_col1:
-        trend_tz_choice = st.selectbox(
-            "时区划分",
-            options=list(trend_tz_presets.keys()),
-            index=0,
-            key="trend_tz_choice",
-            help="按所选时区重新划分每日边界。UTC+0 即按原始 UTC 分区统计。",
-        )
-    trend_tz_val = trend_tz_presets[trend_tz_choice]
-    with trend_tz_col2:
-        if trend_tz_val is None:
-            trend_tz_val = st.number_input(
-                "UTC 偏移（小时）", min_value=-12.0, max_value=14.0,
-                value=8.0, step=0.5, key="trend_tz_custom")
+    st.caption("使用侧边栏的全局时区和日期范围设置")
 
-    if trend_tz_val == 0.0:
-        df_trend = load_trend(year_month, no_cache)
+    if float(tz_offset) == 0.0:
+        df_trend = load_trend(year_month, no_cache, float(tz_offset),
+                              global_start_day, global_end_day,
+                              global_start_time, global_end_time)
         if not df_trend.empty:
             df_trend["date"] = df_trend["day"].apply(
                 lambda d: f"{year_month}-{int(d):02d}")
         tz_note = ""
     else:
-        df_trend = load_trend_tz(year_month, trend_tz_val, no_cache)
+        df_trend = load_trend_tz(year_month, float(tz_offset), no_cache,
+                                 global_start_day, global_end_day,
+                                 global_start_time, global_end_time)
         if not df_trend.empty:
             df_trend["date"] = df_trend["local_date"]
-        tz_note = f" (UTC{float(trend_tz_val):+g})"
+        tz_note = f" (UTC{float(tz_offset):+g})"
 
     if not df_trend.empty:
         fig = px.bar(df_trend, x="date", y="total_usd",
@@ -228,6 +348,7 @@ with tab_trend:
 # --- Tab: Profit Analysis ---
 with tab_profit:
     st.subheader("利润分析（四层价格体系）")
+    st.caption("使用侧边栏的全局时区和日期范围设置")
 
     pr_col1, pr_col2, pr_col3 = st.columns(3)
     with pr_col1:
@@ -244,7 +365,10 @@ with tab_profit:
 
     df_billing = load_full_billing(year_month, no_cache,
                                    flat_tier=use_flat,
-                                   flat_tier_since=flat_since_val)
+                                   flat_tier_since=flat_since_val,
+                                   tz_off=float(tz_offset),
+                                   sd=global_start_day, ed=global_end_day,
+                                   st=global_start_time, et=global_end_time)
     if pr_user_id > 0 and not df_billing.empty:
         df_billing = df_billing[df_billing["user_id"].astype(int) == pr_user_id]
 
@@ -503,7 +627,10 @@ with tab_crosscheck:
 
 # --- Tab: Model Analysis ---
 with tab_models:
-    df_models = load_models(year_month, no_cache)
+    st.caption("使用侧边栏的全局时区和日期范围设置")
+    df_models = load_models(year_month, no_cache, float(tz_offset),
+                            global_start_day, global_end_day,
+                            global_start_time, global_end_time)
     if not df_models.empty:
         col1, col2 = st.columns(2)
         with col1:
@@ -526,7 +653,10 @@ with tab_models:
 
 # --- Tab: User Analysis ---
 with tab_users:
-    df_users = load_users(year_month, no_cache)
+    st.caption("使用侧边栏的全局时区和日期范围设置")
+    df_users = load_users(year_month, no_cache, float(tz_offset),
+                          global_start_day, global_end_day,
+                          global_start_time, global_end_time)
     if not df_users.empty:
         fig = px.bar(df_users.head(20), x="username", y="total_usd",
                      title="用户费用排行 (Top 20)",
@@ -539,7 +669,9 @@ with tab_users:
             "查看用户详情",
             options=["全部"] + df_users["username"].tolist())
 
-        df_detail = load_user_model(year_month, no_cache)
+        df_detail = load_user_model(year_month, no_cache, float(tz_offset),
+                                    global_start_day, global_end_day,
+                                    global_start_time, global_end_time)
         if selected_user != "全部":
             df_detail = df_detail[df_detail["username"] == selected_user]
 
@@ -550,7 +682,10 @@ with tab_users:
 
 # --- Tab: Channel Analysis ---
 with tab_channels:
-    df_ch = load_channels(year_month, no_cache)
+    st.caption("使用侧边栏的全局时区和日期范围设置")
+    df_ch = load_channels(year_month, no_cache, float(tz_offset),
+                          global_start_day, global_end_day,
+                          global_start_time, global_end_time)
     if not df_ch.empty:
         fig = px.bar(df_ch, x="channel_id", y="total_usd",
                      title="渠道费用分布",
@@ -564,7 +699,10 @@ with tab_channels:
 
 # --- Tab: Anomaly Detection ---
 with tab_anomaly:
-    df_zero = load_anomaly_zero(year_month, no_cache)
+    st.caption("使用侧边栏的全局时区和日期范围设置")
+    df_zero = load_anomaly_zero(year_month, no_cache, float(tz_offset),
+                                global_start_day, global_end_day,
+                                global_start_time, global_end_time)
     if not df_zero.empty:
         total_loss = df_zero["quota_usd"].sum()
         st.warning(f"发现 {len(df_zero)} 条异常扣费记录，"
@@ -743,6 +881,14 @@ with tab_export:
 
     # ── 时间范围配置 ──
     st.markdown("**时间范围**")
+
+    # 检测全局时区对应的预设索引
+    global_tz_index = 2  # 默认 UTC+8
+    if float(tz_offset) == 0.0:
+        global_tz_index = 0
+    elif float(tz_offset) == 4.0:
+        global_tz_index = 1
+
     exp_tz_presets = {
         "UTC (UTC+0)": 0.0,
         "UTC+4（供应商常用）": 4.0,
@@ -752,18 +898,19 @@ with tab_export:
     exp_tz_choice = st.selectbox(
         "时区偏移（用于子日精度起止时间）",
         options=list(exp_tz_presets.keys()),
-        index=2,
+        index=global_tz_index,
         key="exp_tz_choice",
         help="仅当勾选「指定起始时间」或「指定截止时间」时，日期与小时按所选时区解释；"
-             "未勾选时导出整月，与此处无关。",
+             "未勾选时导出整月，与此处无关。默认使用侧边栏的全局设置。",
     )
     exp_tz_offset = exp_tz_presets[exp_tz_choice]
     if exp_tz_offset is None:
+        # 使用全局时区作为默认值
         exp_tz_offset = st.number_input(
             "自定义 UTC 偏移（小时）",
             min_value=-12.0,
             max_value=14.0,
-            value=8.0,
+            value=float(tz_offset),
             step=0.5,
             key="exp_tz_custom",
             help="东八区为 +8，迪拜等为 +4。",
@@ -777,7 +924,7 @@ with tab_export:
     exp_col5, exp_col6 = st.columns(2)
     with exp_col5:
         exp_start_toggle = st.checkbox("指定起始时间", key="exp_start_toggle",
-                                       help="勾选后可设置账单起始日期（可精确到小时），留空则从月初开始")
+                                       help="勾选后可设置账单起始日期（可精确到小时）。日期边界会按所选时区解释。")
         if exp_start_toggle:
             exp_start_date = st.date_input(
                 "起始日期",
@@ -790,14 +937,14 @@ with tab_export:
                 f"起始小时（{tz_label} 本地，留空=当天 00:00）",
                 options=[""] + [f"{h:02d}" for h in range(24)],
                 key="exp_start_hour",
-                help=f"该小时与上方起始日期组成 {tz_label} 的本地时刻，再换算为 UTC 与 created_at 比较。",
+                help=f"该小时与上方起始日期组成 {tz_label} 的本地时刻，再换算为 UTC 与 created_at 比较。不选小时时按 00:00 处理。",
             )
         else:
             exp_start_date = None
             exp_start_hour = ""
     with exp_col6:
         exp_end_toggle = st.checkbox("指定截止时间", key="exp_end_day_toggle",
-                                     help="勾选后可设置账单截止日期（可精确到小时），留空则导出整月")
+                                     help="勾选后可设置账单截止日期（可精确到小时）。日期边界会按所选时区解释。")
         if exp_end_toggle:
             exp_end_day_date = st.date_input(
                 "截止日期",
@@ -811,7 +958,7 @@ with tab_export:
                 f"截止小时（{tz_label} 本地，留空=当天 23:59）",
                 options=[""] + [f"{h:02d}" for h in range(24)],
                 key="exp_end_hour",
-                help=f"该小时与上方截止日期组成 {tz_label} 的本地时刻（含该小时 00:00–59:59 的完整分钟）。",
+                help=f"该小时与上方截止日期组成 {tz_label} 的本地时刻（含该小时 00:00–59:59 的完整分钟）。不选小时时按 23:59 处理。",
             )
         else:
             exp_end_day_date = None
@@ -820,23 +967,30 @@ with tab_export:
     # Resolve start_time / end_time / start_day / end_day
     exp_start_time = exp_start_day = None
     exp_end_time = exp_end_day = None
+
+    # 当有时区偏移时，日期边界也要按该时区解释（转换为整点时刻）
+    use_tz_for_day = float(exp_tz_offset) != 0.0
+
     if exp_start_toggle and exp_start_date is not None:
         if exp_start_hour:
             exp_start_time = f"{exp_start_date.strftime('%Y-%m-%d')} {exp_start_hour}:00"
+        elif use_tz_for_day:
+            # 日期边界按所选时区的 00:00 解释
+            exp_start_time = f"{exp_start_date.strftime('%Y-%m-%d')} 00:00"
         else:
             exp_start_day = exp_start_date.strftime("%Y-%m-%d")
+
     if exp_end_toggle and exp_end_day_date is not None:
         if exp_end_hour:
             exp_end_time = f"{exp_end_day_date.strftime('%Y-%m-%d')} {exp_end_hour}:59"
+        elif use_tz_for_day:
+            # 日期边界按所选时区的 23:59 解释
+            exp_end_time = f"{exp_end_day_date.strftime('%Y-%m-%d')} 23:59"
         else:
             exp_end_day = exp_end_day_date.strftime("%Y-%m-%d")
 
-    # 仅在有「小时级」起止时间时传入偏移，避免整月导出文件名误带 _utc+8
-    exp_tz_hours = (
-        float(exp_tz_offset)
-        if (exp_start_time or exp_end_time)
-        else 0.0
-    )
+    # 传给后端的时区偏移（当使用了日期边界且有时区偏移时也要传）
+    exp_tz_hours = float(exp_tz_offset) if use_tz_for_day else 0.0
 
     exp_col7, exp_col8 = st.columns(2)
     with exp_col7:
