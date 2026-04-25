@@ -16,6 +16,8 @@ EZModel 账单 CLI 工具
     python bill_cli.py import-bill vendor.csv --channel-id 25 --month 2026-03
     python bill_cli.py crosscheck --month 2026-03 --vendor vendor.csv --channel-id 25 -o output/
     python bill_cli.py query "SELECT ..." -o result.xlsx
+    python bill_cli.py cost --month 2026-03 --session
+    python bill_cli.py cost --session --breakdown
 """
 
 import argparse
@@ -30,11 +32,52 @@ if sys.stdout and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8"
 import pandas as pd
 from tabulate import tabulate
 
-from athena_engine import run_query_cached, run_safe_query, run_query_df
+from athena_engine import run_query_cached, run_safe_query, run_query_df, get_session_total_cost, get_session_cost_summary
 import queries
 import report_builder
 import pricing_engine
 import cost_import
+
+# Import cost monitor for cost tracking
+try:
+    from cost_monitor import (
+        calculate_query_cost,
+        get_total_cost,
+        get_cost_summary,
+        get_query_costs,
+        format_bytes,
+        print_cost_summary,
+        print_query_breakdown,
+        BYTES_PER_TB,
+        COST_PER_TB,
+    )
+    COST_MONITOR_AVAILABLE = True
+except ImportError:
+    COST_MONITOR_AVAILABLE = False
+
+    def calculate_query_cost(*args, **kwargs):
+        return 0.0
+
+    def get_total_cost():
+        return 0.0
+
+    def get_cost_summary():
+        return {}
+
+    def get_query_costs():
+        return {}
+
+    def format_bytes(b):
+        return f"{b} bytes"
+
+    def print_cost_summary():
+        pass
+
+    def print_query_breakdown(*args, **kwargs):
+        pass
+
+    BYTES_PER_TB = 1_099_511_627_776
+    COST_PER_TB = 5.0
 
 
 def _yesterday() -> str:
@@ -320,6 +363,75 @@ def cmd_query(args):
             df.to_csv(args.output, index=False, encoding="utf-8-sig")
             print(f"  已导出: {args.output}")
 
+    # Print session cost summary after query
+    if args.show_cost:
+        print_cost_summary()
+
+
+def cmd_cost(args):
+    """Show Athena query cost report for a specific month."""
+    month = args.month or _last_month()
+
+    # Parse month to get date range
+    try:
+        year, mon = month.split("-")
+        year_int, mon_int = int(year), int(mon)
+    except ValueError:
+        print(f"  错误: 无效的月份格式 '{month}'，请使用 YYYY-MM")
+        return
+
+    # Query Athena system table for query statistics
+    # Note: This requires access to Athena system tables (aws_athena_history)
+    # For this implementation, we'll provide an alternative using CloudWatch
+    # or show session costs if --session flag is used
+
+    if args.session:
+        # Show current session cost
+        print("\n当前会话成本摘要:")
+        print_cost_summary()
+        if args.breakdown:
+            print_query_breakdown(limit=args.limit or 10)
+        return
+
+    # For monthly historical costs, we need to query CloudWatch metrics
+    # This is a simplified version that shows the cost tracking capability
+    print(f"\n{'='*60}")
+    print(f"  Athena 成本报告 — {month}")
+    print(f"{'='*60}")
+
+    # Since we can't directly query historical Athena costs without CloudWatch,
+    # we'll show the cost tracking configuration and estimate based on typical usage
+    print(f"\n  成本配置:")
+    print(f"    单价: ${COST_PER_TB:.2f} / TB (扫描)")
+    print(f"    成本告警阈值: ${args.threshold:.2f} / 查询")
+
+    # Show session costs as reference
+    session_summary = get_cost_summary()
+    if session_summary.get("query_count", 0) > 0:
+        print(f"\n  本次会话累计:")
+        print(f"    查询次数: {session_summary['query_count']}")
+        print(f"    缓存命中: {session_summary['cache_hits']}")
+        print(f"    总扫描: {format_bytes(session_summary['total_scanned_bytes'])}")
+        print(f"    预估成本: ${session_summary['total_cost_usd']:.4f}")
+
+    print(f"\n  注意: 历史月度成本需要从 CloudWatch 或 AWS Cost Explorer 获取")
+    print(f"  提示: 使用 --session 查看当前会话成本")
+
+    # If breakdown is requested, show query type breakdown
+    if args.breakdown:
+        query_costs = get_query_costs()
+        if query_costs:
+            print(f"\n  本次会话查询明细:")
+            for name, data in sorted(query_costs.items(),
+                                    key=lambda x: x[1]["total_cost"],
+                                    reverse=True)[:args.limit or 10]:
+                cost = data["total_cost"]
+                bytes_val = data["total_bytes"]
+                count = data["count"] - data["cache_hits"]
+                print(f"    {name}: {count}次, {format_bytes(bytes_val)}, ${cost:.4f}")
+
+    print(f"{'='*60}\n")
+
 
 # ---------------------------------------------------------------------------
 # Argument parser
@@ -453,6 +565,20 @@ def build_parser():
                          help="启用 raw_logs 分区安全检查 (默认)")
     p_query.add_argument("--unsafe", dest="safe", action="store_false",
                          help="跳过 raw_logs 分区检查")
+    p_query.add_argument("--show-cost", action="store_true",
+                         help="显示查询后本次会话成本摘要")
+
+    # cost
+    p_cost = sub.add_parser("cost", parents=[common], help="Athena 查询成本报告")
+    p_cost.add_argument("--month", help="YYYY-MM (默认上月)")
+    p_cost.add_argument("--session", action="store_true",
+                        help="显示当前会话成本（而非历史月份）")
+    p_cost.add_argument("--breakdown", action="store_true",
+                        help="显示按查询类型分组的成本明细")
+    p_cost.add_argument("--limit", type=int, default=10,
+                        help="显示的前 N 个查询（默认 10）")
+    p_cost.add_argument("--threshold", type=float, default=1.0,
+                        help="成本告警阈值（美元，默认 1.0）")
 
     return parser
 
@@ -479,6 +605,7 @@ def main():
         "import-bill": cmd_import_bill,
         "crosscheck": cmd_crosscheck,
         "query": cmd_query,
+        "cost": cmd_cost,
     }
     handlers[args.command](args)
 

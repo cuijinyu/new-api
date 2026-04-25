@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2025-04-25T00:00:00Z",
+  "models": [
+    {
+      "name": "claude-opus-4-6",
+      "type": "tiered",
+      "flat_tier": true,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 5, "op": 25, "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1, "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20}
+      ]
+    },
+    {
+      "name": "claude-opus-4-5-20251101",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 5, "op": 25, "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1, "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "type": "tiered",
+      "flat_tier": true,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-5-20250929",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-20250514",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 0.8,
+      "op": 4,
+      "chp": 0.08,
+      "cwp": 1.0,
+      "cwp_1h": 1.0
+    },
+    {
+      "name": "claude-3-7-sonnet-20250219",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 3,
+      "op": 15,
+      "chp": 0.3,
+      "cwp": 3.75,
+      "cwp_1h": 3.75
+    },
+    {
+      "name": "claude-opus-4-1-20250805",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 15,
+      "op": 75,
+      "chp": 1.5,
+      "cwp": 18.75,
+      "cwp_1h": 18.75
+    },
+    {
+      "name": "claude-opus-4-20250514",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 15,
+      "op": 75,
+      "chp": 1.5,
+      "cwp": 18.75,
+      "cwp_1h": 18.75
+    }
+  ]
+}

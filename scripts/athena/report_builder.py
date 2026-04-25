@@ -16,9 +16,35 @@ import pandas as pd
 import xlsxwriter
 
 from athena_engine import (run_query_cached, run_queries_parallel_iter,
-                          upload_and_sign, QUOTA_TO_USD)
+                          upload_and_sign, QUOTA_TO_USD, get_session_cost_summary)
 import queries
 import pricing_engine
+from logging_config import get_logger, log_report_complete, log_error
+
+logger = get_logger("report_builder")
+
+# Import cost monitor for query cost tracking
+try:
+    from cost_monitor import (
+        get_total_cost,
+        get_cost_summary,
+        get_query_costs,
+        COST_PER_TB,
+    )
+    COST_MONITOR_AVAILABLE = True
+except ImportError:
+    COST_MONITOR_AVAILABLE = False
+
+    def get_total_cost():
+        return 0.0
+
+    def get_cost_summary():
+        return {}
+
+    def get_query_costs():
+        return {}
+
+    COST_PER_TB = 5.0
 
 # ---------------------------------------------------------------------------
 # xlsxwriter style system (ported from gen_bill.py)
@@ -142,6 +168,120 @@ def _write_info_sheet(wb, ws, row, items):
         ws.write(row, 1, str(value), val_fmt)
         row += 1
     return row + 1
+
+
+def _add_cost_worksheet(wb, title: str):
+    """Add a worksheet showing Athena query costs for this report generation.
+
+    Args:
+        wb: xlsxwriter Workbook object
+        title: Title for the worksheet
+    """
+    try:
+        from cost_monitor import (
+            get_cost_summary,
+            get_query_costs,
+            format_bytes,
+            COST_PER_TB,
+        )
+    except ImportError:
+        # Cost monitor not available, skip this worksheet
+        return
+
+    summary = get_cost_summary()
+    query_costs = get_query_costs()
+
+    # If no queries were tracked, skip this worksheet
+    if summary.get("query_count", 0) == 0:
+        return
+
+    ws = wb.add_worksheet("查询成本")
+    ws.freeze_panes(1, 0)
+    ws.set_row(0, 22)
+
+    # Title
+    title_fmt = wb.add_format({
+        "bold": True, "font_size": 13, "font_color": "#1F4E79",
+        "align": "center", "valign": "vcenter",
+    })
+    ws.merge_range(0, 0, 0, 4, title, title_fmt)
+
+    # Summary section
+    row = 2
+    bold_fmt = wb.add_format({"bold": True, "font_size": 11, "valign": "vcenter"})
+    val_fmt = wb.add_format({"font_size": 11, "valign": "vcenter", "num_format": '"$"#,##0.00'})
+    int_fmt = wb.add_format({"font_size": 11, "valign": "vcenter", "num_format": '#,##0'})
+
+    ws.write(row, 0, "成本摘要", bold_fmt)
+    row += 1
+
+    ws.write(row, 0, "总查询次数:", bold_fmt)
+    ws.write(row, 1, summary.get("query_count", 0), int_fmt)
+    row += 1
+
+    ws.write(row, 0, "缓存命中次数:", bold_fmt)
+    ws.write(row, 1, summary.get("cache_hits", 0), int_fmt)
+    row += 1
+
+    ws.write(row, 0, "缓存命中率:", bold_fmt)
+    ws.write(row, 1, f"{summary.get('cache_hit_rate', 0)}%", wb.add_format({"font_size": 11, "valign": "vcenter"}))
+    row += 1
+
+    ws.write(row, 0, "总扫描数据量:", bold_fmt)
+    ws.write(row, 1, format_bytes(summary.get("total_scanned_bytes", 0)), wb.add_format({"font_size": 11, "valign": "vcenter"}))
+    row += 1
+
+    ws.write(row, 0, "预估总成本:", bold_fmt)
+    ws.write(row, 1, summary.get("total_cost_usd", 0), val_fmt)
+    row += 1
+
+    ws.write(row, 0, "单价 (USD/TB):", bold_fmt)
+    ws.write(row, 1, COST_PER_TB, val_fmt)
+    row += 2
+
+    # Query breakdown section
+    if query_costs:
+        ws.write(row, 0, "查询明细（按成本排序）", bold_fmt)
+        row += 1
+
+        # Header
+        hdr_fmt = wb.add_format({
+            "bold": True, "font_color": "#FFFFFF", "bg_color": "#1F4E79",
+            "align": "center", "valign": "vcenter", "font_size": 10,
+        })
+        ws.write(row, 0, "查询名称", hdr_fmt)
+        ws.write(row, 1, "次数", hdr_fmt)
+        ws.write(row, 2, "扫描量", hdr_fmt)
+        ws.write(row, 3, "成本 (USD)", hdr_fmt)
+        ws.write(row, 4, "缓存命中", hdr_fmt)
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 1, 10)
+        ws.set_column(2, 2, 14)
+        ws.set_column(3, 3, 14)
+        ws.set_column(4, 4, 12)
+        row += 1
+
+        # Data rows
+        data_fmt = wb.add_format({"font_size": 10, "valign": "vcenter"})
+        cost_fmt = wb.add_format({"font_size": 10, "valign": "vcenter", "num_format": '"$"#,##0.0000'})
+        int_fmt2 = wb.add_format({"font_size": 10, "valign": "vcenter", "num_format": '#,##0'})
+
+        sorted_costs = sorted(
+            query_costs.items(),
+            key=lambda x: x[1]["total_cost"],
+            reverse=True
+        )[:50]  # Top 50 queries
+
+        for name, data in sorted_costs:
+            count = data["count"] - data["cache_hits"]
+            cache_hits = data["cache_hits"]
+
+            ws.write(row, 0, name[:50], data_fmt)  # Limit name length
+            ws.write(row, 1, count, int_fmt2)
+            ws.write(row, 2, format_bytes(data["total_bytes"]), data_fmt)
+            ws.write(row, 3, data["total_cost"], cost_fmt)
+            ws.write(row, 4, cache_hits, int_fmt2)
+            row += 1
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +625,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     write_sheet(wb, f"每日费用趋势 -- {year_month}",
                 "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
 
+    # --- Query Cost Summary ---
+    if COST_MONITOR_AVAILABLE:
+        _add_cost_worksheet(wb, f"月度账单 -- {year_month} (查询成本)")
+
     wb.close()
 
     if not detail and not upload_s3:
@@ -521,19 +665,19 @@ def _upload_results(xlsx_path: str, detail_path: str = None) -> dict:
     """Upload generated files to S3 and return paths + presigned URLs."""
     result = {"xlsx": xlsx_path}
 
-    print(f"[upload] 上传汇总账单到 S3...", file=sys.stderr)
+    logger.info("Uploading summary bill to S3", extra={"event": "upload_start", "file": xlsx_path})
     info = upload_and_sign(xlsx_path)
     result["xlsx_url"] = info["url"]
     result["xlsx_s3_key"] = info["s3_key"]
 
     if detail_path:
         result["detail_csv"] = detail_path
-        print(f"[upload] 上传明细数据到 S3...", file=sys.stderr)
+        logger.info("Uploading detail data to S3", extra={"event": "upload_detail", "file": detail_path})
         info = upload_and_sign(detail_path)
         result["detail_csv_url"] = info["url"]
         result["detail_csv_s3_key"] = info["s3_key"]
 
-    print(f"[upload] 上传完成", file=sys.stderr)
+    logger.info("Upload completed", extra={"event": "upload_complete"})
     return result
 
 
@@ -600,7 +744,8 @@ def _export_detail_csv(year_month: str, output_dir: str,
             end_time, time_zone_offset_hours)
         _end_day_str = f"{ey}-{em}-{ed}"
 
-    print(f"[detail] 提交 {len(sqls)} 个每日查询（并行）...", file=sys.stderr)
+    logger.info("Submitting daily queries (parallel)",
+                extra={"event": "detail_start", "query_count": len(sqls)})
     t0 = time.time()
     total_rows = 0
     days_done = 0
@@ -628,15 +773,21 @@ def _export_detail_csv(year_month: str, output_dir: str,
         all_chunks.append(df_day)
 
         elapsed = time.time() - t0
-        print(f"[detail] day {days[idx]}: +{len(df_day):,} 行 "
-              f"({days_done}/{len(sqls)} done, "
-              f"累计 {total_rows:,}, {elapsed:.0f}s)",
-              file=sys.stderr)
+        logger.debug("Day query completed",
+                     extra={
+                         "event": "detail_day",
+                         "day": days[idx],
+                         "rows": len(df_day),
+                         "days_done": days_done,
+                         "total_days": len(sqls),
+                         "total_rows": total_rows,
+                         "elapsed_s": elapsed,
+                     })
 
     elapsed = time.time() - t0
 
     if total_rows == 0:
-        print("[detail] 无数据", file=sys.stderr)
+        logger.warning("No detail data found", extra={"event": "detail_no_data"})
         all_chunks = [pd.DataFrame()]
 
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
@@ -656,8 +807,13 @@ def _export_detail_csv(year_month: str, output_dir: str,
             from_suffix=from_suffix, day_suffix=day_suffix)
 
     size_mb = os.path.getsize(out_path) / 1024 / 1024
-    print(f"[detail] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
-          f"耗时 {elapsed:.1f}s", file=sys.stderr)
+    logger.info("Detail export completed",
+                extra={
+                    "event": "detail_complete",
+                    "total_rows": total_rows,
+                    "size_mb": size_mb,
+                    "elapsed_s": elapsed,
+                })
 
     return out_path
 
@@ -951,6 +1107,10 @@ def generate_daily_report(date: str, output_dir: str,
         ])
     write_sheet(wb, f"日报 -- {date} (用户排行)", "用户排行",
                 u_hdrs, u_wids, u_data, u_fmts)
+
+    # --- Query Cost Summary ---
+    if COST_MONITOR_AVAILABLE:
+        _add_cost_worksheet(wb, f"日报 -- {date} (查询成本)")
 
     wb.close()
     return filepath
@@ -1537,7 +1697,8 @@ def _export_detail_csv_tz(year_month: str, output_dir: str,
         for ld in local_dates
     ]
 
-    print(f"[detail-tz] 提交 {len(sqls)} 个每日查询（{tz_label}）...", file=sys.stderr)
+    logger.info("Submitting daily queries with timezone",
+                extra={"event": "detail_tz_start", "query_count": len(sqls), "timezone": tz_label})
     t0 = time.time()
     total_rows = 0
     days_done = 0
@@ -1554,15 +1715,21 @@ def _export_detail_csv_tz(year_month: str, output_dir: str,
         all_chunks.append(df_day)
 
         elapsed = time.time() - t0
-        print(f"[detail-tz] {local_dates[idx]}: +{len(df_day):,} 行 "
-              f"({days_done}/{len(sqls)} done, "
-              f"累计 {total_rows:,}, {elapsed:.0f}s)",
-              file=sys.stderr)
+        logger.debug("Day query completed (timezone)",
+                     extra={
+                         "event": "detail_tz_day",
+                         "local_date": local_dates[idx],
+                         "rows": len(df_day),
+                         "days_done": days_done,
+                         "total_days": len(sqls),
+                         "total_rows": total_rows,
+                         "elapsed_s": elapsed,
+                     })
 
     elapsed = time.time() - t0
 
     if total_rows == 0:
-        print("[detail-tz] 无数据", file=sys.stderr)
+        logger.warning("No detail data found (timezone)", extra={"event": "detail_tz_no_data"})
         all_chunks = [pd.DataFrame()]
 
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
@@ -1581,8 +1748,13 @@ def _export_detail_csv_tz(year_month: str, output_dir: str,
             from_suffix=f"_{tz_label}", day_suffix="")
 
     size_mb = os.path.getsize(out_path) / 1024 / 1024
-    print(f"[detail-tz] 完成: {total_rows:,} 行, {size_mb:.1f} MB, "
-          f"耗时 {elapsed:.1f}s", file=sys.stderr)
+    logger.info("Detail export completed (timezone)",
+                extra={
+                    "event": "detail_tz_complete",
+                    "total_rows": total_rows,
+                    "size_mb": size_mb,
+                    "elapsed_s": elapsed,
+                })
 
     return out_path
 
@@ -1609,11 +1781,13 @@ def generate_row_level_crosscheck_report(
     os.makedirs(output_dir, exist_ok=True)
 
     # 1. Import vendor data
-    print(f"[crosscheck] 导入供应商账单 ({len(vendor_files)} 个文件)...", file=sys.stderr)
+    logger.info("Importing vendor bills",
+                extra={"event": "crosscheck_import", "file_count": len(vendor_files)})
     vendor_df = cost_import.import_row_level_bill(
         vendor_files, channel_id=channel_id)
-    print(f"[crosscheck] 供应商记录: {len(vendor_df):,} 条, "
-          f"${vendor_df['vendor_usd'].sum():,.2f}", file=sys.stderr)
+    vendor_amount = float(vendor_df['vendor_usd'].sum())
+    logger.info("Vendor data imported",
+                extra={"event": "crosscheck_vendor_imported", "vendor_rows": len(vendor_df), "vendor_amount": vendor_amount})
 
     # 2. Detect time range from vendor data
     if "created_at" not in vendor_df.columns:
@@ -1625,18 +1799,18 @@ def generate_row_level_crosscheck_report(
     from datetime import datetime as _dt, timezone as _tz
     dt_min = _dt.fromtimestamp(ts_min, tz=_tz.utc)
     dt_max = _dt.fromtimestamp(ts_max, tz=_tz.utc)
-    print(f"[crosscheck] 时间范围: {dt_min:%Y-%m-%d %H:%M} ~ "
-          f"{dt_max:%Y-%m-%d %H:%M} UTC", file=sys.stderr)
+    logger.info("Time range detected",
+                extra={"event": "crosscheck_time_range", "dt_min": dt_min.isoformat(), "dt_max": dt_max.isoformat()})
 
     # 3. Query our data from Athena
-    print(f"[crosscheck] 查询我方 Athena 数据 (channel_id={channel_id})...",
-          file=sys.stderr)
+    logger.info("Querying our Athena data",
+                extra={"event": "crosscheck_our_query", "channel_id": channel_id})
     our_sql = queries.usage_by_created_at_range(
         ts_min, ts_max, channel_id=channel_id)
     our_df = run_query_cached(our_sql, no_cache=no_cache)
-    print(f"[crosscheck] 我方记录: {len(our_df):,} 条, "
-          f"${our_df['billed_usd'].sum():,.2f}" if not our_df.empty else
-          "[crosscheck] 我方记录: 0 条", file=sys.stderr)
+    our_amount = float(our_df['billed_usd'].sum()) if not our_df.empty else 0.0
+    logger.info("Our data queried",
+                extra={"event": "crosscheck_our_queried", "our_rows": len(our_df), "our_amount": our_amount})
 
     if our_df.empty:
         our_df = pd.DataFrame(columns=["request_id", "model_name", "quota",
@@ -1644,7 +1818,7 @@ def generate_row_level_crosscheck_report(
                                         "completion_tokens"])
 
     # 4. Row-level crosscheck
-    print(f"[crosscheck] 逐条对账中...", file=sys.stderr)
+    logger.info("Performing row-level crosscheck", extra={"event": "crosscheck_match"})
     result = pricing_engine.cross_check_row_level(our_df, vendor_df)
     stats = result["stats"]
 
@@ -1788,20 +1962,19 @@ def generate_row_level_crosscheck_report(
 
     wb.close()
 
-    # Print summary
-    print(f"\n{'='*60}", file=sys.stderr)
-    print(f"  逐条对账完成", file=sys.stderr)
-    print(f"{'='*60}", file=sys.stderr)
-    print(f"  匹配: {stats['matched_records']:,} / "
-          f"我方 {stats['total_our_records']:,} / "
-          f"供应商 {stats['total_vendor_records']:,}", file=sys.stderr)
-    print(f"  仅我方: {stats['only_ours_records']:,} 条 "
-          f"(${stats['only_ours_usd']:,.4f})", file=sys.stderr)
-    print(f"  仅供应商: {stats['only_vendor_records']:,} 条 "
-          f"(${stats['only_vendor_usd']:,.4f})", file=sys.stderr)
-    print(f"  金额不一致: {stats['quota_mismatched']:,} 条", file=sys.stderr)
-    print(f"  总差额: ${stats['our_total_usd'] - stats['vendor_total_usd']:,.4f}",
-          file=sys.stderr)
-    print(f"{'='*60}", file=sys.stderr)
+    # Log summary
+    logger.info("Row-level crosscheck completed",
+                extra={
+                    "event": "crosscheck_complete",
+                    "matched_records": stats['matched_records'],
+                    "total_our_records": stats['total_our_records'],
+                    "total_vendor_records": stats['total_vendor_records'],
+                    "only_ours_records": stats['only_ours_records'],
+                    "only_vendor_records": stats['only_vendor_records'],
+                    "quota_mismatched": stats['quota_mismatched'],
+                    "total_diff": stats['our_total_usd'] - stats['vendor_total_usd'],
+                    "our_total_usd": stats['our_total_usd'],
+                    "vendor_total_usd": stats['vendor_total_usd'],
+                })
 
     return filepath

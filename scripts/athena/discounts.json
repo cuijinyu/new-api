@@ -1,5 +1,19 @@
 {
+  "_version": "1.0.0",
+  "_updated_at": "2026-04-25T00:00:00Z",
+  "_updated_by": "admin",
   "_comment": "折扣配置。cost_discount = 我方成本/刊例价，revenue_discount = 客户应付/刊例价。支持三级匹配：精确(channel×model) > 通配(channel×*) > 默认。",
+  "_changelog": [
+    {
+      "timestamp": "2026-04-25T00:00:00Z",
+      "version": "1.0.0",
+      "changes": [
+        "Initial version with version control support",
+        "Added changelog tracking"
+      ],
+      "author": "admin"
+    }
+  ],
 
   "cost_discounts": {
     "_comment": "成本侧折扣：渠道 × 模型 → 折扣率（刊例价 × discount = 我方成本）",

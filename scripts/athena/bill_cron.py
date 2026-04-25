@@ -26,6 +26,9 @@ import schedule
 from athena_engine import (RESULT_BUCKET, upload_to_s3 as _engine_upload,
                            generate_presigned_url, REPORT_PREFIX as _ENGINE_PREFIX)
 import report_builder
+from logging_config import get_logger, log_report_start, log_report_complete, log_error
+
+logger = get_logger("bill_cron")
 
 REPORT_BUCKET = os.getenv("REPORT_S3_BUCKET", RESULT_BUCKET)
 REPORT_PREFIX = os.getenv("REPORT_S3_PREFIX", "reports")
@@ -41,8 +44,16 @@ FLAT_TIER_SINCE = os.getenv("CRON_FLAT_TIER_SINCE", "").strip() or None
 def _upload_to_s3(local_path: str, s3_key: str):
     _engine_upload(local_path, s3_key)
     url = generate_presigned_url(s3_key)
-    print(f"  [S3] 已上传: s3://{RESULT_BUCKET}/{s3_key}")
-    print(f"  [S3] 下载链接（24h）: {url}")
+    logger.info(
+        "File uploaded to S3",
+        extra={
+            "event": "s3_upload",
+            "s3_bucket": RESULT_BUCKET,
+            "s3_key": s3_key,
+            "presigned_url": url,
+            "expires_in_seconds": 86400,
+        }
+    )
 
 
 def _log(msg: str):
@@ -59,14 +70,22 @@ def run_daily_report(date: str = None):
         date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     _log(f"开始生成日报: {date}")
+    log_report_start(logger, "daily", date)
+
+    start_time = time.time()
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = report_builder.generate_daily_report(date, tmpdir)
             filename = Path(path).name
             s3_key = f"{REPORT_PREFIX}/daily/{date}/{filename}"
             _upload_to_s3(path, s3_key)
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_report_complete(logger, "daily", date, path, 0, duration_ms)
         _log(f"日报完成: {date}")
     except Exception as e:
+        log_error(logger, "DailyReportError", f"Daily report failed for {date}: {e}",
+                  date=date)
         _log(f"日报失败: {date} — {e}")
         import traceback
         traceback.print_exc()
@@ -93,6 +112,9 @@ def run_monthly_report(year_month: str = None,
         tier_msg = f" [降档{'自 ' + fts if fts else '全量'}]"
 
     _log(f"开始生成月报: {year_month}{tier_msg}")
+    log_report_start(logger, "monthly", year_month)
+
+    start_time = time.time()
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = report_builder.generate_monthly_bill(
@@ -107,8 +129,12 @@ def run_monthly_report(year_month: str = None,
             anom_key = f"{REPORT_PREFIX}/monthly/{year_month}/{anom_filename}"
             _upload_to_s3(anom_path, anom_key)
 
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_report_complete(logger, "monthly", year_month, path, 0, duration_ms)
         _log(f"月报完成: {year_month}{tier_msg}")
     except Exception as e:
+        log_error(logger, "MonthlyReportError", f"Monthly report failed for {year_month}: {e}",
+                  year_month=year_month, flat_tier=ft)
         _log(f"月报失败: {year_month} — {e}")
         import traceback
         traceback.print_exc()

@@ -18,6 +18,44 @@ if sys.stdout and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8"
 
 import boto3
 import pandas as pd
+from botocore.config import Config
+
+from logging_config import get_logger, log_query_complete, log_cache_hit, log_cache_miss, log_cache_write, log_error
+
+logger = get_logger("athena_engine")
+
+# Import cost monitor for Athena query cost tracking
+try:
+    from cost_monitor import (
+        log_query_cost as cost_log_query_cost,
+        log_cache_hit as cost_log_cache_hit,
+        get_total_cost,
+        get_cost_summary,
+        reset_tracking,
+        get_query_costs,
+    )
+    COST_MONITOR_AVAILABLE = True
+except ImportError:
+    # Cost monitor not available, use no-op functions
+    COST_MONITOR_AVAILABLE = False
+
+    def cost_log_query_cost(*args, **kwargs):
+        return 0.0
+
+    def cost_log_cache_hit(*args, **kwargs):
+        pass
+
+    def get_total_cost():
+        return 0.0
+
+    def get_cost_summary():
+        return {}
+
+    def reset_tracking():
+        pass
+
+    def get_query_costs():
+        return {}
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -60,7 +98,16 @@ def _get_athena():
 def _get_s3():
     global _s3_client
     if _s3_client is None:
-        kw = {"region_name": REGION}
+        # 配置自动重试：最多重试 5 次，使用自适应模式
+        config = Config(
+            retries={
+                'max_attempts': 5,      # 最多重试 5 次
+                'mode': 'adaptive'       # 自适应重试模式（标准/legacy/adaptive）
+            },
+            connect_timeout=120,        # 连接超时 120 秒
+            read_timeout=120,           # 读取超时 120 秒
+        )
+        kw = {"region_name": REGION, "config": config}
         if AK and SK:
             kw["aws_access_key_id"] = AK
             kw["aws_secret_access_key"] = SK
@@ -97,6 +144,8 @@ def run_query(sql: str, poll_interval: float = 1.5) -> dict:
 
     if state != "SUCCEEDED":
         reason = status["QueryExecution"]["Status"].get("StateChangeReason", "")
+        log_error(logger, "AthenaQueryError", f"Query {state}: {reason}",
+                  query_id=exec_id, state=state)
         raise RuntimeError(f"Athena query {state}: {reason}")
 
     stats = status["QueryExecution"]["Statistics"]
@@ -104,6 +153,12 @@ def run_query(sql: str, poll_interval: float = 1.5) -> dict:
     exec_ms = stats.get("EngineExecutionTimeInMillis", 0)
 
     headers, rows = _fetch_all_results(client, exec_id)
+
+    log_query_complete(logger, exec_id, scanned, exec_ms, len(rows))
+
+    # Track query cost
+    query_name = _extract_query_name(sql)
+    cost_log_query_cost(scanned, query_name, context={"exec_id": exec_id, "exec_ms": exec_ms})
 
     return {
         "headers": headers,
@@ -140,6 +195,45 @@ def _fetch_all_results(client, exec_id: str):
         headers = headers  # already set, skip header row in subsequent pages
 
     return headers or [], rows
+
+
+def _extract_query_name(sql: str) -> str:
+    """Extract a meaningful query name from SQL for cost tracking.
+
+    Uses patterns like:
+    - FROM table_name -> "table_name scan"
+    - aggregation type (COUNT/SUM/etc) -> "COUNT aggregation"
+    Falls back to first 50 chars of SQL
+    """
+    sql_upper = sql.upper().strip()
+
+    # Try to extract table name after FROM
+    from_match = re.search(r'\bFROM\s+([^\s,(]+)', sql_upper, re.IGNORECASE)
+    if from_match:
+        table = from_match.group(1).strip('"`[]')
+        # Check for aggregation
+        if any(agg in sql_upper for agg in ('COUNT(', 'SUM(', 'AVG(', 'MAX(', 'MIN(')):
+            agg = next((agg for agg in ('COUNT', 'SUM', 'AVG', 'MAX', 'MIN')
+                       if f'{agg}(' in sql_upper), 'AGG')
+            return f"{agg} on {table}"
+        return f"{table} scan"
+
+    # Try to identify query type
+    if sql_upper.startswith('SELECT'):
+        return 'SELECT query'
+    elif sql_upper.startswith('WITH'):
+        return 'CTE query'
+    elif sql_upper.startswith('INSERT'):
+        return 'INSERT query'
+    elif sql_upper.startswith('CREATE'):
+        return 'CREATE query'
+    elif sql_upper.startswith('DROP'):
+        return 'DROP query'
+    elif sql_upper.startswith('ALTER'):
+        return 'ALTER query'
+
+    # Fallback: first 50 chars
+    return sql[:50].strip()
 
 
 def run_query_df(sql: str, poll_interval: float = 1.5) -> pd.DataFrame:
@@ -244,8 +338,9 @@ def _cache_write(key: str, df: pd.DataFrame):
     try:
         s3.put_object(Bucket=CACHE_BUCKET, Key=key, Body=buf.getvalue(),
                       ContentType="application/octet-stream")
+        log_cache_write(logger, key, len(df))
     except Exception as e:
-        print(f"[cache] write failed: {e}", file=sys.stderr)
+        log_error(logger, "CacheWriteError", str(e), cache_key=key)
 
 
 def run_query_cached(sql: str, ttl: int | None = ..., no_cache: bool = False) -> pd.DataFrame:
@@ -260,11 +355,16 @@ def run_query_cached(sql: str, ttl: int | None = ..., no_cache: bool = False) ->
         ttl = _infer_cache_ttl(sql)
 
     key = _cache_key(sql)
+    query_name = _extract_query_name(sql)
 
     if not no_cache:
         cached = _cache_read(key, ttl)
         if cached is not None:
+            log_cache_hit(logger, key, ttl)
+            # Track cache hit (cost = 0)
+            cost_log_cache_hit(query_name)
             return cached
+        log_cache_miss(logger, key, ttl)
 
     df = run_query_df(sql)
 
@@ -409,7 +509,7 @@ def run_queries_parallel_iter(sqls: list[str], poll_interval: float = 3.0,
                 try:
                     ready_queue.append(future.result())
                 except Exception as e:
-                    print(f"[parallel] download {key} failed: {e}", file=sys.stderr)
+                    log_error(logger, "ParallelDownloadError", str(e), query_index=key)
                     ready_queue.append((key, pd.DataFrame()))
         for key in done_keys:
             del active_downloads[key]
@@ -433,7 +533,8 @@ def run_queries_parallel_iter(sqls: list[str], poll_interval: float = 3.0,
                     _bg_download, idx, output_uri)
             elif state in ("FAILED", "CANCELLED"):
                 reason = qe["Status"].get("StateChangeReason", "")
-                print(f"[parallel] query {idx} {state}: {reason}", file=sys.stderr)
+                log_error(logger, "ParallelQueryError", f"Query {state}: {reason}",
+                         query_index=idx, state=state, reason=reason)
                 pending.discard(idx)
                 ready_queue.append((idx, pd.DataFrame()))
 
@@ -508,3 +609,29 @@ def _extract_year_month(filename: str) -> str | None:
     """Extract YYYY-MM from a filename like bill_2026-03_user89.xlsx."""
     m = re.search(r"(\d{4}-\d{2})", filename)
     return m.group(1) if m else None
+
+
+# ---------------------------------------------------------------------------
+# Cost tracking convenience functions
+# ---------------------------------------------------------------------------
+
+def get_session_total_cost() -> float:
+    """Get total cost for the current session.
+
+    Returns the total USD cost of all Athena queries executed in this session.
+    Cache hits are counted with zero cost.
+    """
+    return get_total_cost()
+
+
+def get_session_cost_summary() -> dict:
+    """Get detailed cost summary for the current session.
+
+    Returns dict with keys:
+        total_cost_usd: Total cost in USD
+        total_scanned_tb: Total data scanned in TB
+        query_count: Total number of queries
+        cache_hits: Number of cache hits
+        cache_hit_rate: Cache hit rate percentage
+    """
+    return get_cost_summary()

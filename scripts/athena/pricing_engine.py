@@ -18,10 +18,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from logging_config import get_logger
+
+logger = get_logger("pricing_engine")
+
 QUOTA_TO_USD = 500_000.0
 _DISCOUNTS_PATH = Path(__file__).resolve().parent / "discounts.json"
+_PRICING_PATH = Path(__file__).resolve().parent / "pricing.json"
 _discounts_cache = None
 _discounts_mtime = 0
+_pricing_cache = None
+_pricing_mtime = 0
 
 
 def _load_discounts() -> dict:
@@ -31,6 +38,7 @@ def _load_discounts() -> dict:
     try:
         mtime = os.path.getmtime(path)
     except OSError:
+        logger.warning("Discounts file not found, using defaults", extra={"event": "discounts_missing", "path": path})
         return {"cost_discounts": {"defaults": {"*": 1.0}, "by_channel": {}},
                 "revenue_discounts": {"defaults": {"*": 1.0}, "by_user": {}}}
 
@@ -40,6 +48,9 @@ def _load_discounts() -> dict:
     with open(path, "r", encoding="utf-8") as f:
         _discounts_cache = json.load(f)
     _discounts_mtime = mtime
+    version = _discounts_cache.get("_version", "unknown")
+    logger.debug("Discounts loaded",
+                 extra={"event": "discounts_loaded", "path": path, "version": version, "mtime": mtime})
     return _discounts_cache
 
 
@@ -51,6 +62,166 @@ def save_discounts(data: dict):
     global _discounts_cache, _discounts_mtime
     _discounts_cache = data
     _discounts_mtime = os.path.getmtime(path)
+    version = data.get("_version", "unknown")
+    logger.info("Discounts saved",
+                extra={"event": "discounts_saved", "path": path, "version": version})
+
+
+def get_discounts_version() -> str:
+    """Return the current version string from discounts configuration."""
+    d = _load_discounts()
+    return d.get("_version", "unknown")
+
+
+def validate_discounts_structure() -> dict:
+    """Validate discounts.json structure and return validation result.
+
+    Returns a dict with:
+        - valid: bool - overall validation status
+        - errors: list[str] - list of error messages
+        - warnings: list[str] - list of warning messages
+        - version: str - current config version
+        - updated_at: str - last update timestamp
+    """
+    result = {"valid": True, "errors": [], "warnings": [], "version": "", "updated_at": ""}
+
+    try:
+        d = _load_discounts()
+    except Exception as e:
+        result["valid"] = False
+        result["errors"].append(f"Failed to load discounts.json: {e}")
+        return result
+
+    # Check metadata fields
+    result["version"] = d.get("_version", "missing")
+    result["updated_at"] = d.get("_updated_at", "missing")
+
+    if d.get("_version") is None:
+        result["warnings"].append("Missing _version field")
+    if d.get("_updated_at") is None:
+        result["warnings"].append("Missing _updated_at field")
+    if d.get("_updated_by") is None:
+        result["warnings"].append("Missing _updated_by field")
+
+    # Validate changelog
+    changelog = d.get("_changelog")
+    if changelog is None:
+        result["warnings"].append("Missing _changelog array")
+    elif not isinstance(changelog, list):
+        result["errors"].append("_changelog must be an array")
+        result["valid"] = False
+    else:
+        for i, entry in enumerate(changelog):
+            if not isinstance(entry, dict):
+                result["errors"].append(f"_changelog[{i}] must be an object")
+                result["valid"] = False
+                continue
+            required = ["timestamp", "version", "changes", "author"]
+            missing = [k for k in required if k not in entry]
+            if missing:
+                result["errors"].append(f"_changelog[{i}] missing fields: {missing}")
+                result["valid"] = False
+
+    # Validate cost_discounts structure
+    cost_disc = d.get("cost_discounts", {})
+    if "defaults" not in cost_disc:
+        result["errors"].append("cost_discounts.defaults is required")
+        result["valid"] = False
+    if "by_channel" not in cost_disc:
+        result["warnings"].append("cost_discounts.by_channel is empty (no channel discounts)")
+
+    # Validate revenue_discounts structure
+    rev_disc = d.get("revenue_discounts", {})
+    if "defaults" not in rev_disc:
+        result["errors"].append("revenue_discounts.defaults is required")
+        result["valid"] = False
+    if "by_user" not in rev_disc:
+        result["warnings"].append("revenue_discounts.by_user is empty (no user discounts)")
+
+    return result
+
+
+# Default pricing (fallback when JSON file is missing)
+_DEFAULT_PRICING = {
+    "claude-opus-4-6": [
+        {"min_k": 0,   "max_k": 200, "ip": 5,  "op": 25,   "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1,  "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20},
+    ],
+    "claude-opus-4-5-20251101": [
+        {"min_k": 0,   "max_k": 200, "ip": 5,  "op": 25,   "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1,  "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20},
+    ],
+    "claude-sonnet-4-6": [
+        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
+    ],
+    "claude-sonnet-4-5-20250929": [
+        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
+    ],
+    "claude-sonnet-4-20250514": [
+        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
+    ],
+    "claude-haiku-4-5-20251001":  {"ip": 0.8, "op": 4,  "chp": 0.08, "cwp": 1.0,  "cwp_1h": 1.0},
+    "claude-3-7-sonnet-20250219": {"ip": 3,  "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 3.75},
+    "claude-opus-4-1-20250805":   {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
+    "claude-opus-4-20250514":     {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
+}
+
+# Dynamic pricing - auto-reloads from JSON when file changes
+def PRICING() -> dict:
+    return get_pricing()
+
+_DEFAULT_FLAT_TIER_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+
+
+def _load_pricing() -> dict:
+    """Load pricing.json with file-mtime caching (auto-reload on edit)."""
+    global _pricing_cache, _pricing_mtime
+    path = os.getenv("PRICING_JSON", str(_PRICING_PATH))
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return {"pricing": _DEFAULT_PRICING, "flat_tier_models": _DEFAULT_FLAT_TIER_MODELS}
+
+    if _pricing_cache is not None and mtime == _pricing_mtime:
+        return _pricing_cache
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Convert JSON format to legacy PRICING dict format
+    pricing_dict = {}
+    flat_tier_models = set()
+    for model in data.get("models", []):
+        name = model["name"]
+        if model["type"] == "tiered":
+            pricing_dict[name] = model["tiers"]
+            if model.get("flat_tier", False):
+                flat_tier_models.add(name)
+        else:  # flat
+            pricing_dict[name] = {
+                "ip": model["ip"],
+                "op": model["op"],
+                "chp": model["chp"],
+                "cwp": model["cwp"],
+                "cwp_1h": model["cwp_1h"],
+            }
+
+    _pricing_cache = {"pricing": pricing_dict, "flat_tier_models": flat_tier_models}
+    _pricing_mtime = mtime
+    return _pricing_cache
+
+
+def get_pricing() -> dict:
+    """Get pricing dict, auto-reloading from JSON if modified."""
+    return _load_pricing()["pricing"]
+
+
+def get_flat_tier_models() -> set:
+    """Get set of models that should use flat tier pricing."""
+    return _load_pricing()["flat_tier_models"]
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +318,7 @@ def _compute_list_price_from_agg(model: str, input_tokens: float,
     flat_tier=True forces lowest-tier unit prices.
     Returns None if model not in PRICING.
     """
-    pricing = PRICING.get(model)
+    pricing = get_pricing().get(model)
     if pricing is None:
         return None
 
@@ -212,7 +383,7 @@ def apply_pricing_summary(df_summary: pd.DataFrame,
         recalc_prices = []
         for idx, row in df.iterrows():
             model = row.get("model_name", "")
-            use_flat = flat_tier and model in FLAT_TIER_MODELS
+            use_flat = flat_tier and model in get_flat_tier_models()
 
             ch  = float(row.get("total_cache_hit_tokens", 0) or 0) if has_cache else 0
             cw  = float(row.get("total_cache_write_tokens", 0) or 0) if has_cache else 0
@@ -292,37 +463,14 @@ def get_all_revenue_discounts() -> list[dict]:
 # Tiered pricing recalculation (ported from gen_bill.py)
 # ===========================================================================
 
-PRICING = {
-    "claude-opus-4-6": [
-        {"min_k": 0,   "max_k": 200, "ip": 5,  "op": 25,   "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
-        {"min_k": 200, "max_k": -1,  "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20},
-    ],
-    "claude-opus-4-5-20251101": [
-        {"min_k": 0,   "max_k": 200, "ip": 5,  "op": 25,   "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
-        {"min_k": 200, "max_k": -1,  "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20},
-    ],
-    "claude-sonnet-4-6": [
-        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
-        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
-    ],
-    "claude-sonnet-4-5-20250929": [
-        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
-        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
-    ],
-    "claude-sonnet-4-20250514": [
-        {"min_k": 0,   "max_k": 200, "ip": 3, "op": 15,   "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
-        {"min_k": 200, "max_k": -1,  "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5,  "cwp_1h": 12},
-    ],
-    "claude-haiku-4-5-20251001":  {"ip": 0.8, "op": 4,  "chp": 0.08, "cwp": 1.0,  "cwp_1h": 1.0},
-    "claude-3-7-sonnet-20250219": {"ip": 3,  "op": 15, "chp": 0.3, "cwp": 3.75,  "cwp_1h": 3.75},
-    "claude-opus-4-1-20250805":   {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
-    "claude-opus-4-20250514":     {"ip": 15, "op": 75, "chp": 1.5, "cwp": 18.75, "cwp_1h": 18.75},
-}
 
-FLAT_TIER_MODELS = {"claude-opus-4-6", "claude-sonnet-4-6"}
+# Dynamic flat tier models - auto-reloads from JSON when file changes
+def FLAT_TIER_MODELS() -> set:
+    return get_flat_tier_models()
+
 
 _TIER_ROWS, _FLAT_ROWS = [], []
-for _m, _p in PRICING.items():
+for _m, _p in PRICING().items():
     if isinstance(_p, list):
         for _t in _p:
             _TIER_ROWS.append({"model": _m, **_t})
@@ -387,7 +535,7 @@ def _assign_prices(df: pd.DataFrame, flat_tier: bool = False,
         sub = sub.reset_index().rename(columns={"index": "_orig_idx"})
 
         if flat_tier:
-            is_flat_model = sub["model"].isin(FLAT_TIER_MODELS)
+            is_flat_model = sub["model"].isin(get_flat_tier_models())
             if flat_tier_since_ts is not None and "created_at" in sub.columns:
                 is_after_cutoff = sub["created_at"].astype(int) >= flat_tier_since_ts
             else:
@@ -488,7 +636,7 @@ def recalc_from_raw(df: pd.DataFrame,
     # Choose price base
     if flat_tier:
         if flat_tier_since_ts is not None and "created_at" in df.columns:
-            use_expected = (df["model"].isin(FLAT_TIER_MODELS) &
+            use_expected = (df["model"].isin(get_flat_tier_models()) &
                            (df["created_at"].astype(int) >= flat_tier_since_ts))
             price_base = np.where(use_expected, expected_usd, billed_usd)
         else:
