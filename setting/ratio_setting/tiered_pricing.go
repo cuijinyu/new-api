@@ -34,12 +34,45 @@ var (
 	tieredPricingMapMutex                           = sync.RWMutex{}
 )
 
-// InitTieredPricingSettings initializes the tiered pricing map
+// defaultTieredPricing contains built-in tiered pricing for models with
+// long-context price uplift (e.g. GPT-5.5 >272K tokens: 2x input, 1.5x output).
+var defaultTieredPricing = map[string]*TieredPricing{
+	"gpt-5.5": {
+		Enabled: true,
+		Tiers: []PriceTier{
+			{MinTokens: 0, MaxTokens: 272, InputPrice: 5, OutputPrice: 30, CacheHitPrice: 0.5, CacheStorePrice: 5},
+			{MinTokens: 272, MaxTokens: -1, InputPrice: 10, OutputPrice: 45, CacheHitPrice: 1, CacheStorePrice: 10},
+		},
+	},
+	"gpt-5.5-2026-04-23": {
+		Enabled: true,
+		Tiers: []PriceTier{
+			{MinTokens: 0, MaxTokens: 272, InputPrice: 5, OutputPrice: 30, CacheHitPrice: 0.5, CacheStorePrice: 5},
+			{MinTokens: 272, MaxTokens: -1, InputPrice: 10, OutputPrice: 45, CacheHitPrice: 1, CacheStorePrice: 10},
+		},
+	},
+	"gpt-5.4": {
+		Enabled: true,
+		Tiers: []PriceTier{
+			{MinTokens: 0, MaxTokens: 272, InputPrice: 2.5, OutputPrice: 15, CacheHitPrice: 0.25, CacheStorePrice: 2.5},
+			{MinTokens: 272, MaxTokens: -1, InputPrice: 5, OutputPrice: 22.5, CacheHitPrice: 0.5, CacheStorePrice: 5},
+		},
+	},
+}
+
+// InitTieredPricingSettings initializes the tiered pricing map with built-in defaults.
 func InitTieredPricingSettings() {
 	tieredPricingMapMutex.Lock()
 	defer tieredPricingMapMutex.Unlock()
 	if tieredPricingMap == nil {
 		tieredPricingMap = make(map[string]*TieredPricing)
+	}
+	for k, v := range defaultTieredPricing {
+		if _, exists := tieredPricingMap[k]; !exists {
+			tiersCopy := make([]PriceTier, len(v.Tiers))
+			copy(tiersCopy, v.Tiers)
+			tieredPricingMap[k] = &TieredPricing{Enabled: v.Enabled, Tiers: tiersCopy}
+		}
 	}
 }
 

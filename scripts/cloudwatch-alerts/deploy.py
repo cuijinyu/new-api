@@ -196,81 +196,136 @@ def create_alarms(cw, topic_arn):
     # Core channels to monitor (high-traffic channels)
     CORE_CHANNELS = ["ch54", "ch55", "ch58", "ch59"]
 
-    # ── P0: Critical ──────────────────────────────────────────────
+    # ── P0: 严重（直接影响用户请求）─────────────────────────────
 
-    # Per-channel UpstreamErrorCount alarms
     for ch in CORE_CHANNELS:
         ch_dims = [{"Name": "Channel", "Value": ch}]
         put(f"EZModel-P0-UpstreamError-{ch}",
-            f"[P0-Critical] {ch} UpstreamErrorCount > 50 in 5min",
+            f"[P0-严重] {ch} 上游错误超过 50 次/5分钟，大量请求失败",
             ns, "UpstreamErrorCount", "Sum",
             300, 1, 50, "GreaterThanThreshold", "notBreaching",
             dimensions=ch_dims)
 
-    # Per-channel UpstreamTimeoutCount alarms
     for ch in CORE_CHANNELS:
         ch_dims = [{"Name": "Channel", "Value": ch}]
         put(f"EZModel-P0-UpstreamTimeout-{ch}",
-            f"[P0-Critical] {ch} UpstreamTimeoutCount > 30 in 5min",
+            f"[P0-严重] {ch} 上游超时超过 30 次/5分钟，请求大面积卡死",
             ns, "UpstreamTimeoutCount", "Sum",
             300, 1, 30, "GreaterThanThreshold", "notBreaching",
             dimensions=ch_dims)
 
-    # Per-channel BillingFailureCount alarms
     for ch in CORE_CHANNELS:
         ch_dims = [{"Name": "Channel", "Value": ch}]
         put(f"EZModel-P0-BillingFailure-{ch}",
-            f"[P0-Critical] {ch} BillingFailureCount > 0",
+            f"[P0-严重] {ch} 出现计费失败，用户扣费可能异常",
             ns, "BillingFailureCount", "Sum",
             60, 1, 0, "GreaterThanThreshold", "notBreaching",
             dimensions=ch_dims)
 
-    # ZeroTraffic — use any core channel; if ch54 has zero traffic, service is likely down
     put("EZModel-P0-ZeroTraffic",
-        "[P0-Critical] ch54 RequestCount < 1 for 15min — service may be down",
+        "[P0-严重] ch54 连续 15 分钟零流量，服务可能已宕机",
         ns, "RequestCount", "Sum",
         300, 3, 1, "LessThanThreshold", "breaching",
         dimensions=[{"Name": "Channel", "Value": "ch54"}])
 
-    # ── P1: Warning ───────────────────────────────────────────────
+    for ch in CORE_CHANNELS:
+        put(f"EZModel-P0-Upstream429-{ch}",
+            f"[P0-严重] {ch} 上游 429 限流超过 100 次/5分钟，供应商配额耗尽",
+            ns, "UpstreamStatusCount", "Sum",
+            300, 1, 100, "GreaterThanThreshold", "notBreaching",
+            dimensions=[{"Name": "Channel", "Value": ch},
+                        {"Name": "StatusGroup", "Value": "4xx_429"}])
 
-    # Pipeline metrics — use "raw_log" pipeline (the primary one)
+    for ch in CORE_CHANNELS:
+        put(f"EZModel-P0-Upstream5xx-{ch}",
+            f"[P0-严重] {ch} 上游 5xx 服务端错误超过 30 次/5分钟",
+            ns, "UpstreamStatusCount", "Sum",
+            300, 1, 30, "GreaterThanThreshold", "notBreaching",
+            dimensions=[{"Name": "Channel", "Value": ch},
+                        {"Name": "StatusGroup", "Value": "5xx"}])
+
+    put("EZModel-P0-RetryExhausted",
+        "[P0-严重] 重试全部耗尽超过 30 次/5分钟，多个渠道同时不可用",
+        ns, "RetryExhaustedCount", "Sum",
+        300, 1, 30, "GreaterThanThreshold", "notBreaching")
+
+    # ── P1: 警告（需要关注）─────────────────────────────────────
+
     pipeline_dims = [{"Name": "Pipeline", "Value": "raw_log"}]
 
     put("EZModel-P1-LogDrop",
-        "[P1-Warning] LogDropCount > 0 (raw_log pipeline)",
+        "[P1-警告] 日志丢弃，队列已满导致请求日志丢失",
         ns, "LogDropCount", "Sum",
         60, 1, 0, "GreaterThanThreshold", "notBreaching",
         dimensions=pipeline_dims)
 
     put("EZModel-P1-LogUploadFailure",
-        "[P1-Warning] LogUploadFailureCount > 0 for 2min (raw_log pipeline)",
+        "[P1-警告] 日志上传失败持续 2 分钟，S3 写入可能异常",
         ns, "LogUploadFailureCount", "Sum",
         60, 2, 0, "GreaterThanThreshold", "notBreaching",
         dimensions=pipeline_dims)
 
-    # Per-channel ChannelFallbackCount
     for ch in CORE_CHANNELS:
         ch_dims = [{"Name": "Channel", "Value": ch}]
         put(f"EZModel-P1-ChannelFallback-{ch}",
-            f"[P1-Warning] {ch} ChannelFallbackCount > 20 in 5min",
+            f"[P1-警告] {ch} 渠道降级超过 20 次/5分钟，首选渠道频繁失败",
             ns, "ChannelFallbackCount", "Sum",
             300, 1, 20, "GreaterThanThreshold", "notBreaching",
             dimensions=ch_dims)
 
-    # HeapAllocMB — no dimension (RuntimeDims = {{}})
     put("EZModel-P1-MemoryHigh",
-        "[P1-Warning] HeapAllocMB > 1500 for 10min",
+        "[P1-警告] 内存使用超过 1500MB 持续 10 分钟，可能存在内存泄漏",
         ns, "HeapAllocMB", "Maximum",
         300, 2, 1500, "GreaterThanThreshold", "notBreaching")
 
-    # GoroutineCount — no dimension
     put("EZModel-P1-GoroutineLeak",
-        "[P1-Warning] GoroutineCount > 5000 for 5min",
+        "[P1-警告] 协程数超过 5000 持续 5 分钟，可能存在协程泄漏",
         ns, "GoroutineCount", "Maximum",
         300, 1, 5000, "GreaterThanThreshold", "notBreaching")
 
-    # ── P2: Info (ECS infrastructure) ─────────────────────────────
+    put("EZModel-P1-ChannelDisabled",
+        "[P1-警告] 有渠道被自动禁用，可用容量减少",
+        ns, "ChannelHealthEventCount", "Sum",
+        60, 1, 0, "GreaterThanThreshold", "notBreaching",
+        dimensions=[{"Name": "Event", "Value": "auto_disabled"}])
+
+    put("EZModel-P1-QuotaReject",
+        "[P1-警告] 额度不足拒绝超过 10 次/5分钟，可能存在计费异常",
+        ns, "QuotaRejectCount", "Sum",
+        300, 1, 10, "GreaterThanThreshold", "notBreaching")
+
+    put("EZModel-P1-RateLimitReject",
+        "[P1-警告] 限流拒绝超过 50 次/5分钟，可能有异常流量或限流配置过严",
+        ns, "RateLimitRejectCount", "Sum",
+        300, 1, 50, "GreaterThanThreshold", "notBreaching")
+
+    put("EZModel-P1-QuotaOvercharge",
+        "[P1-警告] 配额多扣超过 20 次/5分钟，预扣费偏差过大",
+        ns, "QuotaOverchargeCount", "Sum",
+        300, 1, 20, "GreaterThanThreshold", "notBreaching")
+
+    for ch in CORE_CHANNELS:
+        put(f"EZModel-P1-TTFT-{ch}",
+            f"[P1-警告] {ch} 首Token延迟平均超过 40 秒/5分钟，上游响应严重变慢",
+            ns, "TTFTMs", "Average",
+            300, 1, 40000, "GreaterThanThreshold", "notBreaching",
+            dimensions=[{"Name": "Channel", "Value": ch}])
+
+    CORE_MODELS = [
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
+        "claude-haiku-4-5-20251001",
+        "deepseek-v3.2",
+    ]
+    for model in CORE_MODELS:
+        safe_name = model.replace(".", "-")
+        put(f"EZModel-P1-TTFT-{safe_name}",
+            f"[P1-警告] {model} 首Token延迟平均超过 40 秒/5分钟",
+            ns, "TTFTMs", "Average",
+            300, 1, 40000, "GreaterThanThreshold", "notBreaching",
+            dimensions=[{"Name": "Model", "Value": model}])
+
+    # ── P2: 提示（观察即可）─────────────────────────────────────
 
     ecs_dims = [
         {"Name": "ClusterName", "Value": ECS_CLUSTER},
@@ -278,83 +333,25 @@ def create_alarms(cw, topic_arn):
     ]
 
     put("EZModel-P2-ECS-CPUHigh",
-        "[P2-Info] ECS CPUUtilization > 80%",
+        "[P2-提示] ECS 容器 CPU 使用率超过 80%，可能需要扩容",
         "AWS/ECS", "CPUUtilization", "Average",
         300, 1, 80, "GreaterThanThreshold", "notBreaching",
         dimensions=ecs_dims)
 
     put("EZModel-P2-ECS-MemoryHigh",
-        "[P2-Info] ECS MemoryUtilization > 80%",
+        "[P2-提示] ECS 容器内存使用率超过 80%，可能需要扩容",
         "AWS/ECS", "MemoryUtilization", "Average",
         300, 1, 80, "GreaterThanThreshold", "notBreaching",
         dimensions=ecs_dims)
 
     put("EZModel-P2-LogQueueDepth",
-        "[P2-Info] LogQueueDepth > 5000 (raw_log pipeline)",
+        "[P2-提示] 日志队列积压超过 5000 条，上传速度可能跟不上",
         ns, "LogQueueDepth", "Maximum",
         300, 1, 5000, "GreaterThanThreshold", "notBreaching",
         dimensions=[{"Name": "Pipeline", "Value": "raw_log"}])
 
-    # ── NEW: P0 — Upstream 429 throttling spike (per channel) ──
-
-    for ch in CORE_CHANNELS:
-        put(f"EZModel-P0-Upstream429-{ch}",
-            f"[P0-Critical] {ch} 上游429限流 > 100 in 5min",
-            ns, "UpstreamStatusCount", "Sum",
-            300, 1, 100, "GreaterThanThreshold", "notBreaching",
-            dimensions=[{"Name": "Channel", "Value": ch},
-                        {"Name": "StatusGroup", "Value": "4xx_429"}])
-
-    # ── NEW: P0 — Upstream 5xx errors (per channel) ────────────
-
-    for ch in CORE_CHANNELS:
-        put(f"EZModel-P0-Upstream5xx-{ch}",
-            f"[P0-Critical] {ch} 上游5xx错误 > 30 in 5min",
-            ns, "UpstreamStatusCount", "Sum",
-            300, 1, 30, "GreaterThanThreshold", "notBreaching",
-            dimensions=[{"Name": "Channel", "Value": ch},
-                        {"Name": "StatusGroup", "Value": "5xx"}])
-
-    # ── NEW: P0 — Retry exhausted spike ────────────────────────
-
-    put("EZModel-P0-RetryExhausted",
-        "[P0-Critical] 重试全部耗尽 > 30 in 5min — 多渠道同时故障",
-        ns, "RetryExhaustedCount", "Sum",
-        300, 1, 30, "GreaterThanThreshold", "notBreaching")
-
-    # ── NEW: P1 — Channel auto-disabled ────────────────────────
-
-    put("EZModel-P1-ChannelDisabled",
-        "[P1-Warning] 渠道被自动禁用",
-        ns, "ChannelHealthEventCount", "Sum",
-        60, 1, 0, "GreaterThanThreshold", "notBreaching",
-        dimensions=[{"Name": "Event", "Value": "auto_disabled"}])
-
-    # ── NEW: P1 — Quota reject spike ──────────────────────────
-
-    put("EZModel-P1-QuotaReject",
-        "[P1-Warning] 额度不足拒绝 > 10 in 5min",
-        ns, "QuotaRejectCount", "Sum",
-        300, 1, 10, "GreaterThanThreshold", "notBreaching")
-
-    # ── NEW: P1 — Rate limit reject spike ─────────────────────
-
-    put("EZModel-P1-RateLimitReject",
-        "[P1-Warning] 限流拒绝 > 50 in 5min",
-        ns, "RateLimitRejectCount", "Sum",
-        300, 1, 50, "GreaterThanThreshold", "notBreaching")
-
-    # ── NEW: P1 — Quota overcharge ─────────────────────────────
-
-    put("EZModel-P1-QuotaOvercharge",
-        "[P1-Warning] 配额多扣费 > 20 in 5min",
-        ns, "QuotaOverchargeCount", "Sum",
-        300, 1, 20, "GreaterThanThreshold", "notBreaching")
-
-    # ── NEW: P2 — Affinity cache miss spike ────────────────────
-
     put("EZModel-P2-AffinityMiss",
-        "[P2-Info] 亲和缓存miss飙升 > 200 in 5min",
+        "[P2-提示] 亲和缓存未命中超过 200 次/5分钟，缓存可能被频繁清除",
         ns, "AffinityMissCount", "Sum",
         300, 1, 200, "GreaterThanThreshold", "notBreaching")
 

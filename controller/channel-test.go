@@ -42,6 +42,71 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+func shouldStreamChannelTest(modelName string, endpointType string) bool {
+	if !common.IsCodexModel(modelName) {
+		return false
+	}
+	return endpointType == "" || constant.EndpointType(endpointType) == constant.EndpointTypeOpenAIResponse
+}
+
+func detectErrorFromTestResponseBody(body []byte) error {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(trimmed, "data:") {
+		for _, line := range strings.Split(trimmed, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			if err := detectErrorFromJSONPayload(payload); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return detectErrorFromJSONPayload(trimmed)
+}
+
+func detectErrorFromJSONPayload(payload string) error {
+	var data map[string]any
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return nil
+	}
+
+	if errValue, ok := data["error"]; ok && errValue != nil {
+		if openAIError := dto.GetOpenAIError(errValue); openAIError != nil && openAIError.Message != "" {
+			return errors.New(openAIError.Message)
+		}
+		return fmt.Errorf("upstream returned error: %v", errValue)
+	}
+
+	if responseValue, ok := data["response"].(map[string]any); ok {
+		if status, _ := responseValue["status"].(string); status == "failed" {
+			if errValue := responseValue["error"]; errValue != nil {
+				if openAIError := dto.GetOpenAIError(errValue); openAIError != nil && openAIError.Message != "" {
+					return errors.New(openAIError.Message)
+				}
+				return fmt.Errorf("upstream response failed: %v", errValue)
+			}
+			return errors.New("upstream response failed")
+		}
+	}
+
+	if eventType, _ := data["type"].(string); strings.Contains(eventType, "failed") || strings.Contains(eventType, "error") {
+		return fmt.Errorf("upstream stream event %s", eventType)
+	}
+
+	return nil
+}
+
 func testChannel(channel *model.Channel, testModel string, endpointType string) testResult {
 	tik := time.Now()
 	var unsupportedTestChannelTypes = []int{
@@ -77,6 +142,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 
+	isStreamTest := shouldStreamChannelTest(testModel, endpointType)
 	requestPath := "/v1/chat/completions"
 
 	// 如果指定了端点类型，使用指定的端点类型
@@ -100,7 +166,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			requestPath = "/v1/images/generations"
 		}
 
-		if common.IsOpenAIResponseOnlyModel(testModel) {
+		if common.IsOpenAIResponseOnlyModel(testModel) || common.IsCodexModel(testModel) {
 			requestPath = "/v1/responses"
 		}
 	}
@@ -182,7 +248,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 
-	request := buildTestRequest(testModel, endpointType)
+	request := buildTestRequest(testModel, endpointType, isStreamTest)
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -357,6 +423,13 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
 		}
 	}
+	if err := detectErrorFromTestResponseBody(respBody); err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
+		}
+	}
 	info.PromptTokens = usage.PromptTokens
 
 	quota := 0
@@ -442,7 +515,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 }
 
-func buildTestRequest(model string, endpointType string) dto.Request {
+func buildTestRequest(model string, endpointType string, isStream bool) dto.Request {
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
 		switch constant.EndpointType(endpointType) {
@@ -470,10 +543,7 @@ func buildTestRequest(model string, endpointType string) dto.Request {
 			}
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest
-			return &dto.OpenAIResponsesRequest{
-				Model: model,
-				Input: json.RawMessage("\"hi\""),
-			}
+			return buildResponsesTestRequest(model, isStream)
 		case constant.EndpointTypeAnthropic, constant.EndpointTypeGemini, constant.EndpointTypeOpenAI:
 			// 返回 GeneralOpenAIRequest
 			maxTokens := uint(10)
@@ -506,6 +576,10 @@ func buildTestRequest(model string, endpointType string) dto.Request {
 		}
 	}
 
+	if common.IsOpenAIResponseOnlyModel(model) || common.IsCodexModel(model) {
+		return buildResponsesTestRequest(model, isStream)
+	}
+
 	// Chat/Completion 请求 - 返回 GeneralOpenAIRequest
 	testRequest := &dto.GeneralOpenAIRequest{
 		Model:  model,
@@ -531,6 +605,15 @@ func buildTestRequest(model string, endpointType string) dto.Request {
 	}
 
 	return testRequest
+}
+
+func buildResponsesTestRequest(model string, isStream bool) *dto.OpenAIResponsesRequest {
+	return &dto.OpenAIResponsesRequest{
+		Model:           model,
+		Input:           json.RawMessage("\"hi\""),
+		MaxOutputTokens: uint(16),
+		Stream:          isStream,
+	}
 }
 
 func TestChannel(c *gin.Context) {

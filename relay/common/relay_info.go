@@ -319,6 +319,9 @@ func GenRelayInfoResponses(c *gin.Context, request *dto.OpenAIResponsesRequest) 
 	info := genBaseRelayInfo(c, request)
 	info.RelayMode = relayconstant.RelayModeResponses
 	info.RelayFormat = types.RelayFormatOpenAIResponses
+	if !strings.HasPrefix(info.RequestURLPath, "/v1/responses") {
+		info.RequestURLPath = "/v1/responses"
+	}
 
 	info.ResponsesUsageInfo = &ResponsesUsageInfo{
 		BuiltInTools: make(map[string]*BuildInToolInfo),

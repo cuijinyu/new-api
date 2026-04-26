@@ -102,6 +102,11 @@ var defaultModelRatio = map[string]float64{
 	"gpt-5.1-codex-max":                0.625,
 	"gpt-5.2-codex":                    0.875,
 	"gpt-5.3-codex":                    0.875,
+	"gpt-5.4":                          1.25,  // $2.5 / 1M tokens
+	"gpt-5.4-mini":                     0.375, // $0.75 / 1M tokens
+	"gpt-5.4-nano":                     0.1,   // $0.2 / 1M tokens
+	"gpt-5.5":                          2.5,   // $5 / 1M tokens
+	"gpt-5.5-2026-04-23":               2.5,   // $5 / 1M tokens
 	"gpt-5-mini":                       0.125,
 	"gpt-5-mini-2025-08-07":            0.125,
 	"gpt-5-nano":                       0.025,
@@ -575,7 +580,15 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 			}
 			return 4, true
 		}
-		// gpt-5 匹配
+		// gpt-5.5: $30 output / $5 input = 6
+		if strings.HasPrefix(name, "gpt-5.5") {
+			return 6, true
+		}
+		// gpt-5.4: $15 output / $2.5 input = 6
+		if strings.HasPrefix(name, "gpt-5.4") {
+			return 6, true
+		}
+		// gpt-5 其余型号
 		if strings.HasPrefix(name, "gpt-5") {
 			return 8, true
 		}

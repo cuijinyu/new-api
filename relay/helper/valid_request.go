@@ -125,6 +125,206 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 	return request, nil
 }
 
+func ConvertChatCompletionsToResponsesRequest(request *dto.GeneralOpenAIRequest) (*dto.OpenAIResponsesRequest, error) {
+	if request == nil {
+		return nil, errors.New("request is nil")
+	}
+
+	input, instructions, err := convertChatMessagesToResponsesInput(request.Messages)
+	if err != nil {
+		return nil, err
+	}
+
+	responsesRequest := &dto.OpenAIResponsesRequest{
+		Model:                request.Model,
+		Input:                input,
+		MaxOutputTokens:      request.MaxCompletionTokens,
+		Stream:               request.Stream,
+		Store:                request.Store,
+		PromptCacheRetention: request.PromptCacheRetention,
+		User:                 request.User,
+		Metadata:             request.Metadata,
+	}
+	if responsesRequest.MaxOutputTokens == 0 {
+		responsesRequest.MaxOutputTokens = request.MaxTokens
+	}
+	if instructions != nil {
+		responsesRequest.Instructions = instructions
+	}
+	if request.ReasoningEffort != "" {
+		responsesRequest.Reasoning = &dto.Reasoning{Effort: request.ReasoningEffort}
+	}
+	if request.Temperature != nil {
+		responsesRequest.Temperature = *request.Temperature
+	}
+	if request.TopP != 0 {
+		responsesRequest.TopP = request.TopP
+	}
+	if request.PromptCacheKey != "" {
+		responsesRequest.PromptCacheKey, _ = json.Marshal(request.PromptCacheKey)
+	}
+	if request.ParallelTooCalls != nil {
+		responsesRequest.ParallelToolCalls, _ = json.Marshal(*request.ParallelTooCalls)
+	}
+	if len(request.Tools) > 0 {
+		responsesRequest.Tools, err = json.Marshal(request.Tools)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tools failed: %w", err)
+		}
+	}
+	if request.ToolChoice != nil {
+		responsesRequest.ToolChoice, err = json.Marshal(request.ToolChoice)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tool_choice failed: %w", err)
+		}
+	}
+	if request.ResponseFormat != nil {
+		responsesRequest.Text, err = json.Marshal(map[string]any{
+			"format": request.ResponseFormat,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal text format failed: %w", err)
+		}
+	}
+	if len(request.Verbosity) > 0 {
+		var text map[string]any
+		if len(responsesRequest.Text) > 0 {
+			_ = json.Unmarshal(responsesRequest.Text, &text)
+		}
+		if text == nil {
+			text = make(map[string]any)
+		}
+		var verbosity any
+		if err := json.Unmarshal(request.Verbosity, &verbosity); err == nil {
+			text["verbosity"] = verbosity
+			responsesRequest.Text, _ = json.Marshal(text)
+		}
+	}
+
+	return responsesRequest, nil
+}
+
+func convertChatMessagesToResponsesInput(messages []dto.Message) (json.RawMessage, json.RawMessage, error) {
+	input := make([]map[string]any, 0, len(messages))
+	instructions := make([]string, 0)
+
+	for _, message := range messages {
+		role := strings.TrimSpace(message.Role)
+		if role == "" {
+			role = "user"
+		}
+
+		content, err := convertChatContentToResponsesContent(message.Content)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if role == "system" || role == "developer" {
+			if text, ok := content.(string); ok && text != "" {
+				instructions = append(instructions, text)
+			}
+			continue
+		}
+
+		item := map[string]any{
+			"role":    role,
+			"content": content,
+		}
+		if message.Name != nil {
+			item["name"] = *message.Name
+		}
+		if message.ToolCallId != "" {
+			item["tool_call_id"] = message.ToolCallId
+		}
+		if len(message.ToolCalls) > 0 {
+			var toolCalls any
+			if err := json.Unmarshal(message.ToolCalls, &toolCalls); err == nil {
+				item["tool_calls"] = toolCalls
+			}
+		}
+		input = append(input, item)
+	}
+
+	inputRaw, err := json.Marshal(input)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal responses input failed: %w", err)
+	}
+	var instructionsRaw json.RawMessage
+	if len(instructions) > 0 {
+		instructionsRaw, err = json.Marshal(strings.Join(instructions, "\n"))
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal responses instructions failed: %w", err)
+		}
+	}
+	return inputRaw, instructionsRaw, nil
+}
+
+func convertChatContentToResponsesContent(content any) (any, error) {
+	switch value := content.(type) {
+	case string:
+		return value, nil
+	case []any:
+		parts := make([]map[string]any, 0, len(value))
+		for _, part := range value {
+			partMap, ok := part.(map[string]any)
+			if !ok {
+				parts = append(parts, map[string]any{
+					"type": "input_text",
+					"text": fmt.Sprintf("%v", part),
+				})
+				continue
+			}
+			parts = append(parts, convertChatContentPartToResponsesPart(partMap))
+		}
+		return parts, nil
+	default:
+		return value, nil
+	}
+}
+
+func convertChatContentPartToResponsesPart(part map[string]any) map[string]any {
+	partType := common.Interface2String(part["type"])
+	switch partType {
+	case dto.ContentTypeText:
+		return map[string]any{
+			"type": "input_text",
+			"text": common.Interface2String(part["text"]),
+		}
+	case dto.ContentTypeImageURL:
+		image := map[string]any{
+			"type": "input_image",
+		}
+		switch imageURL := part["image_url"].(type) {
+		case string:
+			image["image_url"] = imageURL
+		case map[string]any:
+			if url := common.Interface2String(imageURL["url"]); url != "" {
+				image["image_url"] = url
+			}
+			if detail := common.Interface2String(imageURL["detail"]); detail != "" {
+				image["detail"] = detail
+			}
+		default:
+			image["image_url"] = imageURL
+		}
+		return image
+	case dto.ContentTypeFile:
+		file := map[string]any{
+			"type": "input_file",
+		}
+		if fileMap, ok := part["file"].(map[string]any); ok {
+			for _, key := range []string{"file_id", "file_data", "filename"} {
+				if value, exists := fileMap[key]; exists {
+					file[key] = value
+				}
+			}
+		}
+		return file
+	default:
+		return part
+	}
+}
+
 func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageRequest, error) {
 	imageRequest := &dto.ImageRequest{}
 
@@ -227,8 +427,8 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 	// to avoid downstream conversion errors.
 	for i := range textRequest.Messages {
 		if textRequest.Messages[i].Content == nil {
-			 return nil, errors.New("field messages[i].content is required") 
-			}
+			return nil, errors.New("field messages[i].content is required")
+		}
 	}
 	if textRequest.Model == "" {
 		return nil, errors.New("field model is required")

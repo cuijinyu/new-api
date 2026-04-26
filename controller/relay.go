@@ -122,6 +122,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
 		return
 	}
+	if relayFormat == types.RelayFormatOpenAI {
+		if textRequest, ok := request.(*dto.GeneralOpenAIRequest); ok && common.IsOpenAIResponseOnlyModel(textRequest.Model) {
+			responsesRequest, err := helper.ConvertChatCompletionsToResponsesRequest(textRequest)
+			if err != nil {
+				newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
+				return
+			}
+			request = responsesRequest
+			relayFormat = types.RelayFormatOpenAIResponses
+			c.Set("chat_completions_to_responses", true)
+		}
+	}
 
 	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
