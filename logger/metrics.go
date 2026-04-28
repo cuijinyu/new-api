@@ -312,4 +312,12 @@ var (
 		{Name: "BillingRetryUploadFailCount", Unit: UnitCount},
 	}
 	BillingRetryDims = [][]string{{}}
+
+	FingerprintMetrics = []MetricDef{
+		{Name: "FingerprintScore", Unit: UnitCount},
+		{Name: "FingerprintPassCount", Unit: UnitCount},
+		{Name: "FingerprintFailCount", Unit: UnitCount},
+		{Name: "FingerprintProbeTotal", Unit: UnitCount},
+	}
+	FingerprintDims = [][]string{{"Channel", "Model"}}
 )

@@ -195,6 +195,7 @@ export const getChannelsColumns = ({
   manageTag,
   submitTagEdit,
   testChannel,
+  fingerprintChannel,
   setCurrentTestChannel,
   setShowModelTestModal,
   setEditingChannel,
@@ -516,6 +517,12 @@ export const getChannelsColumns = ({
                   onOk: () => copySelectedChannel(record),
                 });
               },
+            },
+            {
+              node: 'item',
+              name: t('指纹检测'),
+              type: 'tertiary',
+              onClick: () => fingerprintChannel(record),
             },
           ];
 

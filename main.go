@@ -143,6 +143,7 @@ func main() {
 	}
 
 	go controller.AutomaticallyTestChannels()
+	go controller.AutomaticallyFingerprintChannels()
 
 	if constant.UpdateTask {
 		gopool.Go(func() {

@@ -180,6 +180,7 @@ var (
 	aggAffinity            *metricSetAggregator
 	aggFinishReason        *metricSetAggregator
 	aggBillingRetry        *metricSetAggregator
+	aggFingerprint         *metricSetAggregator
 
 	aggStopCh chan struct{}
 	aggWg     sync.WaitGroup
@@ -202,6 +203,7 @@ func initAggregators() {
 	aggAffinity = newMetricSetAggregator(AffinityDims, AffinityMetrics)
 	aggFinishReason = newMetricSetAggregator(FinishReasonDims, FinishReasonMetrics)
 	aggBillingRetry = newMetricSetAggregator(BillingRetryDims, BillingRetryMetrics)
+	aggFingerprint = newMetricSetAggregator(FingerprintDims, FingerprintMetrics)
 }
 
 // StartAggregator starts the background flush loop. Call after InitMetrics.
@@ -251,7 +253,7 @@ func flushAll() {
 		aggRequest, aggUpstream, aggUpstreamStatus, aggBilling,
 		aggDB, aggRedis, aggStreamFinish, aggStreamInterruptBill,
 		aggRateLimit, aggChannelHealth, aggRetry, aggQuotaReject,
-		aggAffinity, aggFinishReason,
+		aggAffinity, aggFinishReason, aggFingerprint,
 	} {
 		if agg != nil {
 			agg.flush()
@@ -541,4 +543,24 @@ func normDim(v string) string {
 		return "unknown"
 	}
 	return v
+}
+
+// RecordFingerprintResult records the outcome of a Claude fingerprint probe for a channel.
+func RecordFingerprintResult(channel, model string, score int, authentic bool) {
+	if aggFingerprint == nil {
+		return
+	}
+	var passCount, failCount float64
+	if authentic {
+		passCount = 1
+	} else {
+		failCount = 1
+	}
+	dims := map[string]string{"Channel": normDim(channel), "Model": normDim(model)}
+	aggFingerprint.record(dims, map[string]float64{
+		"FingerprintScore":      float64(score),
+		"FingerprintPassCount":  passCount,
+		"FingerprintFailCount":  failCount,
+		"FingerprintProbeTotal": 1,
+	})
 }

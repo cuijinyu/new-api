@@ -93,6 +93,11 @@ export const useChannelsData = () => {
   const [showMultiKeyManageModal, setShowMultiKeyManageModal] = useState(false);
   const [currentMultiKeyChannel, setCurrentMultiKeyChannel] = useState(null);
 
+  // Fingerprint states
+  const [showFingerprintModal, setShowFingerprintModal] = useState(false);
+  const [fingerprintResults, setFingerprintResults] = useState(null);
+  const [fingerprintLoading, setFingerprintLoading] = useState(false);
+
   // Refs
   const requestCounter = useRef(0);
   const allSelectingRef = useRef(false);
@@ -699,6 +704,46 @@ export const useChannelsData = () => {
     }
   };
 
+  const fingerprintAllChannels = async () => {
+    setFingerprintLoading(true);
+    try {
+      const res = await API.get(`/api/channel/fingerprint`);
+      const { success, message, data } = res.data;
+      if (success) {
+        setFingerprintResults(data);
+        setShowFingerprintModal(true);
+        const passCount = (data || []).filter((r) => r.authentic).length;
+        showSuccess(
+          t('指纹检测完成，${pass}/${total} 个通道通过')
+            .replace('${pass}', passCount)
+            .replace('${total}', (data || []).length),
+        );
+      } else {
+        showError(message);
+      }
+    } catch (e) {
+      showError(e.message || t('指纹检测请求失败'));
+    }
+    setFingerprintLoading(false);
+  };
+
+  const fingerprintChannel = async (record) => {
+    setFingerprintLoading(true);
+    try {
+      const res = await API.get(`/api/channel/fingerprint/${record.id}`);
+      const { success, message, data } = res.data;
+      if (success) {
+        setFingerprintResults([data]);
+        setShowFingerprintModal(true);
+      } else {
+        showError(message);
+      }
+    } catch (e) {
+      showError(e.message || t('指纹检测请求失败'));
+    }
+    setFingerprintLoading(false);
+  };
+
   const deleteAllDisabledChannels = async () => {
     const res = await API.delete(`/api/channel/disabled`);
     const { success, message, data } = res.data;
@@ -1080,6 +1125,12 @@ export const useChannelsData = () => {
     currentMultiKeyChannel,
     setCurrentMultiKeyChannel,
 
+    // Fingerprint states
+    showFingerprintModal,
+    setShowFingerprintModal,
+    fingerprintResults,
+    fingerprintLoading,
+
     // Form
     formApi,
     setFormApi,
@@ -1105,6 +1156,8 @@ export const useChannelsData = () => {
     batchSetChannelTag,
     batchDeleteChannels,
     testAllChannels,
+    fingerprintAllChannels,
+    fingerprintChannel,
     deleteAllDisabledChannels,
     updateAllChannelsBalance,
     updateChannelBalance,

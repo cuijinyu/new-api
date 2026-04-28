@@ -33,6 +33,8 @@ const ChannelsActions = ({
   batchDeleteChannels,
   setShowBatchSetTag,
   testAllChannels,
+  fingerprintAllChannels,
+  fingerprintLoading,
   fixChannelsAbilities,
   updateAllChannelsBalance,
   deleteAllDisabledChannels,
@@ -107,6 +109,27 @@ const ChannelsActions = ({
                     }}
                   >
                     {t('测试所有通道')}
+                  </Button>
+                </Dropdown.Item>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    type='tertiary'
+                    className='w-full'
+                    loading={fingerprintLoading}
+                    onClick={() => {
+                      Modal.confirm({
+                        title: t('确定？'),
+                        content: t(
+                          '将对所有含 Claude 模型的通道执行指纹检测（弯引号、身份、系统提示词），耗时较长。',
+                        ),
+                        onOk: () => fingerprintAllChannels(),
+                        size: 'small',
+                        centered: true,
+                      });
+                    }}
+                  >
+                    {t('指纹检测所有通道')}
                   </Button>
                 </Dropdown.Item>
                 <Dropdown.Item>

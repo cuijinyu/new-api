@@ -31,6 +31,7 @@ import ColumnSelectorModal from './modals/ColumnSelectorModal';
 import EditChannelModal from './modals/EditChannelModal';
 import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
+import FingerprintResultModal from './modals/FingerprintResultModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
 const ChannelsPage = () => {
@@ -61,6 +62,7 @@ const ChannelsPage = () => {
         channel={channelsData.currentMultiKeyChannel}
         onRefresh={channelsData.refresh}
       />
+      <FingerprintResultModal {...channelsData} />
 
       {/* Main Content */}
       <CardPro
