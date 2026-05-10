@@ -86,6 +86,54 @@
       "chp": 1.5,
       "cwp": 18.75,
       "cwp_1h": 18.75
+    },
+    {
+      "name": "gemini-2.5-flash-image",
+      "type": "multimodal",
+      "ip": 0.30,
+      "op_text": 2.50,
+      "op_image": 30.0,
+      "note": "image output 1290 tokens per 1024x1024 image"
+    },
+    {
+      "name": "gemini-3.1-flash-image-preview",
+      "type": "multimodal",
+      "ip": 0.50,
+      "op_text": 3.0,
+      "op_image": 60.0,
+      "note": "image output 747t@512px, 1120t@1024px, 1680t@2048px, 2520t@4096px"
+    },
+    {
+      "name": "gemini-3-pro-image-preview",
+      "type": "multimodal",
+      "ip": 2.0,
+      "op_text": 12.0,
+      "op_image": 120.0,
+      "note": "image output 1120t@1K/2K, 2000t@4K"
+    },
+    {
+      "name": "gemini-2.0-flash-exp-image-generation",
+      "type": "multimodal",
+      "ip": 0.10,
+      "op_text": 0.40,
+      "op_image": 0.0,
+      "note": "experimental model, image output priced at 0 (free tier / preview)"
+    },
+    {
+      "name": "nano-banana",
+      "type": "multimodal",
+      "ip": 0.30,
+      "op_text": 2.50,
+      "op_image": 30.0,
+      "note": "alias for gemini-2.5-flash-image"
+    },
+    {
+      "name": "nano-banana-pro",
+      "type": "multimodal",
+      "ip": 2.0,
+      "op_text": 12.0,
+      "op_image": 120.0,
+      "note": "alias for gemini-3-pro-image-preview"
     }
   ]
 }

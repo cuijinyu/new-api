@@ -14,39 +14,128 @@
       "author": "admin"
     }
   ],
-
   "cost_discounts": {
     "_comment": "成本侧折扣：渠道 × 模型 → 折扣率（刊例价 × discount = 我方成本）",
     "defaults": {
       "*": 1.0
     },
     "by_channel": {
-      "25": { "*": 0.35, "_name": "MateCloud-Claude主力" },
-      "54": { "*": 0.35, "_name": "MateCloud-Claude备用" },
-      "24": { "*": 0.35, "_name": "MateCloud-Claude-3" },
-      "26": { "*": 1.0,  "_name": "Bedrock" },
-      "39": { "*": 1.0,  "_name": "OpenAI直连" },
-      "57": { "*": 1.0,  "_name": "Gemini" },
-      "38": { "*": 1.0,  "_name": "DeepSeek" },
-      "28": { "*": 1.0,  "_name": "Grok" },
-      "58": { "*": 1.0,  "_name": "ByteDance" },
-      "49": { "*": 1.0,  "_name": "GLM" },
-      "43": { "*": 1.0,  "_name": "Kling" }
+      "25": {
+        "*": 0.35,
+        "_name": "MateCloud-Claude主力"
+      },
+      "54": {
+        "*": 0.357,
+        "_name": "知书万卷-Claude-平台-2.5"
+      },
+      "24": {
+        "*": 0.35,
+        "_name": "MateCloud-Claude-3"
+      },
+      "26": {
+        "*": 0.4,
+        "_name": "Bedrock"
+      },
+      "39": {
+        "*": 1.0,
+        "_name": "OpenAI直连"
+      },
+      "57": {
+        "*": 0.428,
+        "_name": "知书万卷-Claude-Sonnet/Haiku-3"
+      },
+      "38": {
+        "*": 1.0,
+        "_name": "DeepSeek"
+      },
+      "28": {
+        "*": 1.0,
+        "_name": "Grok"
+      },
+      "58": {
+        "*": 0.428,
+        "_name": "知书万卷-Claude-Opus-3"
+      },
+      "49": {
+        "*": 1.0,
+        "_name": "GLM"
+      },
+      "43": {
+        "*": 1.0,
+        "_name": "Kling"
+      },
+      "67": {
+        "_name": "EZmodel-知书万卷xr9s.ai-Sonnet/Haiku-2.5",
+        "*": 0.357
+      },
+      "59": {
+        "_name": "知书万卷-Claude-2.5号池",
+        "*": 0.357
+      },
+      "79": {
+        "_name": "知书万卷-Claude-Azure/Openrouter混合-2.5",
+        "*": 0.357
+      },
+      "55": {
+        "_name": "EZmodel-知书万卷xr9s.ai",
+        "*": 0.6
+      },
+      "65": {
+        "_name": "渠道65",
+        "*": 0.44
+      },
+      "76": {
+        "_name": "渠道76",
+        "*": 0.4
+      }
     }
   },
-
   "revenue_discounts": {
     "_comment": "客户侧折扣：用户 × 模型 → 折扣率（刊例价 × discount = 客户应付）",
     "defaults": {
       "*": 1.0
     },
     "by_user": {
-      "18": { "*": 0.65, "_name": "GMICloud" },
-      "89": { "*": 0.47, "_name": "Dragon" },
-      "99": { "*": 1.0,  "_name": "liuchuan" },
-      "86": { "*": 1.0,  "_name": "github_86" },
-      "1":  { "*": 1.0,  "_name": "gallon" },
-      "63": { "*": 1.0,  "_name": "sh-models" }
+      "18": {
+        "*": 0.65,
+        "_name": "GMICloud"
+      },
+      "89": {
+        "*": 0.48,
+        "_name": "Dragon"
+      },
+      "99": {
+        "*": 1.0,
+        "_name": "liuchuan"
+      },
+      "86": {
+        "*": 1.0,
+        "_name": "github_86"
+      },
+      "1": {
+        "*": 1.0,
+        "_name": "gallon"
+      },
+      "63": {
+        "*": 1.0,
+        "_name": "sh-models"
+      },
+      "143": {
+        "_name": "DC.Meng",
+        "*": 0.5
+      },
+      "102": {
+        "_name": "Fanchao",
+        "*": 0.55
+      },
+      "101": {
+        "_name": "zifeng",
+        "*": 0.5
+      },
+      "117": {
+        "_name": "r9s",
+        "*": 0.73
+      }
     }
   }
 }

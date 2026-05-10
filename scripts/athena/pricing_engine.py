@@ -200,6 +200,13 @@ def _load_pricing() -> dict:
             pricing_dict[name] = model["tiers"]
             if model.get("flat_tier", False):
                 flat_tier_models.add(name)
+        elif model["type"] == "multimodal":
+            pricing_dict[name] = {
+                "_type": "multimodal",
+                "ip": model["ip"],
+                "op_text": model["op_text"],
+                "op_image": model["op_image"],
+            }
         else:  # flat
             pricing_dict[name] = {
                 "ip": model["ip"],
@@ -311,16 +318,30 @@ def _compute_list_price_from_agg(model: str, input_tokens: float,
                                  cache_write: float = 0,
                                  cw_5m: float = 0, cw_1h: float = 0,
                                  cw_remaining: float = 0,
-                                 flat_tier: bool = False) -> float:
+                                 flat_tier: bool = False,
+                                 image_output_tokens: float = 0) -> float:
     """Compute list price from aggregated token counts using PRICING table.
 
     Uses cache token breakdown for precise pricing. For tiered models,
     flat_tier=True forces lowest-tier unit prices.
+    For multimodal models (Gemini image generation), image_output_tokens
+    are priced at op_image rate, remaining output at op_text rate.
     Returns None if model not in PRICING.
     """
     pricing = get_pricing().get(model)
     if pricing is None:
         return None
+
+    # Multimodal model (e.g. Gemini image generation)
+    if isinstance(pricing, dict) and pricing.get("_type") == "multimodal":
+        ip_rate = pricing["ip"]
+        op_text_rate = pricing["op_text"]
+        op_image_rate = pricing["op_image"]
+        text_output_tokens = max(output_tokens - image_output_tokens, 0)
+        cost = (input_tokens / 1e6 * ip_rate
+                + text_output_tokens / 1e6 * op_text_rate
+                + image_output_tokens / 1e6 * op_image_rate)
+        return cost
 
     if isinstance(pricing, list):
         if not flat_tier:
@@ -379,6 +400,8 @@ def apply_pricing_summary(df_summary: pd.DataFrame,
     has_cache = "total_cache_hit_tokens" in df.columns
     has_tokens = "total_input_tokens" in df.columns and "total_output_tokens" in df.columns
 
+    has_image_output = "total_image_output_tokens" in df.columns
+
     if has_tokens:
         recalc_prices = []
         for idx, row in df.iterrows():
@@ -390,6 +413,7 @@ def apply_pricing_summary(df_summary: pd.DataFrame,
             c5  = float(row.get("total_cw_5m", 0) or 0) if has_cache else 0
             c1h = float(row.get("total_cw_1h", 0) or 0) if has_cache else 0
             cr  = float(row.get("total_cw_remaining", 0) or 0) if has_cache else 0
+            img_out = float(row.get("total_image_output_tokens", 0) or 0) if has_image_output else 0
 
             price = _compute_list_price_from_agg(
                 model,
@@ -397,7 +421,8 @@ def apply_pricing_summary(df_summary: pd.DataFrame,
                 float(row["total_output_tokens"]),
                 cache_hit=ch, cache_write=cw,
                 cw_5m=c5, cw_1h=c1h, cw_remaining=cr,
-                flat_tier=use_flat)
+                flat_tier=use_flat,
+                image_output_tokens=img_out)
 
             recalc_prices.append(price)
 
@@ -501,6 +526,12 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
         cw_rem_raw = o.get("tiered_cache_creation_tokens_remaining")
         cw_rem = cw_rem_raw if cw_rem_raw is not None else max(cw - cw_5m - cw_1h, 0)
         is_new = "tiered_cache_store_price" in o
+        # Gemini image generation fields
+        img_out_tokens = o.get("image_completion_tokens", 0) or 0
+        img_out_ratio  = o.get("image_completion_ratio")
+        # "image_output" in other JSON stores input-side image tokens (misleading name in Go code)
+        img_in_tokens  = o.get("image_output", 0) or 0
+        img_in_ratio   = o.get("image_ratio")
         records.append({
             "ch": ch, "cw": cw,
             "cw_5m": cw_5m, "cw_1h": cw_1h, "cw_rem": cw_rem,
@@ -510,6 +541,10 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
             "chp_new":    o.get("tiered_cache_hit_price"),
             "cwp_5m_new": o.get("tiered_cache_store_price_5m") or o.get("tiered_cache_store_price"),
             "cwp_1h_new": o.get("tiered_cache_store_price_1h"),
+            "img_out_tokens": img_out_tokens,
+            "img_out_ratio":  img_out_ratio,
+            "img_in_tokens":  img_in_tokens,
+            "img_in_ratio":   img_in_ratio,
         })
     return pd.DataFrame(records, index=other_series.index)
 
@@ -607,8 +642,14 @@ def recalc_from_raw(df: pd.DataFrame,
     other_cols = _parse_other_batch(df["other"].fillna(""))
     df = pd.concat([df, other_cols], axis=1)
 
-    # Assign tiered prices
+    # Assign tiered prices (for non-multimodal models)
     df = _assign_prices(df, flat_tier=flat_tier, flat_tier_since_ts=flat_tier_since_ts)
+
+    # Identify multimodal models (Gemini image generation)
+    pricing_map = get_pricing()
+    is_multimodal = df["model"].map(
+        lambda m: isinstance(pricing_map.get(m), dict) and pricing_map.get(m, {}).get("_type") == "multimodal"
+    )
 
     # Compute expected_usd — prefer system-recorded tiered prices over our lookup
     is_new = df["is_new"]
@@ -621,15 +662,38 @@ def recalc_from_raw(df: pd.DataFrame,
     pt = df["prompt_tokens"].astype(float)
     ct = df["completion_tokens"].astype(float)
     ch_tok = df["ch"].astype(float)
+    img_out = df["img_out_tokens"].astype(float)
 
     cw_5m_total = df["cw_rem"].astype(float) + df["cw_5m"].astype(float)
 
+    # Standard (non-multimodal) cost components
     cost_input      = pt / 1e6 * ip
     cost_output     = ct / 1e6 * op
     cost_cache_hit  = ch_tok / 1e6 * chp
     cost_cw_5m      = cw_5m_total / 1e6 * cwp_5m
     cost_cw_1h      = df["cw_1h"].astype(float) / 1e6 * cwp_1h
     expected_usd    = cost_input + cost_output + cost_cache_hit + cost_cw_5m + cost_cw_1h
+
+    # Multimodal override: ip * input_tokens + op_text * text_output + op_image * image_output
+    if is_multimodal.any():
+        mm_models = df.loc[is_multimodal, "model"].unique()
+        for mm_model in mm_models:
+            mm_mask = is_multimodal & (df["model"] == mm_model)
+            mm_pricing = pricing_map.get(mm_model, {})
+            mm_ip       = mm_pricing.get("ip", 0)
+            mm_op_text  = mm_pricing.get("op_text", 0)
+            mm_op_image = mm_pricing.get("op_image", 0)
+
+            mm_pt  = df.loc[mm_mask, "prompt_tokens"].astype(float)
+            mm_ct  = df.loc[mm_mask, "completion_tokens"].astype(float)
+            mm_img = df.loc[mm_mask, "img_out_tokens"].astype(float)
+            mm_text_out = (mm_ct - mm_img).clip(lower=0)
+
+            mm_cost = (mm_pt / 1e6 * mm_ip
+                       + mm_text_out / 1e6 * mm_op_text
+                       + mm_img / 1e6 * mm_op_image)
+            expected_usd = expected_usd.copy()
+            expected_usd.loc[mm_mask] = mm_cost.values
 
     billed_usd = df["quota"].astype(float) / QUOTA_TO_USD
 

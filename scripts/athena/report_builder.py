@@ -451,8 +451,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                 "用户汇总", u_hdrs, u_wids, u_data, u_fmts,
                 total_row=u_tot, total_fmts=u_fmts)
 
-    # ── Tab 2: 按模型汇总（含 cache token 拆分）──
+    # ── Tab 2: 按模型汇总（含 cache token 拆分 + image token）──
     has_cache = "total_cache_hit_tokens" in df_full.columns
+    has_image = "total_image_output_tokens" in df_full.columns
     cache_agg_cols = {}
     if has_cache:
         cache_agg_cols = {
@@ -461,6 +462,12 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             "total_cw_5m": "sum",
             "total_cw_1h": "sum",
             "total_cw_remaining": "sum",
+        }
+    image_agg_cols = {}
+    if has_image:
+        image_agg_cols = {
+            "total_image_output_tokens": "sum",
+            "total_image_input_tokens": "sum",
         }
 
     model_agg = df_full.groupby("model_name").agg({
@@ -473,6 +480,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         "cost_usd": "sum",
         "profit_usd": "sum",
         **cache_agg_cols,
+        **image_agg_cols,
     }).reset_index().sort_values("list_price_usd", ascending=False)
     model_agg["billed_usd"] = model_agg["total_quota"].astype(float) / QUOTA_TO_USD
     model_agg["diff"] = model_agg["billed_usd"] - model_agg["list_price_usd"]
@@ -482,6 +490,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     if has_cache:
         model_agg["cw_5m_total"] = (model_agg["total_cw_5m"].astype(float)
                                     + model_agg["total_cw_remaining"].astype(float))
+
+    # Detect if any model has image output tokens (to decide whether to show image columns)
+    show_image_cols = has_image and (model_agg.get("total_image_output_tokens", pd.Series(0)) > 0).any()
 
     price_label = "低档价" if flat_tier else "刊例"
     m_hdrs = ["模型名称", "调用次数"]
@@ -495,6 +506,11 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         m_fmts += [TOK, TOK, TOK, TOK, TOK]
     else:
         m_hdrs += ["输入 Tokens", "输出 Tokens"]
+        m_wids += [14, 14]
+        m_fmts += [TOK, TOK]
+
+    if show_image_cols:
+        m_hdrs += ["图片输出\nTokens", "文本输出\nTokens"]
         m_wids += [14, 14]
         m_fmts += [TOK, TOK]
 
@@ -522,6 +538,10 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             ]
         else:
             row_data += [int(r["total_input_tokens"]), int(r["total_output_tokens"])]
+        if show_image_cols:
+            img_out = int(r.get("total_image_output_tokens", 0) or 0)
+            text_out = max(int(r["total_output_tokens"]) - img_out, 0)
+            row_data += [img_out, text_out]
         if customer_view:
             row_data += [
                 float(r["list_price_usd"]) * rate,
@@ -573,15 +593,28 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     else:
         # Internal view: keep channel dimension for cost analysis
         df_sorted = df_full.sort_values("list_price_usd", ascending=False)
-        d_hdrs = [
-            "用户 ID", "用户名", "渠道 ID", "模型名称", "调用次数",
-            "输入 Tokens", "输出 Tokens",
-            f"刊例价 ({symbol})", "成本折扣", f"成本 ({symbol})",
-            "客户折扣", f"客户应付 ({symbol})",
-            f"利润 ({symbol})", "利润率",
-        ]
-        d_wids = [10, 16, 10, 28, 10, 14, 14, 16, 10, 16, 10, 16, 14, 10]
-        d_fmts = [TOK, None, TOK, None, TOK, TOK, TOK, USD4, PCT, USD4, PCT, USD4, USD4, PCT]
+        detail_has_image = "total_image_output_tokens" in df_sorted.columns and \
+                           (df_sorted["total_image_output_tokens"].fillna(0) > 0).any()
+        if detail_has_image:
+            d_hdrs = [
+                "用户 ID", "用户名", "渠道 ID", "模型名称", "调用次数",
+                "输入 Tokens", "输出 Tokens", "图片输出\nTokens", "文本输出\nTokens",
+                f"刊例价 ({symbol})", "成本折扣", f"成本 ({symbol})",
+                "客户折扣", f"客户应付 ({symbol})",
+                f"利润 ({symbol})", "利润率",
+            ]
+            d_wids = [10, 16, 10, 28, 10, 14, 14, 14, 14, 16, 10, 16, 10, 16, 14, 10]
+            d_fmts = [TOK, None, TOK, None, TOK, TOK, TOK, TOK, TOK, USD4, PCT, USD4, PCT, USD4, USD4, PCT]
+        else:
+            d_hdrs = [
+                "用户 ID", "用户名", "渠道 ID", "模型名称", "调用次数",
+                "输入 Tokens", "输出 Tokens",
+                f"刊例价 ({symbol})", "成本折扣", f"成本 ({symbol})",
+                "客户折扣", f"客户应付 ({symbol})",
+                f"利润 ({symbol})", "利润率",
+            ]
+            d_wids = [10, 16, 10, 28, 10, 14, 14, 16, 10, 16, 10, 16, 14, 10]
+            d_fmts = [TOK, None, TOK, None, TOK, TOK, TOK, USD4, PCT, USD4, PCT, USD4, USD4, PCT]
 
         d_data = []
         for _, r in df_sorted.iterrows():
@@ -590,14 +623,18 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             cost = float(r["cost_usd"]) * rate
             profit = float(r["profit_usd"]) * rate
             margin = profit / rev if rev else 0
-            d_data.append([
+            row = [
                 int(r["user_id"]), r["username"], int(r["channel_id"]),
                 r["model_name"], int(r["call_count"]),
                 int(r["total_input_tokens"]), int(r["total_output_tokens"]),
-                lp, float(r["cost_discount"]),
-                cost, float(r["revenue_discount"]),
-                rev, profit, margin,
-            ])
+            ]
+            if detail_has_image:
+                img_out = int(r.get("total_image_output_tokens", 0) or 0)
+                text_out = max(int(r["total_output_tokens"]) - img_out, 0)
+                row += [img_out, text_out]
+            row += [lp, float(r["cost_discount"]), cost, float(r["revenue_discount"]),
+                    rev, profit, margin]
+            d_data.append(row)
 
     write_sheet(wb, f"API 账单 -- {year_month} (定价明细){tier_tag}",
                 "定价明细", d_hdrs, d_wids, d_data, d_fmts)
@@ -818,31 +855,117 @@ def _export_detail_csv(year_month: str, output_dir: str,
     return out_path
 
 
+# Column spec for internal detail xlsx (full fields, English headers)
+_INTERNAL_DETAIL_COLS = [
+    # (internal_col,            header,                     width,  num_fmt)
+    ("request_id",              "Request ID",               36,     None),
+    ("created_at",              "Time (UTC+8)",             20,     None),
+    ("user_id",                 "User ID",                  10,     TOK),
+    ("username",                "Username",                 18,     None),
+    ("channel_id",              "Channel ID",               12,     TOK),
+    ("model_name",              "Model",                    32,     None),
+    ("token_name",              "Token Name",               18,     None),
+    ("prompt_tokens",           "Input Tokens",             14,     TOK),
+    ("completion_tokens",       "Output Tokens",            14,     TOK),
+    ("cache_hit_tokens",        "Cache Hit Tokens",         16,     TOK),
+    ("cache_write_tokens",      "Cache Write Tokens",       16,     TOK),
+    ("cw_5m",                   "Cache Write (5min)",       16,     TOK),
+    ("cw_1h",                   "Cache Write (1h)",         16,     TOK),
+    ("cw_remaining",            "Cache Write (remaining)",  18,     TOK),
+    ("quota",                   "Quota",                    14,     TOK),
+    ("billed_usd",              "Billed USD",               14,     USD6),
+    ("expected_usd",            "Expected USD",             14,     USD6),
+    ("list_price_usd",          "List Price USD",           14,     USD6),
+    ("cost_discount",           "Cost Discount",            13,     PCT),
+    ("cost_usd",                "Cost USD",                 14,     USD6),
+    ("revenue_discount",        "Revenue Discount",         15,     PCT),
+    ("revenue_usd",             "Revenue USD",              14,     USD6),
+    ("profit_usd",              "Profit USD",               14,     USD6),
+    ("use_time_seconds",        "Use Time (s)",             12,     None),
+    ("is_stream",               "Stream",                   8,      None),
+    ("tiered_ip",               "Tiered Input Price",       16,     None),
+    ("tiered_op",               "Tiered Output Price",      16,     None),
+]
+
+
+DETAIL_XLSX_ROW_LIMIT = 500_000   # above this, fall back to csv.zip
+
+
 def _write_detail_csv_internal(df: pd.DataFrame, year_month: str,
                                output_dir: str, suffix: str = "",
                                ch_suffix: str = "",
                                tier_suffix: str = "", from_suffix: str = "",
                                day_suffix: str = "") -> str:
-    """Write internal full-field detail as zip-compressed CSV."""
-    import io as _io
+    """Write internal full-field detail.
 
-    zip_filename = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}_detail.csv.zip"
-    csv_inner_name = zip_filename.replace(".zip", "")
-    zip_path = os.path.join(output_dir, zip_filename)
+    Uses xlsx when row count <= DETAIL_XLSX_ROW_LIMIT (500K); falls back to
+    zip-compressed CSV for larger datasets where xlsx would be impractically slow.
+    """
+    base = f"bill_{year_month}{suffix}{ch_suffix}{tier_suffix}{from_suffix}{day_suffix}_detail"
+
+    if df.empty or len(df) <= DETAIL_XLSX_ROW_LIMIT:
+        return _write_detail_xlsx_internal(df, base, output_dir, year_month,
+                                           tier_suffix, from_suffix, day_suffix)
+    else:
+        logger.info(
+            "Detail row count exceeds xlsx limit, using csv.zip",
+            extra={"event": "detail_format_fallback",
+                   "rows": len(df), "limit": DETAIL_XLSX_ROW_LIMIT})
+        return _write_detail_csv_zip(df, base, output_dir)
+
+
+def _write_detail_xlsx_internal(df: pd.DataFrame, base: str, output_dir: str,
+                                year_month: str, tier_suffix: str = "",
+                                from_suffix: str = "", day_suffix: str = "") -> str:
+    """Write internal detail as xlsx with auto-split sheets (≤500K rows)."""
+    xlsx_path = os.path.join(output_dir, base + ".xlsx")
+
+    if df.empty:
+        wb = xlsxwriter.Workbook(xlsx_path)
+        ws = wb.add_worksheet("No Data")
+        ws.write(0, 0, "No data found for the specified period.")
+        wb.close()
+        return xlsx_path
+
+    df = df.copy()
+    if "created_at" in df.columns:
+        df["created_at"] = (
+            pd.to_datetime(df["created_at"], unit="s", utc=True)
+            .dt.tz_convert("Asia/Shanghai")
+            .dt.strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+    col_spec = [(ic, hdr, w, nf) for ic, hdr, w, nf in _INTERNAL_DETAIL_COLS
+                if ic in df.columns]
+    internal_cols = [c[0] for c in col_spec]
+    headers    = [c[1] for c in col_spec]
+    col_widths = [c[2] for c in col_spec]
+    num_fmts   = [c[3] for c in col_spec]
+
+    df_out = df[internal_cols].fillna("")
+    data_rows = df_out.values.tolist()
+    title = f"API Detail -- {year_month}{tier_suffix}{from_suffix}{day_suffix}"
+
+    wb = xlsxwriter.Workbook(xlsx_path, {"constant_memory": False})
+    write_sheet(wb, title, "Detail", headers, col_widths, data_rows, num_fmts)
+    wb.close()
+    return xlsx_path
+
+
+def _write_detail_csv_zip(df: pd.DataFrame, base: str, output_dir: str) -> str:
+    """Write internal detail as zip-compressed CSV (fallback for large datasets)."""
+    import io as _io
+    zip_path = os.path.join(output_dir, base + ".csv.zip")
+    csv_inner_name = base + ".csv"
 
     csv_buf = _io.StringIO()
-    if df.empty:
-        csv_buf.write("no data\n")
-    else:
-        df.to_csv(csv_buf, index=False, lineterminator="\n")
-
+    df.to_csv(csv_buf, index=False, lineterminator="\n")
     try:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED,
                              compresslevel=6) as zf:
             zf.writestr(csv_inner_name, csv_buf.getvalue().encode("utf-8"))
     finally:
         csv_buf.close()
-
     return zip_path
 
 
@@ -855,6 +978,7 @@ _CUSTOMER_DETAIL_COLS = [
     ("token_name",          "Token 名称",           16, None),
     ("prompt_tokens",       "输入 Tokens",          14, TOK),
     ("completion_tokens",   "输出 Tokens",          14, TOK),
+    ("image_output_tokens", "图片输出 Tokens",      14, TOK),
     ("cache_hit_tokens",    "缓存命中 Tokens",      14, TOK),
     ("cw_5m",               "缓存写入 Tokens\n(5min)", 14, TOK),
     ("cw_1h",               "缓存写入 Tokens\n(1h)",   14, TOK),
@@ -917,6 +1041,14 @@ def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
     title_base = f"{user_label}API 账单 -- {year_month} (调用明细){tier_tag}"
 
     data_rows = df_out.values.tolist()
+
+    if len(data_rows) > DETAIL_XLSX_ROW_LIMIT:
+        logger.info(
+            "Customer detail row count exceeds xlsx limit, using csv.zip",
+            extra={"event": "detail_format_fallback",
+                   "rows": len(data_rows), "limit": DETAIL_XLSX_ROW_LIMIT})
+        base = os.path.splitext(os.path.basename(xlsx_path))[0]
+        return _write_detail_csv_zip(df_out, base, output_dir)
 
     wb = xlsxwriter.Workbook(xlsx_path, {"constant_memory": False})
     write_sheet(wb, title_base, "调用明细", headers, col_widths,
@@ -1000,6 +1132,28 @@ def _apply_detail_pricing(df: pd.DataFrame,
     cost_cw_5m = cw_5m_total / 1e6 * df["cwp"]
     cost_cw_1h = df.get("cw_1h", pd.Series(0, index=df.index)).astype(float) / 1e6 * df["cwp_1h"]
     expected_usd = cost_input + cost_output + cost_cache_hit + cost_cw_5m + cost_cw_1h
+
+    # Multimodal override for Gemini image generation models
+    pricing_map = pricing_engine.get_pricing()
+    if "image_output_tokens" in df.columns:
+        for mm_model, mm_pricing in pricing_map.items():
+            if not (isinstance(mm_pricing, dict) and mm_pricing.get("_type") == "multimodal"):
+                continue
+            mm_mask = df["model"] == mm_model
+            if not mm_mask.any():
+                continue
+            mm_ip       = mm_pricing.get("ip", 0)
+            mm_op_text  = mm_pricing.get("op_text", 0)
+            mm_op_image = mm_pricing.get("op_image", 0)
+            mm_pt  = df.loc[mm_mask, "prompt_tokens"].astype(float)
+            mm_ct  = df.loc[mm_mask, "completion_tokens"].astype(float)
+            mm_img = df.loc[mm_mask, "image_output_tokens"].fillna(0).astype(float)
+            mm_text_out = (mm_ct - mm_img).clip(lower=0)
+            mm_cost = (mm_pt / 1e6 * mm_ip
+                       + mm_text_out / 1e6 * mm_op_text
+                       + mm_img / 1e6 * mm_op_image)
+            expected_usd = expected_usd.copy()
+            expected_usd.loc[mm_mask] = mm_cost.values
 
     billed_usd = df["quota"].astype(float) / pricing_engine.QUOTA_TO_USD
 

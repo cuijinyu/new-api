@@ -282,7 +282,11 @@ SELECT
                  CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
         AS total_cw_1h,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
-        AS total_cw_remaining
+        AS total_cw_remaining,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_completion_tokens') AS BIGINT), 0))
+        AS total_image_output_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0))
+        AS total_image_input_tokens
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY user_id, username, channel_id, model_name
@@ -613,7 +617,15 @@ SELECT
     CAST(json_extract_scalar(other, '$.tiered_input_price') AS DOUBLE)
         AS tiered_ip,
     CAST(json_extract_scalar(other, '$.tiered_output_price') AS DOUBLE)
-        AS tiered_op
+        AS tiered_op,
+    COALESCE(CAST(json_extract_scalar(other, '$.image_completion_tokens') AS BIGINT), 0)
+        AS image_output_tokens,
+    CAST(json_extract_scalar(other, '$.image_completion_ratio') AS DOUBLE)
+        AS image_output_ratio,
+    COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0)
+        AS image_input_tokens,
+    CAST(json_extract_scalar(other, '$.image_ratio') AS DOUBLE)
+        AS image_input_ratio
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 ORDER BY created_at
@@ -885,7 +897,11 @@ SELECT
                  CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
         AS total_cw_1h,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
-        AS total_cw_remaining
+        AS total_cw_remaining,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_completion_tokens') AS BIGINT), 0))
+        AS total_image_output_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0))
+        AS total_image_input_tokens
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d'),
@@ -1031,7 +1047,15 @@ SELECT
     CAST(json_extract_scalar(other, '$.tiered_input_price') AS DOUBLE)
         AS tiered_ip,
     CAST(json_extract_scalar(other, '$.tiered_output_price') AS DOUBLE)
-        AS tiered_op
+        AS tiered_op,
+    COALESCE(CAST(json_extract_scalar(other, '$.image_completion_tokens') AS BIGINT), 0)
+        AS image_output_tokens,
+    CAST(json_extract_scalar(other, '$.image_completion_ratio') AS DOUBLE)
+        AS image_output_ratio,
+    COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0)
+        AS image_input_tokens,
+    CAST(json_extract_scalar(other, '$.image_ratio') AS DOUBLE)
+        AS image_input_ratio
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 ORDER BY created_at
