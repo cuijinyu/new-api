@@ -323,6 +323,38 @@ ORDER BY day
 """
 
 
+def daily_trend_by_model(year_month: str, user_id: int = None,
+                         channel_id: int = None,
+                         channel_ids: list[int] = None,
+                         start_day: str = None, end_day: str = None,
+                         start_time: str = None, end_time: str = None,
+                         time_zone_offset_hours: float = 0) -> str:
+    """Daily trend broken down by model. Same filters as daily_trend."""
+    year, month = _year_month(year_month)
+    where = _build_time_where(year, month, year_month,
+                              start_day=start_day, end_day=end_day,
+                              start_time=start_time, end_time=end_time,
+                              time_zone_offset_hours=time_zone_offset_hours)
+    if user_id is not None:
+        where += f" AND user_id = {int(user_id)}"
+    where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
+    return f"""
+SELECT
+    day,
+    model_name,
+    COUNT(*)                                AS call_count,
+    SUM(prompt_tokens)                      AS total_input_tokens,
+    SUM(completion_tokens)                  AS total_output_tokens,
+    SUM(prompt_tokens + completion_tokens)  AS total_tokens,
+    SUM(quota)                              AS total_quota,
+    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+FROM ezmodel_logs.usage_logs
+WHERE {where}
+GROUP BY day, model_name
+ORDER BY day, total_usd DESC
+"""
+
+
 def model_ranking(year_month: str,
                   start_day: str = None, end_day: str = None,
                   start_time: str = None, end_time: str = None,

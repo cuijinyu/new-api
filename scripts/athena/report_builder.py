@@ -360,6 +360,14 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                             start_time=start_time, end_time=end_time,
                             time_zone_offset_hours=time_zone_offset_hours),
         no_cache=no_cache)
+    df_trend_model = run_query_cached(
+        queries.daily_trend_by_model(year_month, user_id=user_id,
+                                     channel_id=channel_id,
+                                     channel_ids=channel_ids,
+                                     start_day=start_day, end_day=end_day,
+                                     start_time=start_time, end_time=end_time,
+                                     time_zone_offset_hours=time_zone_offset_hours),
+        no_cache=no_cache)
 
     if df_full.empty:
         wb = xlsxwriter.Workbook(filepath)
@@ -661,6 +669,36 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             t_data.append(row_data)
     write_sheet(wb, f"每日费用趋势 -- {year_month}",
                 "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
+
+    # ── Tab 5: 每日模型明细 ──
+    if customer_view:
+        dm_hdrs = ["日期", "模型名称", "调用次数",
+                   "输入 Tokens", "输出 Tokens",
+                   f"刊例价 ({symbol})"]
+        dm_wids = [14, 28, 12, 14, 14, 16]
+        dm_fmts = [None, None, TOK, TOK, TOK, USD4]
+    else:
+        dm_hdrs = ["日期", "模型名称", "调用次数",
+                   "输入 Tokens", "输出 Tokens", "总额度",
+                   f"刊例价 ({symbol})"]
+        dm_wids = [14, 28, 12, 14, 14, 14, 16]
+        dm_fmts = [None, None, TOK, TOK, TOK, TOK, USD4]
+    dm_data = []
+    if not df_trend_model.empty:
+        for _, r in df_trend_model.iterrows():
+            row_data = [
+                f"{year_month}-{int(r['day']):02d}",
+                r["model_name"],
+                int(r["call_count"]),
+                int(r["total_input_tokens"]),
+                int(r["total_output_tokens"]),
+            ]
+            if not customer_view:
+                row_data.append(int(r["total_quota"]))
+            row_data.append(float(r["total_usd"]) * rate)
+            dm_data.append(row_data)
+    write_sheet(wb, f"每日模型明细 -- {year_month}",
+                "每日模型明细", dm_hdrs, dm_wids, dm_data, dm_fmts)
 
     # --- Query Cost Summary ---
     if COST_MONITOR_AVAILABLE:
