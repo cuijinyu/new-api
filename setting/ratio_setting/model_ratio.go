@@ -195,6 +195,14 @@ var defaultModelRatio = map[string]float64{
 	"gemini-2.5-flash-lite-preview-thinking-*":  0.05,
 	"gemini-2.5-flash-lite-preview-06-17":       0.05,
 	"gemini-2.5-flash":                          0.15,
+	"gemini-2.5-flash-image":                    0.15,
+	"gemini-2.5-flash-image-preview":            0.15,
+	"gemini-3.1-flash-image":                    0.25,
+	"gemini-3.1-flash-image-preview":            0.25,
+	"gemini-3-pro-image":                        1,
+	"gemini-3-pro-image-preview":                1,
+	"nano-banana":                               0.15,
+	"nano-banana-pro":                           1,
 	"gemini-robotics-er-1.5-preview":            0.15,
 	"gemini-embedding-001":                      0.075,
 	"text-embedding-004":                        0.001,
@@ -332,7 +340,17 @@ var defaultAudioCompletionRatio = map[string]float64{
 	"gpt-4o-mini-realtime": 2,
 }
 
-var defaultImageCompletionRatio = map[string]float64{}
+var defaultImageCompletionRatio = map[string]float64{
+	"gemini-2.0-flash-exp-image-generation": 0,
+	"gemini-2.5-flash-image":                30 / 0.3,
+	"gemini-2.5-flash-image-preview":        30 / 0.3,
+	"gemini-3.1-flash-image":                60 / 0.5,
+	"gemini-3.1-flash-image-preview":        60 / 0.5,
+	"gemini-3-pro-image":                    120 / 2.0,
+	"gemini-3-pro-image-preview":            120 / 2.0,
+	"nano-banana":                           30 / 0.3,
+	"nano-banana-pro":                       120 / 2.0,
+}
 var (
 	imageCompletionRatioMap      map[string]float64 = nil
 	imageCompletionRatioMapMutex                    = sync.RWMutex{}
@@ -353,12 +371,17 @@ var (
 )
 
 var defaultCompletionRatio = map[string]float64{
-	"gpt-4-gizmo-*":     2,
-	"gpt-4o-gizmo-*":    3,
-	"gpt-4-all":         2,
-	"gpt-image-1":       8,
-	"gpt-image-2":       3.75, // $30 output / $8 input
-	"codex-mini-latest": 4,
+	"gpt-4-gizmo-*":                  2,
+	"gpt-4o-gizmo-*":                 3,
+	"gpt-4-all":                      2,
+	"gpt-image-1":                    8,
+	"gpt-image-2":                    3.75, // $30 output / $8 input
+	"gemini-3.1-flash-image":         6,
+	"gemini-3.1-flash-image-preview": 6,
+	"gemini-3-pro-image":             6,
+	"nano-banana":                    2.5 / 0.3,
+	"nano-banana-pro":                6,
+	"codex-mini-latest":              4,
 }
 
 // InitRatioSettings initializes all model related settings maps
@@ -402,6 +425,9 @@ func InitRatioSettings() {
 	imageCompletionRatioMapMutex.Lock()
 	imageCompletionRatioMap = defaultImageCompletionRatio
 	imageCompletionRatioMapMutex.Unlock()
+
+	// initialize conditional pricing (时段 / 请求头 / 请求体 条件计费)
+	InitConditionalPricingSettings()
 }
 
 func GetModelPriceMap() map[string]float64 {
@@ -476,6 +502,9 @@ func GetModelRatio(name string) (float64, bool, string) {
 
 	ratio, ok := modelRatioMap[name]
 	if !ok {
+		if defaultRatio, defaultOk := defaultModelRatio[name]; defaultOk {
+			return defaultRatio, true, name
+		}
 		return 37.5, operation_setting.SelfUseModeEnabled, name
 	}
 	return ratio, true, name
@@ -643,6 +672,9 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 		} else if strings.HasPrefix(name, "gemini-2.5-pro") { // 移除preview来增加兼容性，这里假设正式版的倍率和preview一致
 			return 8, false
 		} else if strings.HasPrefix(name, "gemini-2.5-flash") { // 处理不同的flash模型倍率
+			if strings.HasPrefix(name, "gemini-2.5-flash-image") {
+				return 2.5 / 0.3, true
+			}
 			if strings.HasPrefix(name, "gemini-2.5-flash-preview") {
 				if strings.HasSuffix(name, "-nothinking") {
 					return 4, false
@@ -655,9 +687,11 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 			return 2.5 / 0.3, false
 		} else if strings.HasPrefix(name, "gemini-robotics-er-1.5") {
 			return 2.5 / 0.3, false
+		} else if strings.HasPrefix(name, "gemini-3.1-flash-image") {
+			return 6, true
 		} else if strings.HasPrefix(name, "gemini-3-pro") {
 			if strings.HasPrefix(name, "gemini-3-pro-image") {
-				return 60, false
+				return 6, true
 			}
 			return 6, false
 		}
@@ -865,6 +899,9 @@ func GetImageCompletionRatio(name string) (float64, bool) {
 	name = FormatMatchingModelName(name)
 	ratio, ok := imageCompletionRatioMap[name]
 	if !ok {
+		if defaultRatio, defaultOk := defaultImageCompletionRatio[name]; defaultOk {
+			return defaultRatio, true
+		}
 		return 1, false
 	}
 	return ratio, true

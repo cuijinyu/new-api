@@ -260,6 +260,11 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	ratio := dModelRatio.Mul(dGroupRatio)
 
+	// 条件计费乘数（时段 / 请求头 / 请求体）：与预扣费共用同一份求值结果，
+	// 仅乘到 token 计费部分，工具调用类固定费用（web/file search 等）不受影响。
+	condMult := relayInfo.PriceData.CondMultiplier()
+	dCondMult := decimal.NewFromFloat(condMult)
+
 	// openai web search 工具计费
 	var dWebSearchQuota decimal.Decimal
 	var webSearchPrice float64
@@ -398,7 +403,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			Add(dCachedCreationTokens5m.Mul(dCacheStorePrice5m).Div(dMillion)).
 			Add(dCachedCreationTokens1h.Mul(dCacheStorePrice1h).Div(dMillion))
 
-		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quotaCalculateDecimal = inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio).Mul(dCondMult)
 
 		// 计算等效模型价格用于日志显示 (不含分组倍率)
 		// modelPrice = inputQuota + outputQuota + cacheQuota + cacheCreationQuota (单位: USD)
@@ -479,11 +484,14 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			quotaCalculateDecimal = promptQuota.Add(completionQuota).Mul(ratio)
 		}
 
+		// 条件计费乘数：乘到 token 计费部分
+		quotaCalculateDecimal = quotaCalculateDecimal.Mul(dCondMult)
+
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
 	} else {
-		quotaCalculateDecimal = dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quotaCalculateDecimal = dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio).Mul(dCondMult)
 	}
 	// 添加 responses tools call 调用的配额
 	quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
@@ -565,6 +573,46 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		logContent += ", " + extraContent
 	}
 	other := service.GenerateTextOtherInfo(ctx, relayInfo, modelRatio, groupRatio, completionRatio, cacheTokens, cacheRatio, modelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
+	inputTextTokens := usage.PromptTokensDetails.TextTokens
+	if inputTextTokens == 0 {
+		inputTextTokens = promptTokens - imageTokens - audioTokens
+		if inputTextTokens < 0 {
+			inputTextTokens = 0
+		}
+	}
+	outputAudioTokens := usage.CompletionTokenDetails.AudioTokens
+	outputNonImageTokens := completionTokens - completionImageTokens
+	if outputNonImageTokens < 0 {
+		outputNonImageTokens = 0
+	}
+	outputTextTokens := usage.CompletionTokenDetails.TextTokens
+	if outputTextTokens == 0 {
+		outputTextTokens = outputNonImageTokens - outputAudioTokens
+		if outputTextTokens < 0 {
+			outputTextTokens = 0
+		}
+	}
+	if inputTextTokens != 0 {
+		other["input_text_tokens"] = inputTextTokens
+	}
+	if imageTokens != 0 {
+		other["input_image_tokens"] = imageTokens
+	}
+	if audioTokens != 0 {
+		other["input_audio_tokens"] = audioTokens
+	}
+	if outputTextTokens != 0 {
+		other["output_text_tokens"] = outputTextTokens
+	}
+	if outputNonImageTokens != 0 {
+		other["output_non_image_tokens"] = outputNonImageTokens
+	}
+	if outputAudioTokens != 0 {
+		other["output_audio_tokens"] = outputAudioTokens
+	}
+	if usage.CompletionTokenDetails.ReasoningTokens != 0 {
+		other["output_reasoning_tokens"] = usage.CompletionTokenDetails.ReasoningTokens
+	}
 	if imageTokens != 0 {
 		other["image"] = true
 		other["image_ratio"] = imageRatio
@@ -574,6 +622,16 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		other["image_completion"] = true
 		other["image_completion_ratio"] = imageCompletionRatio
 		other["image_completion_tokens"] = completionImageTokens
+		other["output_image_tokens"] = completionImageTokens
+		if imageOutputCount := ctx.GetInt("gemini_image_output_count"); imageOutputCount > 0 {
+			other["gemini_image_output_count"] = imageOutputCount
+		}
+		if tokenSource := ctx.GetString("gemini_image_output_token_source"); tokenSource != "" {
+			other["gemini_image_output_token_source"] = tokenSource
+		}
+		if tokensPerImage := ctx.GetInt("gemini_image_output_tokens_per_image"); tokensPerImage > 0 {
+			other["gemini_image_output_tokens_per_image"] = tokensPerImage
+		}
 	}
 	if cachedCreationTokens != 0 {
 		other["cache_creation_tokens"] = cachedCreationTokens
@@ -645,6 +703,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		other["tiered_prompt_tokens_include_cache"] = true
 		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", tieredData.TierMinTokens, tieredData.TierMaxTokens)
 	}
+	service.AppendConditionalPricingOther(other, &relayInfo.PriceData)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     promptTokens,

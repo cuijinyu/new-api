@@ -35,6 +35,18 @@ const TEST_TYPES = [
   { value: 'pricing_verify', label: '计费验证' },
 ];
 
+const GEMINI_BILLING_CASES = [
+  { value: 'native', label: 'Native 非流式' },
+  { value: 'native_stream', label: 'Native 流式' },
+  { value: 'native_edit', label: 'Native 图文输入' },
+  { value: 'openai_image', label: 'OpenAI Images' },
+];
+
+const ALL_TEST_TYPES = [
+  ...TEST_TYPES,
+  { value: 'gemini_image_billing', label: 'Gemini 生图计费' },
+];
+
 const ENDPOINT_TYPES = [
   { value: '', label: '自动检测' },
   { value: 'openai', label: 'OpenAI' },
@@ -51,10 +63,15 @@ const DiagnosticPage = () => {
   const [testType, setTestType] = useState('standard');
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState(null);
+  const [geminiResults, setGeminiResults] = useState(null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedRows, setExpandedRows] = useState([]);
   const historyRef = useRef([]);
+  const [tokens, setTokens] = useState([]);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+  const [selectedTokenId, setSelectedTokenId] = useState();
+  const [geminiCases, setGeminiCases] = useState(['native']);
 
   const [options, setOptions] = useState({
     enable_cache: false,
@@ -97,12 +114,30 @@ const DiagnosticPage = () => {
     setLoadingChannels(false);
   }, []);
 
+  const loadTokens = useCallback(async () => {
+    setLoadingTokens(true);
+    try {
+      const res = await API.get('/api/token/', {
+        params: { p: 1, page_size: 100 },
+      });
+      if (res.data.success) {
+        setTokens(res.data.data?.items || []);
+      } else {
+        showError(res.data.message);
+      }
+    } catch (e) {
+      showError(e.message);
+    }
+    setLoadingTokens(false);
+  }, []);
+
   useEffect(() => {
     loadChannels();
-  }, [loadChannels]);
+    loadTokens();
+  }, [loadChannels, loadTokens]);
 
   const handleTest = async () => {
-    if (selectedChannelIds.length === 0) {
+    if (testType !== 'gemini_image_billing' && selectedChannelIds.length === 0) {
       showError('请选择至少一个渠道');
       return;
     }
@@ -111,11 +146,33 @@ const DiagnosticPage = () => {
       return;
     }
 
+    if (testType === 'gemini_image_billing' && !selectedTokenId) {
+      showError('请选择用于测试的 Token');
+      return;
+    }
+
     setTesting(true);
     setResults(null);
+    setGeminiResults(null);
     setExpandedRows([]);
 
     try {
+      if (testType === 'gemini_image_billing') {
+        const res = await API.post('/api/diagnostic/gemini_billing_probe', {
+          token_id: selectedTokenId,
+          channel_id: selectedChannelIds[0] || 0,
+          models: [model],
+          cases: geminiCases,
+        });
+        if (res.data.success) {
+          setGeminiResults(res.data.data);
+        } else {
+          showError(res.data.message);
+        }
+        setTesting(false);
+        return;
+      }
+
       const payload = {
         channel_ids: selectedChannelIds,
         model,
@@ -168,6 +225,11 @@ const DiagnosticPage = () => {
   const channelOptions = channels.map((ch) => ({
     value: ch.id,
     label: `#${ch.id} ${ch.name}${ch.status !== 1 ? ' [禁用]' : ''}`,
+  }));
+
+  const tokenOptions = tokens.map((token) => ({
+    value: token.id,
+    label: `#${token.id} ${token.name || 'Token'}${token.group ? ` [${token.group}]` : ''}`,
   }));
 
   const resultColumns = [
@@ -281,6 +343,56 @@ const DiagnosticPage = () => {
     },
   ];
 
+  const geminiBillingColumns = [
+    {
+      title: '模型 / 模式',
+      dataIndex: 'name',
+      width: 260,
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.model}</Text>
+          <Text type='tertiary' style={{ display: 'block' }}>{record.case}</Text>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 90,
+      render: (status, record) => (
+        <div>
+          <Tag color={status === 'pass' ? 'green' : status === 'warn' ? 'orange' : 'red'} size='small'>
+            {status === 'pass' ? '通过' : status === 'warn' ? '警告' : '失败'}
+          </Tag>
+          {record.message && (
+            <Text type={status === 'pass' ? 'tertiary' : 'danger'} size='small' style={{ display: 'block', marginTop: 4, wordBreak: 'break-all' }}>
+              {record.message}
+            </Text>
+          )}
+        </div>
+      ),
+    },
+    { title: 'HTTP', dataIndex: 'http_status', width: 80 },
+    { title: '日志ID', dataIndex: 'log_id', width: 90 },
+    { title: '渠道', dataIndex: 'channel_id', width: 80, render: (v) => v ? `#${v}` : '-' },
+    { title: 'Prompt', dataIndex: 'prompt_tokens', width: 90 },
+    { title: 'Completion', dataIndex: 'completion_tokens', width: 110 },
+    { title: '图片输出', dataIndex: 'image_tokens', width: 100 },
+    { title: 'Token 来源', dataIndex: 'token_source', width: 140, render: (v) => v || '-' },
+    {
+      title: 'Quota',
+      dataIndex: 'quota',
+      width: 180,
+      render: (_, record) => (
+        <div>
+          <Text>{record.quota ?? '-'}</Text>
+          <Text type='tertiary' style={{ display: 'block' }}>expected: {record.expected_quota ?? '-'}</Text>
+          <Text type={record.delta === 0 ? 'success' : 'danger'} style={{ display: 'block' }}>delta: {record.delta ?? '-'}</Text>
+        </div>
+      ),
+    },
+  ];
+
   const expandRowRender = (record) => {
     if (record.error) {
       return (
@@ -360,6 +472,39 @@ const DiagnosticPage = () => {
         }
         style={{ marginBottom: 16 }}
       >
+        {testType === 'gemini_image_billing' && (
+          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4'>
+            <div>
+              <Form.Label>测试 Token</Form.Label>
+              <Select
+                filter
+                style={{ width: '100%' }}
+                placeholder='选择用于真实调用的 Token'
+                value={selectedTokenId}
+                onChange={setSelectedTokenId}
+                loading={loadingTokens}
+                optionList={tokenOptions}
+              />
+            </div>
+            <div className='lg:col-span-2'>
+              <Form.Label>测试模式</Form.Label>
+              <Select
+                multiple
+                style={{ width: '100%' }}
+                value={geminiCases}
+                onChange={setGeminiCases}
+                optionList={GEMINI_BILLING_CASES}
+              />
+            </div>
+            <div>
+              <Form.Label>指定渠道</Form.Label>
+              <Text type='tertiary' style={{ display: 'block', lineHeight: '32px' }}>
+                可选，使用上方第一个渠道
+              </Text>
+            </div>
+          </div>
+        )}
+
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4'>
           <div className='lg:col-span-2'>
             <Form.Label>渠道选择</Form.Label>
@@ -396,7 +541,7 @@ const DiagnosticPage = () => {
               style={{ width: '100%' }}
               value={testType}
               onChange={setTestType}
-              optionList={TEST_TYPES}
+              optionList={ALL_TEST_TYPES}
             />
           </div>
         </div>
@@ -513,7 +658,7 @@ const DiagnosticPage = () => {
             type='primary'
             loading={testing}
             onClick={handleTest}
-            disabled={selectedChannelIds.length === 0 || !model}
+            disabled={!model || (testType !== 'gemini_image_billing' && selectedChannelIds.length === 0) || (testType === 'gemini_image_billing' && !selectedTokenId)}
           >
             {testing ? '检测中...' : '开始检测'}
           </Button>
@@ -547,6 +692,38 @@ const DiagnosticPage = () => {
             expandedRowRender={expandRowRender}
             expandedRowKeys={expandedRows}
             onExpandedRowsChange={(rows) => setExpandedRows(rows)}
+            size='small'
+            empty={
+              <Empty
+                image={<IllustrationNoResult />}
+                darkModeImage={<IllustrationNoResultDark />}
+                description='暂无结果'
+              />
+            }
+          />
+        </Card>
+      )}
+
+      {geminiResults && (
+        <Card
+          title={
+            <div className='flex items-center gap-3'>
+              <Title heading={5} style={{ margin: 0 }}>
+                Gemini 生图计费校验
+              </Title>
+              <Tag color='blue'>{geminiResults.base_url}</Tag>
+              <Text type='tertiary'>
+                {(geminiResults.results || []).filter((r) => r.status === 'pass').length}/{(geminiResults.results || []).length} 通过
+              </Text>
+            </div>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          <Table
+            columns={geminiBillingColumns}
+            dataSource={geminiResults.results || []}
+            rowKey='name'
+            pagination={false}
             size='small'
             empty={
               <Empty

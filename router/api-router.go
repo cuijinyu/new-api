@@ -165,6 +165,7 @@ func SetApiRouter(router *gin.Engine) {
 		diagnosticRoute.Use(middleware.AdminAuth())
 		{
 			diagnosticRoute.POST("/test", controller.DiagnosticTest)
+			diagnosticRoute.POST("/gemini_billing_probe", controller.DiagnosticGeminiBillingProbe)
 			diagnosticRoute.GET("/channels", controller.DiagnosticGetChannels)
 		}
 		tokenRoute := apiRouter.Group("/token")
