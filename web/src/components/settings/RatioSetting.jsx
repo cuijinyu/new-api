@@ -27,6 +27,7 @@ import ModelSettingsVisualEditor from '../../pages/Setting/Ratio/ModelSettingsVi
 import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
 import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
 import TieredPricingEditor from '../../pages/Setting/Ratio/TieredPricingEditor';
+import ConditionalPricingEditor from '../../pages/Setting/Ratio/ConditionalPricingEditor';
 
 import { API, showError, toBoolean } from '../../helpers';
 
@@ -38,6 +39,7 @@ const RatioSetting = () => {
     ModelRatio: '',
     CacheRatio: '',
     TieredPricing: '',
+    ConditionalPricing: '',
     CompletionRatio: '',
     GroupRatio: '',
     GroupGroupRatio: '',
@@ -60,13 +62,11 @@ const RatioSetting = () => {
     if (success) {
       let newInputs = {};
       data.forEach((item) => {
-        if (
-          item.value.startsWith('{') || item.value.startsWith('[')
-        ) {
+        if (item.value.startsWith('{') || item.value.startsWith('[')) {
           try {
             item.value = JSON.stringify(JSON.parse(item.value), null, 2);
           } catch (e) {
-            // 如果后端返回的不是合法 JSON，直接展示
+            // 如果后端返回的不是合法 JSON，直接展示原始值
           }
         }
         if (['DefaultUseAutoGroup', 'ExposeRatioEnabled'].includes(item.key)) {
@@ -102,7 +102,7 @@ const RatioSetting = () => {
       {/* 模型倍率设置以及可视化编辑器 */}
       <Card style={{ marginTop: '10px' }}>
         <Tabs type='card'>
-          <Tabs.TabPane tab={t('模型倍率设置')} itemKey='model'>
+          <Tabs.TabPane tab={t('模型价格配置')} itemKey='model'>
             <ModelRatioSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('分组倍率设置')} itemKey='group'>
@@ -119,6 +119,9 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('分段价格配置')} itemKey='tiered_pricing'>
             <TieredPricingEditor options={inputs} refresh={onRefresh} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab={t('条件计费配置')} itemKey='conditional_pricing'>
+            <ConditionalPricingEditor options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
         </Tabs>
       </Card>

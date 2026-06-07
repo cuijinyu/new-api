@@ -21,16 +21,18 @@ import (
 const billingProbeDefaultPrompt = "Please reply with one short sentence for a billing validation probe."
 
 type BillingProbeRequest struct {
-	TokenID        int      `json:"token_id"`
-	APIKey         string   `json:"api_key"`
-	ChannelID      int      `json:"channel_id"`
-	BaseURL        string   `json:"base_url"`
-	Models         []string `json:"models"`
-	Cases          []string `json:"cases"`
-	Prompt         string   `json:"prompt"`
-	MaxTokens      int      `json:"max_tokens"`
-	TimeoutSeconds int      `json:"timeout_seconds"`
-	LogWaitSeconds int      `json:"log_wait_seconds"`
+	TokenID            int      `json:"token_id"`
+	APIKey             string   `json:"api_key"`
+	ChannelID          int      `json:"channel_id"`
+	BaseURL            string   `json:"base_url"`
+	Models             []string `json:"models"`
+	Cases              []string `json:"cases"`
+	Prompt             string   `json:"prompt"`
+	InputImageData     string   `json:"input_image_data"`
+	InputImageMimeType string   `json:"input_image_mime_type"`
+	MaxTokens          int      `json:"max_tokens"`
+	TimeoutSeconds     int      `json:"timeout_seconds"`
+	LogWaitSeconds     int      `json:"log_wait_seconds"`
 }
 
 type BillingProbeResponse struct {
@@ -53,12 +55,26 @@ type BillingProbeResult struct {
 	PromptTokens     int                      `json:"prompt_tokens,omitempty"`
 	CompletionTokens int                      `json:"completion_tokens,omitempty"`
 	ImageTokens      int                      `json:"image_tokens,omitempty"`
+	InputImage       bool                     `json:"input_image"`
+	InputImageTokens int                      `json:"input_image_tokens,omitempty"`
 	TokenSource      string                   `json:"token_source,omitempty"`
 	IsStream         bool                     `json:"is_stream"`
 	Billing          *GeminiBillingDebitCheck `json:"billing,omitempty"`
 	Status           string                   `json:"status"`
 	Message          string                   `json:"message,omitempty"`
 	Other            map[string]any           `json:"other,omitempty"`
+}
+
+type billingProbeInputImage struct {
+	MimeType string
+	Data     string
+}
+
+func (image *billingProbeInputImage) DataURL() string {
+	if image == nil {
+		return ""
+	}
+	return "data:" + image.MimeType + ";base64," + image.Data
 }
 
 func BillingProbeRun(c *gin.Context) {
@@ -88,6 +104,11 @@ func BillingProbeRun(c *gin.Context) {
 		common.ApiErrorMsg(c, "单次最多运行 24 个计费校验 probe")
 		return
 	}
+	inputImage, err := normalizeBillingProbeInputImage(req.InputImageData, req.InputImageMimeType)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 
 	baseURL := strings.TrimRight(req.BaseURL, "/")
 	if baseURL == "" {
@@ -114,7 +135,7 @@ func BillingProbeRun(c *gin.Context) {
 	results := make([]BillingProbeResult, 0, len(models)*len(cases))
 	for _, modelName := range models {
 		for _, testCase := range cases {
-			results = append(results, runBillingProbeCase(client, baseURL, apiKey, tokenID, req.ChannelID, modelName, testCase, prompt, maxTokens, logWait))
+			results = append(results, runBillingProbeCase(client, baseURL, apiKey, tokenID, req.ChannelID, modelName, testCase, prompt, inputImage, maxTokens, logWait))
 		}
 	}
 
@@ -217,13 +238,16 @@ func normalizeBillingProbeCases(cases []string) []string {
 		return []string{"openai_chat"}
 	}
 	valid := map[string]bool{
-		"openai_chat":        true,
-		"openai_chat_stream": true,
-		"openai_responses":   true,
-		"openai_image":       true,
-		"gemini_native":      true,
-		"gemini_stream":      true,
-		"gemini_edit":        true,
+		"openai_chat":            true,
+		"openai_chat_stream":     true,
+		"openai_responses":       true,
+		"openai_chat_image":      true,
+		"openai_stream_image":    true,
+		"openai_responses_image": true,
+		"openai_image":           true,
+		"gemini_native":          true,
+		"gemini_stream":          true,
+		"gemini_edit":            true,
 	}
 	out := make([]string, 0, len(cases))
 	for _, item := range cases {
@@ -237,7 +261,37 @@ func normalizeBillingProbeCases(cases []string) []string {
 	return dedupeStrings(out)
 }
 
-func runBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID int, requestedChannelID int, modelName, testCase, prompt string, maxTokens int, logWait time.Duration) BillingProbeResult {
+func normalizeBillingProbeInputImage(rawData string, rawMimeType string) (*billingProbeInputImage, error) {
+	data := strings.TrimSpace(rawData)
+	if data == "" {
+		return nil, nil
+	}
+	mimeType := strings.TrimSpace(rawMimeType)
+	if strings.HasPrefix(data, "data:") {
+		header, body, ok := strings.Cut(data, ",")
+		if !ok {
+			return nil, errors.New("input_image_data 不是合法 data URL")
+		}
+		data = body
+		if mimeType == "" {
+			header = strings.TrimPrefix(header, "data:")
+			header = strings.TrimSuffix(header, ";base64")
+			mimeType = header
+		}
+	}
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+	if !strings.HasPrefix(mimeType, "image/") {
+		return nil, errors.New("input_image_mime_type 必须是 image/*")
+	}
+	if len(data) > 12*1024*1024 {
+		return nil, errors.New("input_image_data 过大，base64 最大 12MB")
+	}
+	return &billingProbeInputImage{MimeType: mimeType, Data: data}, nil
+}
+
+func runBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID int, requestedChannelID int, modelName, testCase, prompt string, inputImage *billingProbeInputImage, maxTokens int, logWait time.Duration) BillingProbeResult {
 	result := BillingProbeResult{
 		Name:   modelName + "/" + testCase,
 		Model:  modelName,
@@ -252,7 +306,7 @@ func runBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID in
 	}
 
 	startedAt := common.GetTimestamp()
-	body, requestID, statusCode, err := callBillingProbe(client, baseURL, apiKey, modelName, testCase, prompt, maxTokens)
+	body, requestID, statusCode, err := callBillingProbe(client, baseURL, apiKey, modelName, testCase, prompt, inputImage, maxTokens)
 	result.HTTPStatus = statusCode
 	result.RequestID = requestID
 	if err != nil {
@@ -295,6 +349,8 @@ func runBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID in
 	result.PromptTokens = logRow.PromptTokens
 	result.CompletionTokens = logRow.CompletionTokens
 	result.ImageTokens = geminiBillingIntField(other, "output_image_tokens", "image_completion_tokens")
+	result.InputImage = inputImage != nil || testCase == "gemini_edit"
+	result.InputImageTokens = geminiBillingIntField(other, "input_image_tokens", "image_output")
 	result.TokenSource = geminiBillingStringField(other, "gemini_image_output_token_source")
 	result.IsStream = logRow.IsStream
 	result.Other = other
@@ -317,7 +373,7 @@ func runBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID in
 	return result
 }
 
-func callBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase, prompt string, maxTokens int) (body string, requestID string, statusCode int, err error) {
+func callBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase, prompt string, inputImage *billingProbeInputImage, maxTokens int) (body string, requestID string, statusCode int, err error) {
 	var endpoint string
 	var payload []byte
 	escapedModel := url.PathEscape(modelName)
@@ -339,11 +395,44 @@ func callBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase,
 			"max_tokens": maxTokens,
 			"stream":     true,
 		})
+	case "openai_chat_image", "openai_stream_image":
+		if inputImage == nil {
+			return "", "", 0, errors.New("该场景需要先上传图片输入")
+		}
+		endpoint = baseURL + "/v1/chat/completions"
+		payload, _ = json.Marshal(map[string]any{
+			"model": modelName,
+			"messages": []map[string]any{{
+				"role": "user",
+				"content": []map[string]any{
+					{"type": "text", "text": prompt},
+					{"type": "image_url", "image_url": map[string]any{"url": inputImage.DataURL()}},
+				},
+			}},
+			"max_tokens": maxTokens,
+			"stream":     testCase == "openai_stream_image",
+		})
 	case "openai_responses":
 		endpoint = baseURL + "/v1/responses"
 		payload, _ = json.Marshal(map[string]any{
 			"model":             modelName,
 			"input":             prompt,
+			"max_output_tokens": maxTokens,
+		})
+	case "openai_responses_image":
+		if inputImage == nil {
+			return "", "", 0, errors.New("该场景需要先上传图片输入")
+		}
+		endpoint = baseURL + "/v1/responses"
+		payload, _ = json.Marshal(map[string]any{
+			"model": modelName,
+			"input": []map[string]any{{
+				"role": "user",
+				"content": []map[string]any{
+					{"type": "input_text", "text": prompt},
+					{"type": "input_image", "image_url": inputImage.DataURL()},
+				},
+			}},
 			"max_output_tokens": maxTokens,
 		})
 	case "openai_image":
@@ -362,7 +451,7 @@ func callBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase,
 		payload, _ = json.Marshal(geminiBillingNativePayload(prompt, false))
 	case "gemini_edit":
 		endpoint = fmt.Sprintf("%s/v1beta/models/%s:generateContent", baseURL, escapedModel)
-		payload, _ = json.Marshal(geminiBillingNativePayload(prompt+" Use the provided input image only as a color reference.", true))
+		payload, _ = json.Marshal(geminiBillingNativePayloadWithImage(prompt+" Use the provided input image only as a color reference.", inputImage))
 	default:
 		return "", "", 0, fmt.Errorf("未知校验场景: %s", testCase)
 	}
@@ -384,6 +473,33 @@ func callBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase,
 		return "", resp.Header.Get(geminiBillingRequestIDHeader), resp.StatusCode, err
 	}
 	return string(raw), resp.Header.Get(geminiBillingRequestIDHeader), resp.StatusCode, nil
+}
+
+func geminiBillingNativePayloadWithImage(prompt string, inputImage *billingProbeInputImage) map[string]any {
+	if inputImage == nil {
+		return geminiBillingNativePayload(prompt, true)
+	}
+	parts := []map[string]any{
+		{"text": prompt},
+		{
+			"inlineData": map[string]any{
+				"mimeType": inputImage.MimeType,
+				"data":     inputImage.Data,
+			},
+		},
+	}
+	return map[string]any{
+		"contents": []map[string]any{
+			{"parts": parts},
+		},
+		"generationConfig": map[string]any{
+			"responseModalities": []string{"TEXT", "IMAGE"},
+			"imageConfig": map[string]any{
+				"aspectRatio": "1:1",
+				"imageSize":   "1K",
+			},
+		},
+	}
 }
 
 func calculateBillingProbeExpectedQuota(logRow geminiBillingLog, other map[string]any) (int, error) {

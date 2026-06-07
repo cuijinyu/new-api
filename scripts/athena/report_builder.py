@@ -284,6 +284,41 @@ def _add_cost_worksheet(wb, title: str):
             row += 1
 
 
+def _add_discount_anomaly_sheet(wb, anomalies: pd.DataFrame, year_month: str):
+    """Add a 对账告警 worksheet listing cost_discount > revenue_discount hits.
+
+    Only added when anomalies is non-empty (no empty sheet otherwise).
+    """
+    if anomalies is None or anomalies.empty:
+        return
+
+    a_hdrs = ["渠道 ID", "模型名称", "成本折扣", "客户折扣",
+              f"刊例额 ($)", f"亏损额 ($)", "命中条数"]
+    a_wids = [10, 32, 12, 12, 16, 16, 10]
+    a_fmts = [TOK, None, PCT, PCT, USD4, USD4, TOK]
+
+    a_data = []
+    for _, r in anomalies.iterrows():
+        a_data.append([
+            int(r["channel_id"]) if pd.notna(r["channel_id"]) else 0,
+            r["model_name"],
+            float(r["cost_discount"]), float(r["revenue_discount"]),
+            float(r["list_price_usd"]), float(r["loss_usd"]),
+            int(r["row_count"]),
+        ])
+
+    a_tot = [
+        "合计", "", "", "",
+        float(anomalies["list_price_usd"].sum()),
+        float(anomalies["loss_usd"].sum()),
+        int(anomalies["row_count"].sum()),
+    ]
+
+    write_sheet(wb, f"对账告警 -- {year_month} (cost_discount > revenue_discount，疑似未配置成本折扣)",
+                "对账告警", a_hdrs, a_wids, a_data, a_fmts,
+                total_row=a_tot, total_fmts=a_fmts)
+
+
 # ---------------------------------------------------------------------------
 # Monthly bill (fast aggregation path + flat-tier support)
 # ---------------------------------------------------------------------------
@@ -379,6 +414,9 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     # Apply four-tier pricing (with flat-tier if enabled)
     df_full = pricing_engine.apply_pricing_summary(
         df_full, flat_tier=flat_tier, flat_tier_since=flat_tier_since)
+
+    discount_anomalies = pricing_engine.detect_discount_anomalies(df_full)
+    pricing_engine.log_discount_anomalies(discount_anomalies)
 
     tier_tag = ""
     if flat_tier:
@@ -499,8 +537,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         model_agg["cw_5m_total"] = (model_agg["total_cw_5m"].astype(float)
                                     + model_agg["total_cw_remaining"].astype(float))
 
-    # Detect if any model has image output tokens (to decide whether to show image columns)
-    show_image_cols = has_image and (model_agg.get("total_image_output_tokens", pd.Series(0)) > 0).any()
+    # Temporarily hide image token columns (Gemini non-stream recording bug)
+    show_image_cols = False
 
     price_label = "低档价" if flat_tier else "刊例"
     m_hdrs = ["模型名称", "调用次数"]
@@ -601,8 +639,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     else:
         # Internal view: keep channel dimension for cost analysis
         df_sorted = df_full.sort_values("list_price_usd", ascending=False)
-        detail_has_image = "total_image_output_tokens" in df_sorted.columns and \
-                           (df_sorted["total_image_output_tokens"].fillna(0) > 0).any()
+        # Temporarily hide image token columns (Gemini non-stream recording bug)
+        detail_has_image = False
         if detail_has_image:
             d_hdrs = [
                 "用户 ID", "用户名", "渠道 ID", "模型名称", "调用次数",
@@ -700,9 +738,11 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     write_sheet(wb, f"每日模型明细 -- {year_month}",
                 "每日模型明细", dm_hdrs, dm_wids, dm_data, dm_fmts)
 
-    # --- Query Cost Summary ---
-    if COST_MONITOR_AVAILABLE:
-        _add_cost_worksheet(wb, f"月度账单 -- {year_month} (查询成本)")
+    # --- 对账告警 / 查询成本: internal-only sheets ---
+    if not customer_view:
+        _add_discount_anomaly_sheet(wb, discount_anomalies, year_month)
+        if COST_MONITOR_AVAILABLE:
+            _add_cost_worksheet(wb, f"月度账单 -- {year_month} (查询成本)")
 
     wb.close()
 
@@ -893,6 +933,14 @@ def _export_detail_csv(year_month: str, output_dir: str,
     return out_path
 
 
+# Temporarily hidden from Excel/CSV output (query fields retained for future restore)
+_SHOW_IMAGE_TOKEN_COLS = False
+_HIDDEN_IMAGE_TOKEN_COLS = frozenset({
+    "image_output_tokens", "image_input_tokens",
+    "image_output_ratio", "image_input_ratio",
+})
+
+
 # Column spec for internal detail xlsx (full fields, English headers)
 _INTERNAL_DETAIL_COLS = [
     # (internal_col,            header,                     width,  num_fmt)
@@ -974,7 +1022,7 @@ def _write_detail_xlsx_internal(df: pd.DataFrame, base: str, output_dir: str,
         )
 
     col_spec = [(ic, hdr, w, nf) for ic, hdr, w, nf in _INTERNAL_DETAIL_COLS
-                if ic in df.columns]
+                if ic in df.columns and ic not in _HIDDEN_IMAGE_TOKEN_COLS]
     internal_cols = [c[0] for c in col_spec]
     headers    = [c[1] for c in col_spec]
     col_widths = [c[2] for c in col_spec]
@@ -997,7 +1045,9 @@ def _write_detail_csv_zip(df: pd.DataFrame, base: str, output_dir: str) -> str:
     csv_inner_name = base + ".csv"
 
     csv_buf = _io.StringIO()
-    df.to_csv(csv_buf, index=False, lineterminator="\n")
+    drop_cols = [c for c in _HIDDEN_IMAGE_TOKEN_COLS if c in df.columns]
+    df_out = df.drop(columns=drop_cols) if drop_cols else df
+    df_out.to_csv(csv_buf, index=False, lineterminator="\n")
     try:
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED,
                              compresslevel=6) as zf:
@@ -1016,7 +1066,6 @@ _CUSTOMER_DETAIL_COLS = [
     ("token_name",          "Token 名称",           16, None),
     ("prompt_tokens",       "输入 Tokens",          14, TOK),
     ("completion_tokens",   "输出 Tokens",          14, TOK),
-    ("image_output_tokens", "图片输出 Tokens",      14, TOK),
     ("cache_hit_tokens",    "缓存命中 Tokens",      14, TOK),
     ("cw_5m",               "缓存写入 Tokens\n(5min)", 14, TOK),
     ("cw_1h",               "缓存写入 Tokens\n(1h)",   14, TOK),
@@ -1066,7 +1115,7 @@ def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
 
     # Build column mapping — only include columns that exist in df
     col_spec = [(ic, ch, w, nf) for ic, ch, w, nf in _CUSTOMER_DETAIL_COLS
-                if ic in df.columns]
+                if ic in df.columns and ic not in _HIDDEN_IMAGE_TOKEN_COLS]
     internal_cols = [c[0] for c in col_spec]
     headers = [c[1] for c in col_spec]
     col_widths = [c[2] for c in col_spec]
@@ -1197,7 +1246,7 @@ def _apply_detail_pricing(df: pd.DataFrame,
 
     if flat_tier:
         if flat_tier_since_ts is not None and "created_at" in df.columns:
-            use_expected = (df["model"].isin(pricing_engine.FLAT_TIER_MODELS) &
+            use_expected = (df["model"].isin(pricing_engine.FLAT_TIER_MODELS()) &
                            (df["created_at"].astype(int) >= flat_tier_since_ts))
             price_base = np.where(use_expected, expected_usd, billed_usd)
         else:
@@ -1636,6 +1685,9 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     df_full = pricing_engine.apply_pricing_summary(
         df_full, flat_tier=flat_tier, flat_tier_since=flat_tier_since)
 
+    discount_anomalies = pricing_engine.detect_discount_anomalies(df_full)
+    pricing_engine.log_discount_anomalies(discount_anomalies)
+
     tier_tag = ""
     if flat_tier:
         tier_tag = f"（降档自 {flat_tier_since}）" if flat_tier_since else "（统一低档价）"
@@ -1836,6 +1888,10 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
             t_data.append(row_data)
     write_sheet(wb, f"每日费用趋势 -- {year_month}{tier_tag}",
                 "每日趋势", t_hdrs, t_wids, t_data, t_fmts)
+
+    # --- 对账告警: internal-only sheet ---
+    if not customer_view:
+        _add_discount_anomaly_sheet(wb, discount_anomalies, year_month)
 
     wb.close()
 

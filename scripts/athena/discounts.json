@@ -1,6 +1,6 @@
 {
   "_version": "1.0.0",
-  "_updated_at": "2026-04-25T00:00:00Z",
+  "_updated_at": "2026-06-03T12:00:00Z",
   "_updated_by": "admin",
   "_comment": "折扣配置。cost_discount = 我方成本/刊例价，revenue_discount = 客户应付/刊例价。支持三级匹配：精确(channel×model) > 通配(channel×*) > 默认。",
   "_changelog": [
@@ -125,7 +125,11 @@
         "*": 0.5
       },
       "102": {
-        "_name": "Fanchao",
+        "_name": "fanchao",
+        "*": 0.55
+      },
+      "186": {
+        "_name": "fanchao1",
         "*": 0.55
       },
       "101": {
@@ -135,6 +139,24 @@
       "117": {
         "_name": "r9s",
         "*": 0.73
+      },
+      "160": {
+        "_name": "Qiniuai",
+        "*": 0.7
+      },
+      "188": {
+        "_name": "蓝河188",
+        "*": 0.7
+      },
+      "197": {
+        "_name": "蓝河197",
+        "*": 0.7
+      },
+      "174": {
+        "_name": "aben",
+        "claude-*": 0.65,
+        "gemini-*": 0.67,
+        "gpt-*": 0.67
       }
     }
   }

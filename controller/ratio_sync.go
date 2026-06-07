@@ -63,6 +63,12 @@ func FetchUpstreamRatios(c *gin.Context) {
 		req.Timeout = defaultTimeoutSeconds
 	}
 
+	// 外部价格源（models.dev / OpenRouter）走独立处理，不影响现有渠道同步逻辑
+	if source := normalizeSource(req.Source); source != sourceChannel {
+		handleExternalSource(c, &req, source)
+		return
+	}
+
 	var upstreams []dto.UpstreamDTO
 
 	if len(req.Upstreams) > 0 {
@@ -323,6 +329,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 		"data": gin.H{
 			"differences":  differences,
 			"test_results": testResults,
+			"categories":   computeCategories(differences),
 		},
 	})
 }

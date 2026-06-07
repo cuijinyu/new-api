@@ -61,6 +61,31 @@ def _log(msg: str):
     print(f"[{ts}] {msg}")
 
 
+def _run_pricing_precheck():
+    """出账前价格一致性校验（warn 模式，不阻断出账，仅记录告警）。"""
+    try:
+        import check_pricing_coverage as cpc
+        result = cpc.run_checks()
+    except Exception as e:  # 校验脚本异常不应阻断出账
+        logger.warning("Pricing coverage pre-check failed to run",
+                       extra={"event": "pricing_precheck_error", "error": str(e)})
+        return
+
+    if result["errors"]:
+        logger.warning(
+            "Pricing coverage pre-check found ERRORS",
+            extra={"event": "pricing_precheck_errors",
+                   "count": len(result["errors"]),
+                   "errors": result["errors"]})
+        for e in result["errors"]:
+            _log(f"[价格校验][ERROR] {e}")
+    if result["warnings"]:
+        for w in result["warnings"]:
+            _log(f"[价格校验][WARN] {w}")
+    if not result["errors"] and not result["warnings"]:
+        _log("价格一致性校验通过")
+
+
 # ---------------------------------------------------------------------------
 # Daily report job
 # ---------------------------------------------------------------------------
@@ -112,6 +137,7 @@ def run_monthly_report(year_month: str = None,
         tier_msg = f" [降档{'自 ' + fts if fts else '全量'}]"
 
     _log(f"开始生成月报: {year_month}{tier_msg}")
+    _run_pricing_precheck()
     log_report_start(logger, "monthly", year_month)
 
     start_time = time.time()

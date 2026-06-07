@@ -332,16 +332,14 @@ def _compute_list_price_from_agg(model: str, input_tokens: float,
     if pricing is None:
         return None
 
-    # Multimodal model (e.g. Gemini image generation)
+    # Multimodal model (e.g. Gemini image generation):
+    # The per-request `other` JSON rarely carries image_completion_tokens, so a
+    # static op_text/op_image split would price image output as cheap text and
+    # diverge from what the system actually charged. Trust the system quota
+    # (the quota-derived default in apply_pricing_summary) instead — it already
+    # embeds the real completion_ratio/model_ratio used at request time.
     if isinstance(pricing, dict) and pricing.get("_type") == "multimodal":
-        ip_rate = pricing["ip"]
-        op_text_rate = pricing["op_text"]
-        op_image_rate = pricing["op_image"]
-        text_output_tokens = max(output_tokens - image_output_tokens, 0)
-        cost = (input_tokens / 1e6 * ip_rate
-                + text_output_tokens / 1e6 * op_text_rate
-                + image_output_tokens / 1e6 * op_image_rate)
-        return cost
+        return None
 
     if isinstance(pricing, list):
         if not flat_tier:
@@ -453,6 +451,78 @@ def apply_pricing_summary(df_summary: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------------
+# Discount anomaly detection (cost_discount > revenue_discount → 结构性亏损)
+# ---------------------------------------------------------------------------
+
+DISCOUNT_ANOMALY_TOL = 1e-9
+
+
+def detect_discount_anomalies(df: pd.DataFrame,
+                              tol: float = DISCOUNT_ANOMALY_TOL) -> pd.DataFrame:
+    """Find rows where cost_discount > revenue_discount (每单必亏).
+
+    Such rows usually mean the channel×model has no cost_discount configured
+    and falls back to the default 1.0 (全价计成本), while customer discount <1.
+
+    Returns an aggregated DataFrame keyed by
+    channel_id × model_name × cost_discount × revenue_discount with columns:
+    channel_id, model_name, cost_discount, revenue_discount,
+    list_price_usd, loss_usd, row_count. Empty DataFrame when no hit.
+    """
+    required = {"cost_discount", "revenue_discount", "list_price_usd"}
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame()
+
+    work = df.copy()
+    work["cost_discount"] = work["cost_discount"].astype(float)
+    work["revenue_discount"] = work["revenue_discount"].astype(float)
+    hits = work[work["cost_discount"] > work["revenue_discount"] + tol].copy()
+    if hits.empty:
+        return pd.DataFrame()
+
+    if "channel_id" not in hits.columns:
+        hits["channel_id"] = 0
+    if "model_name" not in hits.columns:
+        hits["model_name"] = hits.get("model", "*")
+
+    hits["list_price_usd"] = hits["list_price_usd"].astype(float)
+    if "cost_usd" in hits.columns and "revenue_usd" in hits.columns:
+        hits["loss_usd"] = hits["cost_usd"].astype(float) - hits["revenue_usd"].astype(float)
+    elif "profit_usd" in hits.columns:
+        hits["loss_usd"] = -hits["profit_usd"].astype(float)
+    else:
+        hits["loss_usd"] = hits["list_price_usd"] * (hits["cost_discount"] - hits["revenue_discount"])
+
+    grp = (hits.groupby(["channel_id", "model_name", "cost_discount", "revenue_discount"],
+                        dropna=False)
+               .agg(list_price_usd=("list_price_usd", "sum"),
+                    loss_usd=("loss_usd", "sum"),
+                    row_count=("list_price_usd", "size"))
+               .reset_index()
+               .sort_values("loss_usd", ascending=False))
+    return grp
+
+
+def log_discount_anomalies(anomalies: pd.DataFrame) -> None:
+    """Print a prominent WARNING for each cost_discount > revenue_discount hit."""
+    if anomalies is None or anomalies.empty:
+        return
+
+    total_loss = float(anomalies["loss_usd"].sum())
+    logger.warning(
+        "成本折扣高于客户折扣，存在结构性亏损（疑似渠道未配置 cost_discount，默认按 1.0 全价计成本）",
+        extra={"event": "discount_anomaly", "hit_groups": int(len(anomalies)),
+               "total_loss_usd": round(total_loss, 4)})
+    for _, r in anomalies.iterrows():
+        logger.warning(
+            "  渠道 %s × %s: cost_discount=%.4f > revenue_discount=%.4f | 刊例 $%.4f | 亏损 $%.4f",
+            r["channel_id"], r["model_name"],
+            float(r["cost_discount"]), float(r["revenue_discount"]),
+            float(r["list_price_usd"]), float(r["loss_usd"]))
+    logger.warning("  请到 discounts.json 为上述渠道×模型补配 cost_discount")
+
+
+# ---------------------------------------------------------------------------
 # Discount summary helpers
 # ---------------------------------------------------------------------------
 
@@ -526,6 +596,16 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
         cw_rem_raw = o.get("tiered_cache_creation_tokens_remaining")
         cw_rem = cw_rem_raw if cw_rem_raw is not None else max(cw - cw_5m - cw_1h, 0)
         is_new = "tiered_cache_store_price" in o
+        # 条件计费乘数（时段 / 请求头 / 请求体）快照。系统在结算时已把该乘数计入 quota，
+        # 这里读取后用于刊例价(expected_usd)复算，保证与 billed 口径一致。
+        # 老日志无该字段时默认 1.0，向后兼容。
+        cond_mult_raw = o.get("billing_cond_multiplier")
+        try:
+            cond_mult = float(cond_mult_raw) if cond_mult_raw is not None else 1.0
+        except (TypeError, ValueError):
+            cond_mult = 1.0
+        if cond_mult <= 0:
+            cond_mult = 1.0
         # Gemini image generation fields
         img_out_tokens = o.get("image_completion_tokens", 0) or 0
         img_out_ratio  = o.get("image_completion_ratio")
@@ -536,6 +616,7 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
             "ch": ch, "cw": cw,
             "cw_5m": cw_5m, "cw_1h": cw_1h, "cw_rem": cw_rem,
             "is_new": is_new,
+            "cond_mult": cond_mult,
             "ip_new":     o.get("tiered_input_price"),
             "op_new":     o.get("tiered_output_price"),
             "chp_new":    o.get("tiered_cache_hit_price"),
@@ -694,6 +775,11 @@ def recalc_from_raw(df: pd.DataFrame,
                        + mm_img / 1e6 * mm_op_image)
             expected_usd = expected_usd.copy()
             expected_usd.loc[mm_mask] = mm_cost.values
+
+    # 条件计费乘数：刊例价复算乘上系统记录的乘数，保持与 billed 口径一致。
+    # 老日志无 billing_cond_multiplier 字段时该列为 1.0，不影响历史复算结果。
+    if "cond_mult" in df.columns:
+        expected_usd = expected_usd * df["cond_mult"].astype(float).fillna(1.0)
 
     billed_usd = df["quota"].astype(float) / QUOTA_TO_USD
 

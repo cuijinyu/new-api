@@ -279,6 +279,9 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	totalInputForClaude := promptTokens + cacheTokens + cacheCreationTokens
 	claudeInputMult, claudeOutputMult := ratio_setting.GetClaude200KMultipliers(modelName, totalInputForClaude)
 
+	// 条件计费乘数（时段 / 请求头 / 请求体）：与预扣费共用同一份求值结果，仅乘到 token 计费部分。
+	condMult := relayInfo.PriceData.CondMultiplier()
+
 	calculateQuota := 0.0
 	if relayInfo.PriceData.UseTieredPricing && relayInfo.PriceData.TieredPricingData != nil {
 		tieredData := relayInfo.PriceData.TieredPricingData
@@ -336,7 +339,7 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 			Add(dCacheCreationTokens5m.Mul(dCacheStorePrice5m).Div(dMillion)).
 			Add(dCacheCreationTokens1h.Mul(dCacheStorePrice1h).Div(dMillion))
 
-		quotaCalculateDecimal := inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quotaCalculateDecimal := inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).Mul(dQuotaPerUnit).Mul(dGroupRatio).Mul(decimal.NewFromFloat(condMult))
 		calculateQuota = quotaCalculateDecimal.InexactFloat64()
 		modelPrice = inputQuota.Add(outputQuota).Add(cacheQuota).Add(cacheCreationQuota).InexactFloat64()
 	} else if !relayInfo.PriceData.UsePrice {
@@ -356,8 +359,9 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		} else {
 			calculateQuota = (promptQuota + completionQuota) * groupRatio * modelRatio
 		}
+		calculateQuota *= condMult
 	} else {
-		calculateQuota = modelPrice * common.QuotaPerUnit * groupRatio
+		calculateQuota = modelPrice * common.QuotaPerUnit * groupRatio * condMult
 	}
 
 	if modelRatio != 0 && calculateQuota <= 0 {
@@ -463,6 +467,7 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		other["tiered_prompt_tokens_include_cache"] = false
 		other["tiered_tier_range"] = fmt.Sprintf("%d-%d", tieredData.TierMinTokens, tieredData.TierMaxTokens)
 	}
+	AppendConditionalPricingOther(other, &relayInfo.PriceData)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     promptTokens,

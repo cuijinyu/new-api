@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -25,6 +25,9 @@ const CASE_OPTIONS = [
   { value: 'openai_chat', label: 'OpenAI Chat' },
   { value: 'openai_chat_stream', label: 'OpenAI Chat Stream' },
   { value: 'openai_responses', label: 'OpenAI Responses' },
+  { value: 'openai_chat_image', label: 'OpenAI Chat + 图片输入' },
+  { value: 'openai_stream_image', label: 'OpenAI Chat Stream + 图片输入' },
+  { value: 'openai_responses_image', label: 'OpenAI Responses + 图片输入' },
   { value: 'openai_image', label: 'OpenAI Images' },
   { value: 'gemini_native', label: 'Gemini Native' },
   { value: 'gemini_stream', label: 'Gemini Stream' },
@@ -37,12 +40,16 @@ const BillingProbePage = () => {
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const fileInputRef = useRef(null);
   const [form, setForm] = useState({
     token_id: undefined,
     channel_id: undefined,
     models: [],
     cases: ['openai_chat'],
     prompt: 'Please reply with one short sentence for a billing validation probe.',
+    input_image_data: '',
+    input_image_mime_type: '',
     max_tokens: 32,
     timeout_seconds: 180,
     log_wait_seconds: 35,
@@ -77,19 +84,28 @@ const BillingProbePage = () => {
   }, [loadMeta]);
 
   const selectedChannel = useMemo(
-    () => channels.find((c) => c.id === form.channel_id),
+    () => channels.find((c) => String(c.id) === String(form.channel_id)),
     [channels, form.channel_id],
   );
 
   const modelOptions = useMemo(() => {
-    const models = selectedChannel?.models || '';
-    return models
-      .split(',')
+    const sourceChannels = selectedChannel ? [selectedChannel] : channels;
+    const models = new Set();
+    sourceChannels.forEach((channel) => {
+      const rawModels = Array.isArray(channel.models)
+        ? channel.models
+        : String(channel.models || '').split(',');
+      rawModels
+        .map((m) => String(m).trim())
+        .filter(Boolean)
+        .forEach((m) => models.add(m));
+    });
+    return Array.from(models)
       .map((m) => m.trim())
       .filter(Boolean)
       .sort()
       .map((m) => ({ value: m, label: m }));
-  }, [selectedChannel]);
+  }, [channels, selectedChannel]);
 
   const channelOptions = useMemo(
     () =>
@@ -108,6 +124,42 @@ const BillingProbePage = () => {
       })),
     [tokens],
   );
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) {
+      showError('请选择图片文件');
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      showError('图片最大 6MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      setImagePreview(dataUrl);
+      setForm((prev) => ({
+        ...prev,
+        input_image_data: dataUrl,
+        input_image_mime_type: file.type || 'image/png',
+      }));
+    };
+    reader.onerror = () => showError('读取图片失败');
+    reader.readAsDataURL(file);
+  };
+
+  const clearInputImage = () => {
+    setImagePreview('');
+    setForm((prev) => ({
+      ...prev,
+      input_image_data: '',
+      input_image_mime_type: '',
+    }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const runProbe = async () => {
     if (!form.token_id) {
@@ -189,6 +241,11 @@ const BillingProbePage = () => {
           {record.image_tokens ? (
             <Text type='tertiary' style={{ display: 'block' }}>
               image: {record.image_tokens}
+            </Text>
+          ) : null}
+          {record.input_image_tokens ? (
+            <Text type='tertiary' style={{ display: 'block' }}>
+              input image: {record.input_image_tokens}
             </Text>
           ) : null}
         </div>
@@ -328,6 +385,37 @@ const BillingProbePage = () => {
             value={form.prompt}
             onChange={(v) => setForm((prev) => ({ ...prev, prompt: v }))}
           />
+        </div>
+
+        <div className='mb-4'>
+          <Form.Label>图片输入</Form.Label>
+          <div className='flex items-center gap-3 flex-wrap'>
+            <input
+              ref={fileInputRef}
+              type='file'
+              accept='image/*'
+              style={{ display: 'none' }}
+              onChange={(e) => handleImageFile(e.target.files?.[0])}
+            />
+            <Button onClick={() => fileInputRef.current?.click()}>
+              选择图片
+            </Button>
+            {imagePreview ? (
+              <>
+                <img
+                  src={imagePreview}
+                  alt='input preview'
+                  style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }}
+                />
+                <Text type='tertiary'>{form.input_image_mime_type}</Text>
+                <Button type='danger' onClick={clearInputImage}>
+                  移除图片
+                </Button>
+              </>
+            ) : (
+              <Text type='tertiary'>用于 Gemini Edit 和 OpenAI 图片输入场景</Text>
+            )}
+          </div>
         </div>
 
         <Space>
