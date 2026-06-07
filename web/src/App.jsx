@@ -44,6 +44,7 @@ import Task from './pages/Task';
 import ModelPage from './pages/Model';
 import InvoicePage from './pages/Invoice';
 import DiagnosticPage from './pages/Diagnostic';
+import BillingProbePage from './pages/BillingProbe';
 import ReconciliationPage from './pages/Reconciliation';
 import Playground from './pages/Playground';
 import OAuth2Callback from './components/auth/OAuth2Callback';
@@ -117,6 +118,14 @@ function App() {
           element={
             <AdminRoute>
               <DiagnosticPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/billing-probe'
+          element={
+            <AdminRoute>
+              <BillingProbePage />
             </AdminRoute>
           }
         />

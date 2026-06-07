@@ -65,6 +65,7 @@ export const useSidebar = () => {
       user: true,
       invoice: true,
       diagnostic: true,
+      billing_probe: true,
       reconciliation: true,
       setting: true,
     },
@@ -75,7 +76,26 @@ export const useSidebar = () => {
     if (statusState?.status?.SidebarModulesAdmin) {
       try {
         const config = JSON.parse(statusState.status.SidebarModulesAdmin);
-        return config;
+        return {
+          ...defaultAdminConfig,
+          ...config,
+          admin: {
+            ...defaultAdminConfig.admin,
+            ...(config.admin || {}),
+          },
+          console: {
+            ...defaultAdminConfig.console,
+            ...(config.console || {}),
+          },
+          personal: {
+            ...defaultAdminConfig.personal,
+            ...(config.personal || {}),
+          },
+          chat: {
+            ...defaultAdminConfig.chat,
+            ...(config.chat || {}),
+          },
+        };
       } catch (error) {
         return defaultAdminConfig;
       }

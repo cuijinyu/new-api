@@ -66,6 +66,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       user: true,
       invoice: true,
       diagnostic: true,
+      billing_probe: true,
       reconciliation: true,
       setting: true,
     },
@@ -128,6 +129,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         user: true,
         invoice: true,
         diagnostic: true,
+        billing_probe: true,
         reconciliation: true,
         setting: true,
       },
@@ -176,7 +178,14 @@ export default function SettingsSidebarModulesAdmin(props) {
     if (props.options && props.options.SidebarModulesAdmin) {
       try {
         const modules = JSON.parse(props.options.SidebarModulesAdmin);
-        setSidebarModulesAdmin(modules);
+        setSidebarModulesAdmin({
+          ...sidebarModulesAdmin,
+          ...modules,
+          admin: {
+            ...sidebarModulesAdmin.admin,
+            ...(modules.admin || {}),
+          },
+        });
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
@@ -198,6 +207,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             user: true,
             invoice: true,
             diagnostic: true,
+            billing_probe: true,
             reconciliation: true,
             setting: true,
           },
@@ -273,6 +283,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'diagnostic',
           title: t('模型诊断'),
           description: t('模型诊断工具'),
+        },
+        {
+          key: 'billing_probe',
+          title: t('计费校验'),
+          description: t('真实请求扣费校验'),
         },
         {
           key: 'reconciliation',

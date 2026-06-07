@@ -76,6 +76,7 @@ import {
   FileText,
   Stethoscope,
   Scale,
+  ReceiptText,
 } from 'lucide-react';
 
 // 获取侧边栏Lucide图标组件
@@ -123,6 +124,8 @@ export function getLucideIcon(key, selected = false) {
       return <FileText {...commonProps} color={iconColor} />;
     case 'diagnostic':
       return <Stethoscope {...commonProps} color={iconColor} />;
+    case 'billing_probe':
+      return <ReceiptText {...commonProps} color={iconColor} />;
     case 'reconciliation':
       return <Scale {...commonProps} color={iconColor} />;
     default:

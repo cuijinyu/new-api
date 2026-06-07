@@ -54,25 +54,52 @@ type GeminiBillingProbeResponse struct {
 }
 
 type GeminiBillingProbeResult struct {
-	Name             string         `json:"name"`
-	Model            string         `json:"model"`
-	Case             string         `json:"case"`
-	HTTPStatus       int            `json:"http_status"`
-	RequestID        string         `json:"request_id,omitempty"`
-	HasImage         bool           `json:"has_image"`
-	LogID            int            `json:"log_id,omitempty"`
-	ChannelID        int            `json:"channel_id,omitempty"`
-	Quota            int            `json:"quota,omitempty"`
-	ExpectedQuota    int            `json:"expected_quota,omitempty"`
-	Delta            int            `json:"delta,omitempty"`
-	PromptTokens     int            `json:"prompt_tokens,omitempty"`
-	CompletionTokens int            `json:"completion_tokens,omitempty"`
-	ImageTokens      int            `json:"image_tokens,omitempty"`
-	TokenSource      string         `json:"token_source,omitempty"`
-	IsStream         bool           `json:"is_stream"`
-	Status           string         `json:"status"`
-	Message          string         `json:"message,omitempty"`
-	Other            map[string]any `json:"other,omitempty"`
+	Name             string                   `json:"name"`
+	Model            string                   `json:"model"`
+	Case             string                   `json:"case"`
+	HTTPStatus       int                      `json:"http_status"`
+	RequestID        string                   `json:"request_id,omitempty"`
+	HasImage         bool                     `json:"has_image"`
+	LogID            int                      `json:"log_id,omitempty"`
+	ChannelID        int                      `json:"channel_id,omitempty"`
+	Quota            int                      `json:"quota,omitempty"`
+	ExpectedQuota    int                      `json:"expected_quota,omitempty"`
+	Delta            int                      `json:"delta,omitempty"`
+	PromptTokens     int                      `json:"prompt_tokens,omitempty"`
+	CompletionTokens int                      `json:"completion_tokens,omitempty"`
+	ImageTokens      int                      `json:"image_tokens,omitempty"`
+	TokenSource      string                   `json:"token_source,omitempty"`
+	IsStream         bool                     `json:"is_stream"`
+	Billing          *GeminiBillingDebitCheck `json:"billing,omitempty"`
+	Status           string                   `json:"status"`
+	Message          string                   `json:"message,omitempty"`
+	Other            map[string]any           `json:"other,omitempty"`
+}
+
+type GeminiBillingDebitCheck struct {
+	UserID                 int      `json:"user_id,omitempty"`
+	TokenID                int      `json:"token_id,omitempty"`
+	ChannelID              int      `json:"channel_id,omitempty"`
+	ExpectedDebit          int      `json:"expected_debit"`
+	UserQuotaBefore        int      `json:"user_quota_before"`
+	UserQuotaAfter         int      `json:"user_quota_after"`
+	ActualUserQuotaDebit   int      `json:"actual_user_quota_debit"`
+	UserUsedQuotaBefore    int      `json:"user_used_quota_before"`
+	UserUsedQuotaAfter     int      `json:"user_used_quota_after"`
+	ActualUserUsedDelta    int      `json:"actual_user_used_delta"`
+	UserRequestCountBefore int      `json:"user_request_count_before"`
+	UserRequestCountAfter  int      `json:"user_request_count_after"`
+	TokenRemainBefore      int      `json:"token_remain_before"`
+	TokenRemainAfter       int      `json:"token_remain_after"`
+	ActualTokenDebit       int      `json:"actual_token_debit"`
+	TokenUsedBefore        int      `json:"token_used_before"`
+	TokenUsedAfter         int      `json:"token_used_after"`
+	ActualTokenUsedDelta   int      `json:"actual_token_used_delta"`
+	ChannelUsedBefore      int64    `json:"channel_used_before,omitempty"`
+	ChannelUsedAfter       int64    `json:"channel_used_after,omitempty"`
+	ActualChannelUsedDelta int64    `json:"actual_channel_used_delta,omitempty"`
+	Settled                bool     `json:"settled"`
+	Mismatches             []string `json:"mismatches,omitempty"`
 }
 
 type geminiBillingLog struct {
@@ -85,6 +112,19 @@ type geminiBillingLog struct {
 	ChannelID        int `gorm:"column:channel_id"`
 	RequestID        string
 	Other            string
+}
+
+type geminiBillingBalanceSnapshot struct {
+	UserID           int
+	TokenID          int
+	ChannelID        int
+	UserQuota        int
+	UserUsedQuota    int
+	UserRequestCount int
+	TokenRemainQuota int
+	TokenUsedQuota   int
+	ChannelUsedQuota int64
+	HasChannel       bool
 }
 
 // DiagnosticGeminiBillingProbe runs real Gemini image requests through the local relay
@@ -134,7 +174,7 @@ func DiagnosticGeminiBillingProbe(c *gin.Context) {
 	results := make([]GeminiBillingProbeResult, 0, len(models)*len(cases))
 	for _, modelName := range models {
 		for _, testCase := range cases {
-			results = append(results, runGeminiBillingProbeCase(client, baseURL, apiKey, tokenID, modelName, testCase, prompt, logWait))
+			results = append(results, runGeminiBillingProbeCase(client, baseURL, apiKey, tokenID, req.ChannelID, modelName, testCase, prompt, logWait))
 		}
 	}
 
@@ -223,12 +263,22 @@ func normalizeGeminiBillingCases(cases []string) []string {
 	return dedupeStrings(out)
 }
 
-func runGeminiBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID int, modelName, testCase, prompt string, logWait time.Duration) GeminiBillingProbeResult {
+func runGeminiBillingProbeCase(client *http.Client, baseURL, apiKey string, tokenID int, requestedChannelID int, modelName, testCase, prompt string, logWait time.Duration) GeminiBillingProbeResult {
 	result := GeminiBillingProbeResult{
 		Name:   modelName + "/" + testCase,
 		Model:  modelName,
 		Case:   testCase,
 		Status: "fail",
+	}
+	if tokenID == 0 {
+		result.Message = "end-to-end debit check requires a system token"
+		return result
+	}
+
+	beforeBalance, err := readGeminiBillingBalanceSnapshot(tokenID, requestedChannelID)
+	if err != nil {
+		result.Message = "read balance before request failed: " + err.Error()
+		return result
 	}
 
 	startedAt := common.GetTimestamp()
@@ -278,9 +328,17 @@ func runGeminiBillingProbeCase(client *http.Client, baseURL, apiKey string, toke
 	result.TokenSource = geminiBillingStringField(other, "gemini_image_output_token_source")
 	result.IsStream = logRow.IsStream
 	result.Other = other
+	result.Billing = waitGeminiBillingDebitCheck(beforeBalance, logRow.ChannelID, expectedQuota, logWait)
 
 	if result.Delta != 0 {
 		result.Message = fmt.Sprintf("quota 不一致: actual=%d expected=%d delta=%d", result.Quota, result.ExpectedQuota, result.Delta)
+		return result
+	}
+	if result.Billing == nil || !result.Billing.Settled {
+		result.Message = "actual debit does not match expected quota"
+		if result.Billing != nil && len(result.Billing.Mismatches) > 0 {
+			result.Message += ": " + strings.Join(result.Billing.Mismatches, ", ")
+		}
 		return result
 	}
 	if result.HasImage && result.ImageTokens == 0 {
@@ -294,8 +352,114 @@ func runGeminiBillingProbeCase(client *http.Client, baseURL, apiKey string, toke
 	}
 
 	result.Status = "pass"
-	result.Message = "quota 与 consume log 复算一致"
+	result.Message = "generation, consume log and actual debit are consistent"
 	return result
+}
+
+func readGeminiBillingBalanceSnapshot(tokenID int, channelID int) (*geminiBillingBalanceSnapshot, error) {
+	var token model.Token
+	if err := model.DB.Select("id", "user_id", "remain_quota", "used_quota").
+		Where("id = ?", tokenID).
+		First(&token).Error; err != nil {
+		return nil, err
+	}
+
+	var user model.User
+	if err := model.DB.Select("id", "quota", "used_quota", "request_count").
+		Where("id = ?", token.UserId).
+		First(&user).Error; err != nil {
+		return nil, err
+	}
+
+	snapshot := &geminiBillingBalanceSnapshot{
+		UserID:           user.Id,
+		TokenID:          token.Id,
+		ChannelID:        channelID,
+		UserQuota:        user.Quota,
+		UserUsedQuota:    user.UsedQuota,
+		UserRequestCount: user.RequestCount,
+		TokenRemainQuota: token.RemainQuota,
+		TokenUsedQuota:   token.UsedQuota,
+	}
+	if channelID > 0 {
+		var channel model.Channel
+		if err := model.DB.Select("id", "used_quota").
+			Where("id = ?", channelID).
+			First(&channel).Error; err != nil {
+			return nil, err
+		}
+		snapshot.ChannelID = channel.Id
+		snapshot.ChannelUsedQuota = channel.UsedQuota
+		snapshot.HasChannel = true
+	}
+	return snapshot, nil
+}
+
+func waitGeminiBillingDebitCheck(before *geminiBillingBalanceSnapshot, actualChannelID int, expectedDebit int, wait time.Duration) *GeminiBillingDebitCheck {
+	channelID := before.ChannelID
+	deadline := time.Now().Add(wait)
+
+	for {
+		after, err := readGeminiBillingBalanceSnapshot(before.TokenID, channelID)
+		if err == nil {
+			if after.ChannelID == 0 {
+				after.ChannelID = actualChannelID
+			}
+			check := buildGeminiBillingDebitCheck(before, after, expectedDebit)
+			if check.Settled || time.Now().After(deadline) {
+				return check
+			}
+		} else if time.Now().After(deadline) {
+			return &GeminiBillingDebitCheck{
+				UserID:        before.UserID,
+				TokenID:       before.TokenID,
+				ChannelID:     actualChannelID,
+				ExpectedDebit: expectedDebit,
+				Settled:       false,
+				Mismatches:    []string{"balance_snapshot_error: " + err.Error()},
+			}
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func buildGeminiBillingDebitCheck(before, after *geminiBillingBalanceSnapshot, expectedDebit int) *GeminiBillingDebitCheck {
+	check := &GeminiBillingDebitCheck{
+		UserID:                 before.UserID,
+		TokenID:                before.TokenID,
+		ChannelID:              after.ChannelID,
+		ExpectedDebit:          expectedDebit,
+		UserQuotaBefore:        before.UserQuota,
+		UserQuotaAfter:         after.UserQuota,
+		ActualUserQuotaDebit:   before.UserQuota - after.UserQuota,
+		UserUsedQuotaBefore:    before.UserUsedQuota,
+		UserUsedQuotaAfter:     after.UserUsedQuota,
+		ActualUserUsedDelta:    after.UserUsedQuota - before.UserUsedQuota,
+		UserRequestCountBefore: before.UserRequestCount,
+		UserRequestCountAfter:  after.UserRequestCount,
+		TokenRemainBefore:      before.TokenRemainQuota,
+		TokenRemainAfter:       after.TokenRemainQuota,
+		ActualTokenDebit:       before.TokenRemainQuota - after.TokenRemainQuota,
+		TokenUsedBefore:        before.TokenUsedQuota,
+		TokenUsedAfter:         after.TokenUsedQuota,
+		ActualTokenUsedDelta:   after.TokenUsedQuota - before.TokenUsedQuota,
+		ChannelUsedBefore:      before.ChannelUsedQuota,
+		ChannelUsedAfter:       after.ChannelUsedQuota,
+		ActualChannelUsedDelta: after.ChannelUsedQuota - before.ChannelUsedQuota,
+		Settled:                true,
+	}
+	if check.ActualUserQuotaDebit != expectedDebit {
+		check.Mismatches = append(check.Mismatches, fmt.Sprintf("user_quota_debit=%d expected=%d", check.ActualUserQuotaDebit, expectedDebit))
+	}
+	if check.ActualTokenDebit != expectedDebit {
+		check.Mismatches = append(check.Mismatches, fmt.Sprintf("token_remain_debit=%d expected=%d", check.ActualTokenDebit, expectedDebit))
+	}
+	if before.HasChannel && check.ActualChannelUsedDelta != int64(expectedDebit) {
+		check.Mismatches = append(check.Mismatches, fmt.Sprintf("channel_used_delta=%d expected=%d", check.ActualChannelUsedDelta, expectedDebit))
+	}
+	check.Settled = len(check.Mismatches) == 0
+	return check
 }
 
 func callGeminiBillingProbe(client *http.Client, baseURL, apiKey, modelName, testCase, prompt string) (body string, requestID string, statusCode int, err error) {
@@ -350,7 +514,7 @@ func geminiBillingNativePayload(prompt string, withImage bool) map[string]any {
 		parts = append(parts, map[string]any{
 			"inlineData": map[string]any{
 				"mimeType": "image/png",
-				"data":     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+				"data":     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABFElEQVR4nO3azU3DQBRF4ZMj10E/I5YUQQOUQQMUwRJNP+kBCbFiwQaJoAi/cewb51v6Z3Sfn/U0snx4//gkmYSTcBJOwkk4CSfhpr9OPLwc2ZjXx7sr7ICEk3ASTsJJOAkn4SSchJNr3QsV9fun3wfb2zPbL6Cfiv7z1NgypstEX64ML5x+9vXLFjAvzZAaBhRQydHLNcSPUYv31x9hr62w7w70QZOkF9bZdwe2QMJJOAkney6gDdpRtsI6++4AI5rQaivsvgPUHmErN3BMB+blGDIDhr1C/00zaoJNjPOd6ezWcrtfJc6WkfFdaLmsJ93G6NoknISTcBJOwkk4CSfhJNzh9uPryiSchJNwEs61A1R9Afr9PeVrQYVhAAAAAElFTkSuQmCC",
 			},
 		})
 	}
