@@ -30,16 +30,36 @@ type PriceData struct {
 	CacheCreationRatio   float64
 	CacheCreation5mRatio float64
 	CacheCreation1hRatio float64
-	ImageRatio              float64
-	ImageCompletionRatio    float64
-	AudioRatio              float64
-	AudioCompletionRatio    float64
+	ImageRatio           float64
+	ImageCompletionRatio float64
+	AudioRatio           float64
+	AudioCompletionRatio float64
 	OtherRatios          map[string]float64
 	UsePrice             bool
 	QuotaToPreConsume    int // 预消耗额度
 	GroupRatioInfo       GroupRatioInfo
 	UseTieredPricing     bool               // 是否使用分段价格
 	TieredPricingData    *TieredPricingInfo // 分段价格数据（如果启用）
+	// ConditionalPricing 条件计费乘数（时段 / 请求头 / 请求体）。
+	// 预扣费与结算两处共用同一份求值结果，保证一致并写入对账快照。
+	// 为 nil 或 Multiplier<=0 时表示未命中，乘数视为 1.0。
+	ConditionalPricing *ConditionalPricingInfo
+}
+
+// ConditionalPricingInfo 条件计费命中快照。
+type ConditionalPricingInfo struct {
+	Multiplier   float64           // 命中乘数（未命中为 1.0）
+	Matched      bool              // 是否命中
+	MatchedRules []string          // 命中规则标识
+	FieldValues  map[string]string // 被引用 header/param 字段的实际取值
+}
+
+// CondMultiplier 返回有效的条件乘数（nil / 非法时回退 1.0）。
+func (p PriceData) CondMultiplier() float64 {
+	if p.ConditionalPricing == nil || p.ConditionalPricing.Multiplier <= 0 {
+		return 1.0
+	}
+	return p.ConditionalPricing.Multiplier
 }
 
 type PerCallPriceData struct {

@@ -118,6 +118,29 @@ func GenerateClaudeOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	return info
 }
 
+// AppendConditionalPricingOther 把条件计费命中的快照写入结算日志 other。
+// 仅在命中（Matched 且乘数 != 1.0）时写入，老日志无该字段时对账按 1.0 处理，向后兼容。
+// 快照字段与现有 tiered_* 并列，对账侧只需读 billing_cond_multiplier 即可复算。
+func AppendConditionalPricingOther(other map[string]interface{}, priceData *types.PriceData) {
+	if other == nil || priceData == nil {
+		return
+	}
+	cp := priceData.ConditionalPricing
+	if cp == nil || !cp.Matched {
+		return
+	}
+	if cp.Multiplier <= 0 || cp.Multiplier == 1.0 {
+		return
+	}
+	other["billing_cond_multiplier"] = cp.Multiplier
+	if len(cp.MatchedRules) > 0 {
+		other["billing_cond_matched"] = strings.Join(cp.MatchedRules, ",")
+	}
+	if len(cp.FieldValues) > 0 {
+		other["billing_cond_fields"] = cp.FieldValues
+	}
+}
+
 func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData types.PerCallPriceData) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_price"] = priceData.ModelPrice

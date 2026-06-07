@@ -29,6 +29,7 @@ import {
   Tooltip,
   Select,
   Modal,
+  Switch,
 } from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 import {
@@ -105,6 +106,18 @@ export default function UpstreamRatioSync(props) {
   // 差异数据和测试结果
   const [differences, setDifferences] = useState({});
   const [resolutions, setResolutions] = useState({});
+
+  // 计费模式分桶：{ model: 'text' | 'tiered' | 'image' | 'once' }
+  const [categories, setCategories] = useState({});
+
+  // 价格源选择：'channel'（其他 new-api 渠道）/ 'models.dev' / 'openrouter'
+  const [source, setSource] = useState('channel');
+  // 外部源的指定模型（逗号/空格分隔，支持通配 *），留空=全量
+  const [modelsInput, setModelsInput] = useState('');
+  // 仅同步本站已有模型
+  const [onlyExisting, setOnlyExisting] = useState(false);
+  // 排除名单（逗号/空格分隔，支持通配 *）
+  const [excludeInput, setExcludeInput] = useState('');
 
   // 是否已经执行过同步
   const [hasSynced, setHasSynced] = useState(false);
@@ -214,7 +227,11 @@ export default function UpstreamRatioSync(props) {
         return;
       }
 
-      const { differences = {}, test_results = [] } = res.data.data;
+      const {
+        differences = {},
+        test_results = [],
+        categories = {},
+      } = res.data.data;
 
       const errorResults = test_results.filter((r) => r.status === 'error');
       if (errorResults.length > 0) {
@@ -225,6 +242,7 @@ export default function UpstreamRatioSync(props) {
       }
 
       setDifferences(differences);
+      setCategories(categories);
       setResolutions({});
       setHasSynced(true);
 
@@ -237,6 +255,107 @@ export default function UpstreamRatioSync(props) {
       setSyncLoading(false);
     }
   };
+
+  // 解析“指定模型/排除名单”输入：逗号、空格或换行分隔
+  const parseModelList = (raw) =>
+    (raw || '')
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  // 计算外部源默认勾选项：仅对“纯文本 + 新增（本地未设置）”自动勾选
+  const computeDefaultResolutions = (diffs, cats, channelName) => {
+    const res = {};
+    Object.entries(diffs).forEach(([model, ratioTypes]) => {
+      if ((cats[model] || 'text') !== 'text') return;
+      Object.entries(ratioTypes).forEach(([ratioType, diff]) => {
+        if (diff.current !== null && diff.current !== undefined) return; // 只增不改
+        const val = diff.upstreams?.[channelName];
+        if (val === null || val === undefined || val === 'same') return;
+        if (!res[model]) res[model] = {};
+        res[model][ratioType] = val;
+      });
+    });
+    return res;
+  };
+
+  // 从外部价格源（models.dev / OpenRouter）获取价格预览（仅预览，不落库）
+  const fetchRatiosFromSource = async () => {
+    setSyncLoading(true);
+    const payload = {
+      source,
+      models: parseModelList(modelsInput),
+      only_existing: onlyExisting,
+      exclude_models: parseModelList(excludeInput),
+      timeout: 20,
+    };
+
+    try {
+      const res = await API.post('/api/ratio_sync/fetch', payload);
+
+      if (!res.data.success) {
+        showError(res.data.message || t('获取价格失败'));
+        setSyncLoading(false);
+        return;
+      }
+
+      const {
+        differences = {},
+        categories = {},
+      } = res.data.data;
+
+      const sourceChannelName = source === 'openrouter' ? 'OpenRouter' : 'models.dev';
+
+      setDifferences(differences);
+      setCategories(categories);
+      setResolutions(
+        computeDefaultResolutions(differences, categories, sourceChannelName),
+      );
+      setHasSynced(true);
+
+      if (Object.keys(differences).length === 0) {
+        showSuccess(t('未找到差异化倍率，无需同步'));
+      }
+    } catch (e) {
+      showError(t('请求后端接口失败：') + e.message);
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // 计费模式分桶元信息（标签/颜色/提示）
+  const categoryMeta = (cat) => {
+    switch (cat) {
+      case 'tiered':
+        return {
+          label: t('分段计费'),
+          color: 'purple',
+          tip: t(
+            '运行时由分段价计费，扁平同步仅供参考，覆盖会被运行时忽略，默认不勾选',
+          ),
+        };
+      case 'image':
+        return {
+          label: t('图片计费'),
+          color: 'orange',
+          tip: t(
+            '运行时由图片专用价（尺寸/质量/张数或图片token倍率）计费，扁平同步仅供参考，默认不勾选',
+          ),
+        };
+      case 'once':
+        return {
+          label: t('按次计费'),
+          color: 'blue',
+          tip: t('运行时由固定价格（按次）计费，扁平同步仅供参考，默认不勾选'),
+        };
+      default:
+        return { label: t('纯文本'), color: 'green', tip: '' };
+    }
+  };
+
+  // 判断某模型是否需复核（非纯文本，默认不勾选并置灰）
+  const isLockedModel = (model) =>
+    (categories[model] || 'text') !== 'text';
 
   function getBillingCategory(ratioType) {
     return ratioType === 'model_price' ? 'price' : 'ratio';
@@ -426,18 +545,58 @@ export default function UpstreamRatioSync(props) {
     <div className='flex flex-col w-full'>
       <div className='flex flex-col md:flex-row justify-between items-center gap-4 w-full'>
         <div className='flex flex-col md:flex-row gap-2 w-full md:w-auto order-2 md:order-1'>
-          <Button
-            icon={<RefreshCcw size={14} />}
-            className='w-full md:w-auto mt-2'
-            onClick={() => {
-              setModalVisible(true);
-              if (allChannels.length === 0) {
-                fetchAllChannels();
-              }
-            }}
+          <Select
+            value={source}
+            onChange={setSource}
+            className='w-full md:w-44 mt-2'
+            insetLabel={t('价格源')}
           >
-            {t('选择同步渠道')}
-          </Button>
+            <Select.Option value='channel'>
+              {t('其他 new-api 渠道')}
+            </Select.Option>
+            <Select.Option value='models.dev'>models.dev</Select.Option>
+            <Select.Option value='openrouter'>OpenRouter</Select.Option>
+          </Select>
+
+          {source === 'channel' ? (
+            <Button
+              icon={<RefreshCcw size={14} />}
+              className='w-full md:w-auto mt-2'
+              onClick={() => {
+                setModalVisible(true);
+                if (allChannels.length === 0) {
+                  fetchAllChannels();
+                }
+              }}
+            >
+              {t('选择同步渠道')}
+            </Button>
+          ) : (
+            <>
+              <Input
+                placeholder={t('指定模型(逗号/空格分隔, 支持 *), 留空=全量')}
+                value={modelsInput}
+                onChange={setModelsInput}
+                className='w-full md:w-72 mt-2'
+                showClear
+                disabled={onlyExisting}
+              />
+              <div className='flex items-center gap-2 mt-2'>
+                <Switch checked={onlyExisting} onChange={setOnlyExisting} size='small' />
+                <span className='text-sm'>{t('仅本站已有模型')}</span>
+              </div>
+              <Button
+                icon={<RefreshCcw size={14} />}
+                type='primary'
+                theme='solid'
+                className='w-full md:w-auto mt-2'
+                loading={syncLoading}
+                onClick={fetchRatiosFromSource}
+              >
+                {t('获取价格')}
+              </Button>
+            </>
+          )}
 
           {(() => {
             const hasSelections = Object.keys(resolutions).length > 0;
@@ -483,6 +642,23 @@ export default function UpstreamRatioSync(props) {
           </div>
         </div>
       </div>
+
+      {source !== 'channel' && (
+        <div className='flex flex-col gap-2 w-full mt-2'>
+          <Input
+            placeholder={t('排除模型(逗号/空格分隔, 支持 *), 命中者不出现在预览中')}
+            value={excludeInput}
+            onChange={setExcludeInput}
+            className='w-full md:w-96'
+            showClear
+          />
+          <div className='text-xs text-gray-500'>
+            {t(
+              '外部源仅提供扁平 token 价：model_ratio = 输入价(USD/1M) / 2，completion_ratio = 输出价 / 输入价。仅供预览，勾选后才会落库。分段/图片/按次模型默认不勾选（运行时由分段价/图片专用价/按次计费）。',
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -508,12 +684,13 @@ export default function UpstreamRatioSync(props) {
             upstreams: diff.upstreams,
             confidence: diff.confidence || {},
             billingConflict,
+            category: categories[model] || 'text',
           });
         });
       });
 
       return tmp;
-    }, [differences]);
+    }, [differences, categories]);
 
     const filteredDataSource = useMemo(() => {
       if (!searchKeyword.trim() && !ratioTypeFilter) {
@@ -553,8 +730,12 @@ export default function UpstreamRatioSync(props) {
               : Object.keys(differences).length === 0
                 ? hasSynced
                   ? t('暂无差异化倍率显示')
-                  : t('请先选择同步渠道')
-                : t('请先选择同步渠道')
+                  : source === 'channel'
+                    ? t('请先选择同步渠道')
+                    : t('请点击“获取价格”拉取价目表')
+                : source === 'channel'
+                  ? t('请先选择同步渠道')
+                  : t('请点击“获取价格”拉取价目表')
           }
           style={{ padding: 30 }}
         />
@@ -566,6 +747,27 @@ export default function UpstreamRatioSync(props) {
         title: t('模型'),
         dataIndex: 'model',
         fixed: 'left',
+      },
+      {
+        title: t('计费模式'),
+        dataIndex: 'category',
+        render: (text) => {
+          const meta = categoryMeta(text);
+          const tag = (
+            <Tag color={meta.color} shape='circle' type='light'>
+              {meta.label}
+            </Tag>
+          );
+          if (!meta.tip) return tag;
+          return (
+            <div className='flex items-center gap-1'>
+              {tag}
+              <Tooltip position='top' content={meta.tip}>
+                <AlertTriangle size={14} className='text-yellow-500' />
+              </Tooltip>
+            </div>
+          );
+        },
       },
       {
         title: t('倍率类型'),
@@ -666,7 +868,8 @@ export default function UpstreamRatioSync(props) {
             if (
               upstreamVal !== null &&
               upstreamVal !== undefined &&
-              upstreamVal !== 'same'
+              upstreamVal !== 'same' &&
+              !isLockedModel(row.model)
             ) {
               selectableCount++;
               const isSelected =
@@ -695,7 +898,8 @@ export default function UpstreamRatioSync(props) {
               if (
                 upstreamVal !== null &&
                 upstreamVal !== undefined &&
-                upstreamVal !== 'same'
+                upstreamVal !== 'same' &&
+                !isLockedModel(row.model)
               ) {
                 selectValue(row.model, row.ratioType, upstreamVal);
               }
@@ -751,11 +955,13 @@ export default function UpstreamRatioSync(props) {
 
             const isSelected =
               resolutions[record.model]?.[record.ratioType] === upstreamVal;
+            const locked = isLockedModel(record.model);
 
             return (
               <div className='flex items-center gap-2'>
                 <Checkbox
                   checked={isSelected}
+                  disabled={locked}
                   onChange={(e) => {
                     const isChecked = e.target.checked;
                     if (isChecked) {

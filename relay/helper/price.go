@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -45,7 +46,49 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	return groupRatioInfo
 }
 
+// GetConditionalMultiplier 根据当前请求（header / param / 时段）计算模型的条件计费乘数。
+// header 从 c.Request.Header 读；param 从已缓存的请求体读（不消费 c.Request.Body）；
+// time 使用当前时刻。未配置 / 未命中时返回 Multiplier=1.0 的快照。
+//
+// 该结果在预扣费与结算两处共用（存入 info.PriceData），保证一致并写入对账快照。
+func GetConditionalMultiplier(c *gin.Context, info *relaycommon.RelayInfo) *types.ConditionalPricingInfo {
+	def := &types.ConditionalPricingInfo{Multiplier: 1.0}
+	if c == nil || info == nil {
+		return def
+	}
+	// 仅在该模型确实配置了条件计费时才做求值，零开销保护现有路径。
+	if !ratio_setting.IsConditionalPricingEnabled(info.OriginModelName) {
+		return def
+	}
+
+	rc := ratio_setting.RequestConditionContext{Now: time.Now()}
+	if c.Request != nil {
+		rc.Headers = c.Request.Header
+	}
+	// 仅使用已缓存的请求体，避免在计费点消费 c.Request.Body。
+	if cached, ok := c.Get(common.KeyRequestBody); ok && cached != nil {
+		if body, ok := cached.([]byte); ok {
+			rc.Body = body
+		}
+	}
+
+	res := ratio_setting.EvaluateConditionalMultiplier(info.OriginModelName, rc)
+	return &types.ConditionalPricingInfo{
+		Multiplier:   res.Multiplier,
+		Matched:      res.Matched,
+		MatchedRules: res.MatchedRules,
+		FieldValues:  res.FieldValues,
+	}
+}
+
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
+	// 条件计费乘数（时段 / 请求头 / 请求体）：在三条价格路径末尾统一乘，并存入快照。
+	condInfo := GetConditionalMultiplier(c, info)
+	condMult := condInfo.Multiplier
+	if condMult <= 0 {
+		condMult = 1.0
+	}
+
 	// 首先检查分段价格配置（优先级高于 ModelPrice 和 ModelRatio）
 	if tieredPricing, ok := ratio_setting.GetTieredPricing(info.OriginModelName); ok && tieredPricing.Enabled {
 		// 使用分段价格
@@ -61,10 +104,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			}
 			// 预扣费使用最高价格区间
 			preConsumedQuota := int((float64(preConsumedTokens)*maxTier.InputPrice/1000000 +
-				float64(meta.MaxTokens)*maxTier.OutputPrice/1000000) * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+				float64(meta.MaxTokens)*maxTier.OutputPrice/1000000) * common.QuotaPerUnit * groupRatioInfo.GroupRatio * condMult)
 
 			priceData := types.PriceData{
-				UseTieredPricing: true,
+				ConditionalPricing: condInfo,
+				UseTieredPricing:   true,
 				TieredPricingData: &types.TieredPricingInfo{
 					InputPrice:        priceTier.InputPrice,
 					OutputPrice:       priceTier.OutputPrice,
@@ -134,12 +178,12 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		// Claude 200K 预扣费：使用高倍率预扣以避免预扣不足
 		claudeInputMult, _ := ratio_setting.GetClaude200KMultipliers(info.OriginModelName, promptTokens)
-		preConsumedQuota = int(float64(preConsumedTokens) * ratio * claudeInputMult)
+		preConsumedQuota = int(float64(preConsumedTokens) * ratio * claudeInputMult * condMult)
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * condMult)
 	}
 
 	// check if free model pre-consume is disabled
@@ -159,6 +203,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	priceData := types.PriceData{
+		ConditionalPricing:   condInfo,
 		FreeModel:            freeModel,
 		ModelPrice:           modelPrice,
 		ModelRatio:           modelRatio,
@@ -166,10 +211,10 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		GroupRatioInfo:       groupRatioInfo,
 		UsePrice:             usePrice,
 		CacheRatio:           cacheRatio,
-		ImageRatio:              imageRatio,
-		ImageCompletionRatio:    imageCompletionRatio,
-		AudioRatio:              audioRatio,
-		AudioCompletionRatio:    audioCompletionRatio,
+		ImageRatio:           imageRatio,
+		ImageCompletionRatio: imageCompletionRatio,
+		AudioRatio:           audioRatio,
+		AudioCompletionRatio: audioCompletionRatio,
 		CacheCreationRatio:   cacheCreationRatio,
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,

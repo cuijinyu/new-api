@@ -231,6 +231,12 @@ func matchWildcard(pattern, modelName string) bool {
 	return false
 }
 
+// MatchModelPattern 暴露通配匹配能力给其他包（如 controller 的价格源过滤）使用。
+// 规则与内部 matchWildcard 一致：精确名相等，或 pattern 以 "*" 结尾时按前缀匹配。
+func MatchModelPattern(pattern, modelName string) bool {
+	return matchWildcard(pattern, modelName)
+}
+
 // IsTieredPricingEnabled checks if tiered pricing is enabled for a model
 func IsTieredPricingEnabled(modelName string) bool {
 	pricing, ok := GetTieredPricing(modelName)
