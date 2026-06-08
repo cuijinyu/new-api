@@ -18,10 +18,10 @@ import (
 )
 
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:1"`
-	UserId           int    `json:"user_id" gorm:"index"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type"`
-	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
+	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_invoice_detail_query,priority:4"`
+	UserId           int    `json:"user_id" gorm:"index;index:idx_invoice_detail_query,priority:1"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type;index:idx_invoice_detail_query,priority:3"`
+	Type             int    `json:"type" gorm:"index:idx_created_at_type;index:idx_invoice_detail_query,priority:2"`
 	Content          string `json:"content"`
 	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
 	TokenName        string `json:"token_name" gorm:"index;default:''"`
@@ -326,7 +326,14 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	username := c.GetString("username")
-	otherStr := common.MapToJsonStr(params.Other)
+	other := params.Other
+	if other == nil {
+		other = make(map[string]interface{})
+	}
+	if requestID := c.GetString(common.RequestIdKey); requestID != "" {
+		other["request_id"] = requestID
+	}
+	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
 	needRecordIp := true
 	if settingMap, err := GetUserSetting(userId, false); err == nil {

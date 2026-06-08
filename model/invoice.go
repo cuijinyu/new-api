@@ -35,6 +35,20 @@ type InvoiceItem struct {
 	Amount           float64 `json:"amount"` // 金额（USD），由 quota / QuotaPerUnit 换算
 }
 
+// InvoiceLogDetail 账单逐条消费明细，用于导出详细账单
+type InvoiceLogDetail struct {
+	Id               int    `json:"id" gorm:"column:id"`
+	CreatedAt        int64  `json:"created_at" gorm:"column:created_at"`
+	ModelName        string `json:"model_name" gorm:"column:model_name"`
+	TokenName        string `json:"token_name" gorm:"column:token_name"`
+	PromptTokens     int    `json:"prompt_tokens" gorm:"column:prompt_tokens"`
+	CompletionTokens int    `json:"completion_tokens" gorm:"column:completion_tokens"`
+	Quota            int    `json:"quota" gorm:"column:quota"`
+	Content          string `json:"content" gorm:"column:content"`
+	Other            string `json:"-" gorm:"column:other"`
+	RequestId        string `json:"request_id" gorm:"-"`
+}
+
 // GenerateInvoiceNo 生成唯一的账单编号，格式为 INV-YYYYMM-XXXX
 func GenerateInvoiceNo() (string, error) {
 	now := time.Now()
@@ -84,6 +98,49 @@ func GetInvoiceItemsFromLogs(userId int, startTimestamp int64, endTimestamp int6
 		})
 	}
 	return items, totalQuota, nil
+}
+
+// IterateInvoiceLogDetails 分批遍历账单时间窗口内的逐条消费明细，避免一次性加载大量数据
+func IterateInvoiceLogDetails(userId int, startTimestamp int64, endTimestamp int64, batchSize int, handler func(batch []InvoiceLogDetail) error) error {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	lastID := 0
+	for {
+		batch := make([]InvoiceLogDetail, 0, batchSize)
+		err := LOG_DB.Table("logs").
+			Select("id, created_at, model_name, token_name, prompt_tokens, completion_tokens, quota, content, other").
+			Where("user_id = ? AND type = ? AND created_at >= ? AND created_at <= ? AND id > ?", userId, LogTypeConsume, startTimestamp, endTimestamp, lastID).
+			Order("id ASC").
+			Limit(batchSize).
+			Find(&batch).Error
+		if err != nil {
+			return err
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+
+		for i := range batch {
+			if batch[i].Other == "" {
+				continue
+			}
+			otherMap, parseErr := common.StrToMap(batch[i].Other)
+			if parseErr != nil || otherMap == nil {
+				continue
+			}
+			if requestID, ok := otherMap["request_id"].(string); ok {
+				batch[i].RequestId = requestID
+			}
+		}
+
+		if err := handler(batch); err != nil {
+			return err
+		}
+
+		lastID = batch[len(batch)-1].Id
+	}
 }
 
 // CreateInvoice 创建账单记录

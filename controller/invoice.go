@@ -132,6 +132,15 @@ func DeleteInvoice(c *gin.Context) {
 }
 
 func ExportInvoiceCSV(c *gin.Context) {
+	includeDetails, _ := strconv.ParseBool(c.DefaultQuery("include_details", "false"))
+	exportInvoiceCSV(c, includeDetails)
+}
+
+func ExportInvoiceDetailCSV(c *gin.Context) {
+	exportInvoiceCSV(c, true)
+}
+
+func exportInvoiceCSV(c *gin.Context, includeDetails bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiErrorMsg(c, "无效的账单 ID")
@@ -152,19 +161,41 @@ func ExportInvoiceCSV(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.csv", invoice.InvoiceNo))
 	// UTF-8 BOM for Excel compatibility
-	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+	_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 
-	c.Writer.WriteString("Invoice No,Username,Start Time,End Time,Total Quota,Total Amount (USD),Note\n")
-	c.Writer.WriteString(fmt.Sprintf("%s,%s,%d,%d,%d,%.6f,%s\n\n",
+	_, _ = c.Writer.WriteString("Invoice No,Username,Start Time,End Time,Total Quota,Total Amount (USD),Note\n")
+	_, _ = c.Writer.WriteString(fmt.Sprintf("%s,%s,%d,%d,%d,%.6f,%s\n\n",
 		invoice.InvoiceNo, invoice.Username,
 		invoice.StartTimestamp, invoice.EndTimestamp,
 		invoice.TotalQuota, invoice.TotalAmount, invoice.Note))
 
-	c.Writer.WriteString("Model Name,Request Count,Prompt Tokens,Completion Tokens,Quota,Amount (USD)\n")
+	_, _ = c.Writer.WriteString("Model Name,Request Count,Prompt Tokens,Completion Tokens,Quota,Amount (USD)\n")
 	for _, item := range items {
-		c.Writer.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d,%.6f\n",
+		_, _ = c.Writer.WriteString(fmt.Sprintf("%s,%d,%d,%d,%d,%.6f\n",
 			item.ModelName, item.RequestCount,
 			item.PromptTokens, item.CompletionTokens,
 			item.Quota, item.Amount))
+	}
+
+	if !includeDetails {
+		return
+	}
+
+	const exportBatchSize = 1000
+	_, _ = c.Writer.WriteString("\n")
+	_, _ = c.Writer.WriteString("Detail ID,Request ID,Created At,Model Name,Token Name,Prompt Tokens,Completion Tokens,Quota,Content\n")
+	err = model.IterateInvoiceLogDetails(invoice.UserId, invoice.StartTimestamp, invoice.EndTimestamp, exportBatchSize, func(batch []model.InvoiceLogDetail) error {
+		for _, detail := range batch {
+			if _, err = c.Writer.WriteString(fmt.Sprintf("%d,%s,%d,%s,%s,%d,%d,%d,%s\n",
+				detail.Id, detail.RequestId, detail.CreatedAt, detail.ModelName, detail.TokenName,
+				detail.PromptTokens, detail.CompletionTokens, detail.Quota, detail.Content)); err != nil {
+				return err
+			}
+		}
+		c.Writer.Flush()
+		return nil
+	})
+	if err != nil {
+		common.SysError("export invoice detail failed: " + err.Error())
 	}
 }

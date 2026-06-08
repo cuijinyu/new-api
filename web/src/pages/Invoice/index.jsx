@@ -169,9 +169,10 @@ const InvoicePage = () => {
     }
   };
 
-  const handleExport = async (id) => {
+  const handleExport = async (id, includeDetails = false) => {
     try {
-      const res = await API.get(`/api/invoice/${id}/export`, {
+      const exportUrl = includeDetails ? `/api/invoice/${id}/export/details` : `/api/invoice/${id}/export`;
+      const res = await API.get(exportUrl, {
         responseType: 'blob',
       });
       const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
@@ -263,9 +264,18 @@ const InvoicePage = () => {
             type='tertiary'
             size='small'
             icon={<Download size={14} />}
-            onClick={() => handleExport(record.id)}
+            onClick={() => handleExport(record.id, false)}
           >
-            CSV
+            {t('汇总 CSV')}
+          </Button>
+          <Button
+            theme='borderless'
+            type='tertiary'
+            size='small'
+            icon={<Download size={14} />}
+            onClick={() => handleExport(record.id, true)}
+          >
+            {t('明细 CSV')}
           </Button>
           <Popconfirm
             title={t('确认删除')}
@@ -458,12 +468,20 @@ const InvoicePage = () => {
         onCancel={() => setDetailModalVisible(false)}
         footer={
           detailInvoice ? (
-            <Button
-              icon={<Download size={14} />}
-              onClick={() => handleExport(detailInvoice.id)}
-            >
-              {t('导出 CSV')}
-            </Button>
+            <Space>
+              <Button
+                icon={<Download size={14} />}
+                onClick={() => handleExport(detailInvoice.id, false)}
+              >
+                {t('导出汇总 CSV')}
+              </Button>
+              <Button
+                icon={<Download size={14} />}
+                onClick={() => handleExport(detailInvoice.id, true)}
+              >
+                {t('导出明细 CSV')}
+              </Button>
+            </Space>
           ) : null
         }
         width={800}
