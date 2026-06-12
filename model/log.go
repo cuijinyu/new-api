@@ -18,26 +18,27 @@ import (
 )
 
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:1"`
-	UserId           int    `json:"user_id" gorm:"index"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type"`
-	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content          string `json:"content"`
-	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName        string `json:"token_name" gorm:"index;default:''"`
-	ModelName        string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota            int    `json:"quota" gorm:"default:0"`
-	PromptTokens     int    `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
-	UseTime          int    `json:"use_time" gorm:"default:0"`
-	IsStream         bool   `json:"is_stream"`
-	ChannelId        int    `json:"channel" gorm:"index"`
-	ChannelName      string `json:"channel_name" gorm:"->"`
-	TokenId          int    `json:"token_id" gorm:"default:0;index"`
-	Group            string `json:"group" gorm:"index"`
-	Ip               string `json:"ip" gorm:"index;default:''"`
-	Other            string `json:"other"`
-	RequestId        string `json:"request_id" gorm:"type:varchar(64);index;default:''"`
+	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2"`
+	UserId            int    `json:"user_id" gorm:"index"`
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
+	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
+	Content           string `json:"content"`
+	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName         string `json:"token_name" gorm:"index;default:''"`
+	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota             int    `json:"quota" gorm:"default:0"`
+	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
+	UseTime           int    `json:"use_time" gorm:"default:0"`
+	IsStream          bool   `json:"is_stream"`
+	ChannelId         int    `json:"channel" gorm:"index"`
+	ChannelName       string `json:"channel_name" gorm:"->"`
+	TokenId           int    `json:"token_id" gorm:"default:0;index"`
+	Group             string `json:"group" gorm:"index"`
+	Ip                string `json:"ip" gorm:"index;default:''"`
+	Other             string `json:"other"`
+	RequestId         string `json:"request_id" gorm:"type:varchar(64);index;default:''"`
+	UpstreamRequestId string `json:"upstream_request_id" gorm:"type:varchar(128);index;default:''"`
 }
 
 // don't use iota, avoid change log type value
@@ -50,6 +51,22 @@ const (
 	LogTypeError   = 5
 	LogTypeRefund  = 6
 )
+
+func sanitizeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "_", "!_")
+	return value
+}
+
+func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) *gorm.DB {
+	if value == "" {
+		return tx
+	}
+	if strings.Contains(value, "%") {
+		return tx.Where(column+" LIKE ? ESCAPE '!'", sanitizeLikePattern(value))
+	}
+	return tx.Where(column+" = ?", value)
+}
 
 // ConsumeLogHook is called after a consume log is written to the database.
 // Set by external packages (e.g. service) to enable async S3 upload.
@@ -95,9 +112,7 @@ func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int
 	if logType != LogTypeUnknown {
 		tx = tx.Where("type = ?", logType)
 	}
-	if modelName != "" {
-		tx = tx.Where("model_name like ?", modelName)
-	}
+	tx = applyExplicitLogTextFilter(tx, "model_name", modelName)
 	if requestId != "" {
 		tx = tx.Where("request_id = ?", requestId)
 	}
@@ -123,18 +138,22 @@ func GetLogByKey(key string, logType int, startTimestamp int64, endTimestamp int
 
 const ExportMaxRows = 5000
 
-func ExportLogsByUser(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, group string) ([]*Log, error) {
+func ExportLogsByUser(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, requestId string, upstreamRequestId string, group string) ([]*Log, error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("user_id = ?", userId)
 	} else {
 		tx = LOG_DB.Where("user_id = ? and type = ?", userId, logType)
 	}
-	if modelName != "" {
-		tx = tx.Where("model_name like ?", modelName)
-	}
+	tx = applyExplicitLogTextFilter(tx, "model_name", modelName)
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
+	}
+	if requestId != "" {
+		tx = tx.Where("request_id = ?", requestId)
+	}
+	if upstreamRequestId != "" {
+		tx = tx.Where("upstream_request_id = ?", upstreamRequestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)
@@ -155,21 +174,23 @@ func ExportLogsByUser(userId int, logType int, startTimestamp int64, endTimestam
 	return logs, nil
 }
 
-func ExportAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) ([]*Log, error) {
+func ExportAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, requestId string, upstreamRequestId string, channel int, group string) ([]*Log, error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Session(&gorm.Session{})
 	} else {
 		tx = LOG_DB.Where("type = ?", logType)
 	}
-	if modelName != "" {
-		tx = tx.Where("model_name like ?", modelName)
-	}
-	if username != "" {
-		tx = tx.Where("username = ?", username)
-	}
+	tx = applyExplicitLogTextFilter(tx, "model_name", modelName)
+	tx = applyExplicitLogTextFilter(tx, "username", username)
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
+	}
+	if requestId != "" {
+		tx = tx.Where("request_id = ?", requestId)
+	}
+	if upstreamRequestId != "" {
+		tx = tx.Where("upstream_request_id = ?", upstreamRequestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)
@@ -209,7 +230,7 @@ func RecordLog(userId int, logType int, content string) {
 
 func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string, tokenName string, content string, tokenId int, useTimeSeconds int,
 	isStream bool, group string, other map[string]interface{}) {
-	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, content))
+	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, common.LocalLogPreview(content)))
 	username := c.GetString("username")
 	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
@@ -241,8 +262,9 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			}
 			return ""
 		}(),
-		Other:     otherStr,
-		RequestId: c.GetString(common.RequestIdKey),
+		Other:             otherStr,
+		RequestId:         c.GetString(common.RequestIdKey),
+		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -318,6 +340,20 @@ func RecordRefundLog(userId int, params RecordRefundLogParams) {
 	if err != nil {
 		common.SysLog("failed to record refund log: " + err.Error())
 	}
+	if ConsumeLogHook != nil {
+		hook := ConsumeLogHook
+		otherCopy := params.Other
+		logCopy := *log
+		gopool.Go(func() {
+			safeCtx, _ := gin.CreateTestContext(nil)
+			if otherCopy != nil {
+				if reqID, ok := otherCopy["request_id"].(string); ok && reqID != "" {
+					safeCtx.Set(common.RequestIdKey, reqID)
+				}
+			}
+			hook(safeCtx, &logCopy, otherCopy)
+		})
+	}
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -356,8 +392,9 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			}
 			return ""
 		}(),
-		Other:     otherStr,
-		RequestId: c.GetString(common.RequestIdKey),
+		Other:             otherStr,
+		RequestId:         c.GetString(common.RequestIdKey),
+		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -434,7 +471,7 @@ func RecordConsumeLogNoContext(userId int, params RecordConsumeLogParams) {
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, requestId string, startIdx int, num int, channel int, group string) (logs []*Log, total int64, err error) {
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, requestId string, upstreamRequestId string, startIdx int, num int, channel int, group string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -442,12 +479,8 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 		tx = LOG_DB.Where("logs.type = ?", logType)
 	}
 
-	if modelName != "" {
-		tx = tx.Where("logs.model_name like ?", modelName)
-	}
-	if username != "" {
-		tx = tx.Where("logs.username = ?", username)
-	}
+	tx = applyExplicitLogTextFilter(tx, "logs.model_name", modelName)
+	tx = applyExplicitLogTextFilter(tx, "logs.username", username)
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
 	}
@@ -466,11 +499,14 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
 	}
+	if upstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
+	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
-	err = tx.Order("logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -502,7 +538,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	return logs, total, err
 }
 
-func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, requestId string, startIdx int, num int, group string) (logs []*Log, total int64, err error) {
+func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, requestId string, upstreamRequestId string, startIdx int, num int, group string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -510,9 +546,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 		tx = LOG_DB.Where("logs.user_id = ? and logs.type = ?", userId, logType)
 	}
 
-	if modelName != "" {
-		tx = tx.Where("logs.model_name like ?", modelName)
-	}
+	tx = applyExplicitLogTextFilter(tx, "logs.model_name", modelName)
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
 	}
@@ -527,6 +561,9 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	}
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
+	}
+	if upstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
@@ -564,10 +601,8 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	// 为rpm和tpm创建单独的查询
 	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
 
-	if username != "" {
-		tx = tx.Where("username = ?", username)
-		rpmTpmQuery = rpmTpmQuery.Where("username = ?", username)
-	}
+	tx = applyExplicitLogTextFilter(tx, "username", username)
+	rpmTpmQuery = applyExplicitLogTextFilter(rpmTpmQuery, "username", username)
 	if tokenName != "" {
 		tx = tx.Where("token_name = ?", tokenName)
 		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
@@ -578,10 +613,8 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if endTimestamp != 0 {
 		tx = tx.Where("created_at <= ?", endTimestamp)
 	}
-	if modelName != "" {
-		tx = tx.Where("model_name like ?", modelName)
-		rpmTpmQuery = rpmTpmQuery.Where("model_name like ?", modelName)
-	}
+	tx = applyExplicitLogTextFilter(tx, "model_name", modelName)
+	rpmTpmQuery = applyExplicitLogTextFilter(rpmTpmQuery, "model_name", modelName)
 	if channel != 0 {
 		tx = tx.Where("channel_id = ?", channel)
 		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)

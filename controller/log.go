@@ -21,9 +21,10 @@ func GetAllLogs(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	requestId := c.Query("request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, requestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group)
+	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, requestId, upstreamRequestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -43,8 +44,9 @@ func GetUserLogs(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	requestId := c.Query("request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	group := c.Query("group")
-	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, requestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group)
+	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, requestId, upstreamRequestId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -250,6 +252,8 @@ func ExportUserLogs(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
+	requestId := c.Query("request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	group := c.Query("group")
 
 	if startTimestamp == 0 || endTimestamp == 0 {
@@ -262,7 +266,7 @@ func ExportUserLogs(c *gin.Context) {
 		return
 	}
 
-	logs, err := model.ExportLogsByUser(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, group)
+	logs, err := model.ExportLogsByUser(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, requestId, upstreamRequestId, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -277,6 +281,8 @@ func ExportAllLogs(c *gin.Context) {
 	username := c.Query("username")
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
+	requestId := c.Query("request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
 
@@ -290,7 +296,7 @@ func ExportAllLogs(c *gin.Context) {
 		return
 	}
 
-	logs, err := model.ExportAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	logs, err := model.ExportAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, requestId, upstreamRequestId, channel, group)
 	if err != nil {
 		common.ApiError(c, err)
 		return

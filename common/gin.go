@@ -18,22 +18,68 @@ import (
 
 const KeyRequestBody = "key_request_body"
 
-func GetRequestBody(c *gin.Context) ([]byte, error) {
+func GetRequestBodyStorage(c *gin.Context) (BodyStorage, error) {
 	requestBody, _ := c.Get(KeyRequestBody)
 	if requestBody != nil {
-		return requestBody.([]byte), nil
+		switch body := requestBody.(type) {
+		case []byte:
+			return newMemoryStorage(body), nil
+		case BodyStorage:
+			return body, nil
+		}
 	}
-	requestBody, err := io.ReadAll(c.Request.Body)
+	maxBytes := GetMaxRequestBodyBytes()
+	bodyReader := io.Reader(c.Request.Body)
+	if maxBytes > 0 {
+		bodyReader = io.LimitReader(c.Request.Body, maxBytes+1)
+	}
+	requestBodyBytes, err := io.ReadAll(bodyReader)
 	if err != nil {
 		return nil, err
 	}
+	if maxBytes > 0 && int64(len(requestBodyBytes)) > maxBytes {
+		return nil, ErrRequestBodyTooLarge
+	}
 	_ = c.Request.Body.Close()
-	c.Set(KeyRequestBody, requestBody)
-	return requestBody.([]byte), nil
+	storage, err := CreateBodyStorage(requestBodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	c.Set(KeyRequestBody, storage)
+	return storage, nil
+}
+
+func GetRequestBody(c *gin.Context) ([]byte, error) {
+	storage, err := GetRequestBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	return storage.Bytes()
 }
 
 func UnmarshalBodyReusable(c *gin.Context, v any) error {
-	requestBody, err := GetRequestBody(c)
+	storage, err := GetRequestBodyStorage(c)
+	if err != nil {
+		return err
+	}
+	if storage.IsDisk() {
+		contentType := c.Request.Header.Get("Content-Type")
+		if strings.HasPrefix(contentType, "application/json") {
+			if _, err := storage.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			if err := DecodeJson(storage, v); err != nil {
+				return err
+			}
+			if _, err := storage.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			c.Request.Body = io.NopCloser(storage)
+			return nil
+		}
+	}
+
+	requestBody, err := storage.Bytes()
 	if err != nil {
 		return err
 	}
@@ -60,7 +106,28 @@ func UnmarshalBodyReusable(c *gin.Context, v any) error {
 }
 
 func UnmarshalBodyReusableUseNumber(c *gin.Context, v any) error {
-	requestBody, err := GetRequestBody(c)
+	storage, err := GetRequestBodyStorage(c)
+	if err != nil {
+		return err
+	}
+	if storage.IsDisk() {
+		contentType := c.Request.Header.Get("Content-Type")
+		if strings.HasPrefix(contentType, "application/json") {
+			if _, err := storage.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			if err := DecodeJsonUseNumber(storage, v); err != nil {
+				return err
+			}
+			if _, err := storage.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			c.Request.Body = io.NopCloser(storage)
+			return nil
+		}
+	}
+
+	requestBody, err := storage.Bytes()
 	if err != nil {
 		return err
 	}

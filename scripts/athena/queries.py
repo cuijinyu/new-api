@@ -29,6 +29,48 @@ def _channel_where(channel_id: int = None, channel_ids: list[int] = None) -> str
     return ""
 
 
+def _logical_call_count(alias: str = "call_count") -> str:
+    """Count logical billable calls, collapsing two-stage task billing rows.
+
+    Video task billing can emit multiple accounting rows for one request
+    (preconsume + settlement adjustment). Postpaid bills should count that as
+    one logical call, while still summing quota across all rows.
+    """
+    return f"""COUNT(DISTINCT
+        CASE
+            WHEN LOWER(model_name) LIKE '%seedance%'
+                 AND COALESCE(json_extract_scalar(other, '$.billing_event'), '') <> 'video_task_settlement'
+                THEN NULL
+            WHEN request_id IS NOT NULL AND request_id <> '' THEN request_id
+            ELSE CONCAT(
+                CAST(created_at AS VARCHAR), ':',
+                CAST(user_id AS VARCHAR), ':',
+                COALESCE(model_name, ''), ':',
+                CAST(quota AS VARCHAR), ':',
+                CAST(prompt_tokens AS VARCHAR), ':',
+                CAST(completion_tokens AS VARCHAR)
+            )
+        END
+    ) AS {alias}"""
+
+
+def _postpaid_quota_expr() -> str:
+    """Quota expression for postpaid billing.
+
+    Two-stage Seedance task balance rows should not be invoiced directly.
+    The final customer charge is the settlement row's actual_quota.
+    """
+    return """CASE
+        WHEN LOWER(model_name) LIKE '%seedance%' THEN
+            CASE
+                WHEN COALESCE(json_extract_scalar(other, '$.billing_event'), '') = 'video_task_settlement'
+                    THEN COALESCE(CAST(json_extract_scalar(other, '$.actual_quota') AS BIGINT), quota)
+                ELSE 0
+            END
+        ELSE quota
+    END"""
+
+
 def _year_month(year_month: str) -> tuple[str, str]:
     """Parse 'YYYY-MM' into (year, month) strings."""
     m = re.match(r"^(\d{4})-(\d{2})$", year_month)
@@ -190,12 +232,12 @@ def monthly_bill_by_user(year_month: str, user_id: int = None,
 SELECT
     user_id,
     username,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
     SUM(prompt_tokens + completion_tokens)  AS total_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY user_id, username
@@ -223,11 +265,11 @@ SELECT
     user_id,
     username,
     model_name,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY user_id, username, model_name
@@ -266,11 +308,11 @@ SELECT
     username,
     channel_id,
     model_name,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd,
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
         AS total_cache_hit_tokens,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
@@ -312,10 +354,22 @@ def daily_trend(year_month: str, user_id: int = None,
     return f"""
 SELECT
     day,
-    COUNT(*)                            AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens + completion_tokens) AS total_tokens,
-    SUM(quota)                          AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)     AS total_usd
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cache_hit_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_write_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0))
+        AS total_cw_5m,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
+        AS total_cw_1h,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
+        AS total_cw_remaining,
+    SUM({_postpaid_quota_expr()})       AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY day
@@ -329,7 +383,7 @@ def daily_trend_by_model(year_month: str, user_id: int = None,
                          start_day: str = None, end_day: str = None,
                          start_time: str = None, end_time: str = None,
                          time_zone_offset_hours: float = 0) -> str:
-    """Daily trend broken down by model. Same filters as daily_trend."""
+    """Daily trend broken down by token key and model. Same filters as daily_trend."""
     year, month = _year_month(year_month)
     where = _build_time_where(year, month, year_month,
                               start_day=start_day, end_day=end_day,
@@ -341,17 +395,30 @@ def daily_trend_by_model(year_month: str, user_id: int = None,
     return f"""
 SELECT
     day,
+    token_name,
     model_name,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
     SUM(prompt_tokens + completion_tokens)  AS total_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cache_hit_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_write_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0))
+        AS total_cw_5m,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
+        AS total_cw_1h,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
+        AS total_cw_remaining,
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
-GROUP BY day, model_name
-ORDER BY day, total_usd DESC
+GROUP BY day, token_name, model_name
+ORDER BY day, token_name, total_usd DESC
 """
 
 
@@ -367,9 +434,9 @@ def model_ranking(year_month: str,
     return f"""
 SELECT
     model_name,
-    COUNT(*)                                    AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens + completion_tokens)       AS total_tokens,
-    ROUND(SUM(quota) / 500000.0, 2)             AS total_usd,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd,
     ROUND(AVG(use_time_seconds), 1)             AS avg_latency_sec,
     ROUND(SUM(CASE WHEN is_stream THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS stream_pct
 FROM ezmodel_logs.usage_logs
@@ -391,10 +458,10 @@ def channel_summary(year_month: str,
     return f"""
 SELECT
     channel_id,
-    COUNT(*)                            AS call_count,
+    {_logical_call_count()},
     COUNT(DISTINCT model_name)          AS model_count,
     COUNT(DISTINCT user_id)             AS user_count,
-    ROUND(SUM(quota) / 500000.0, 2)     AS total_usd
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY channel_id
@@ -409,8 +476,8 @@ def top_users(year_month: str, limit: int = 20) -> str:
 SELECT
     user_id,
     username,
-    COUNT(*)                            AS call_count,
-    ROUND(SUM(quota) / 500000.0, 2)     AS total_usd,
+    {_logical_call_count()},
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd,
     MIN(from_unixtime(created_at))      AS first_call,
     MAX(from_unixtime(created_at))      AS last_call
 FROM ezmodel_logs.usage_logs
@@ -427,9 +494,9 @@ def hourly_distribution(year_month: str, day: str) -> str:
     return f"""
 SELECT
     hour,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens + completion_tokens)  AS total_tokens,
-    ROUND(SUM(quota) / 500000.0, 2)         AS total_usd
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY hour
@@ -486,6 +553,11 @@ SELECT
     prompt_tokens,
     completion_tokens,
     quota,
+    json_extract_scalar(other, '$.task_id') AS upstream_task_id,
+    json_extract_scalar(other, '$.billing_event') AS billing_event,
+    CAST(json_extract_scalar(other, '$.actual_quota') AS BIGINT) AS actual_quota,
+    CAST(json_extract_scalar(other, '$.preconsumed_quota') AS BIGINT) AS preconsumed_quota,
+    CAST(json_extract_scalar(other, '$.quota_delta') AS BIGINT) AS quota_delta,
     other,
     use_time_seconds,
     is_stream
@@ -544,6 +616,11 @@ SELECT
     completion_tokens,
     quota,
     ROUND(quota / 500000.0, 6) AS billed_usd,
+    json_extract_scalar(other, '$.task_id') AS upstream_task_id,
+    json_extract_scalar(other, '$.billing_event') AS billing_event,
+    CAST(json_extract_scalar(other, '$.actual_quota') AS BIGINT) AS actual_quota,
+    CAST(json_extract_scalar(other, '$.preconsumed_quota') AS BIGINT) AS preconsumed_quota,
+    CAST(json_extract_scalar(other, '$.quota_delta') AS BIGINT) AS quota_delta,
     use_time_seconds,
     is_stream
 FROM ezmodel_logs.usage_logs
@@ -585,11 +662,11 @@ def usage_summary_by_created_at_range(ts_min: int, ts_max: int,
     return f"""
 SELECT
     model_name,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY model_name
@@ -632,6 +709,11 @@ SELECT
     completion_tokens,
     quota,
     ROUND(quota / 500000.0, 6)  AS billed_usd,
+    json_extract_scalar(other, '$.task_id') AS upstream_task_id,
+    json_extract_scalar(other, '$.billing_event') AS billing_event,
+    CAST(json_extract_scalar(other, '$.actual_quota') AS BIGINT) AS actual_quota,
+    CAST(json_extract_scalar(other, '$.preconsumed_quota') AS BIGINT) AS preconsumed_quota,
+    CAST(json_extract_scalar(other, '$.quota_delta') AS BIGINT) AS quota_delta,
     use_time_seconds,
     is_stream,
     COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)
@@ -781,8 +863,8 @@ SELECT
     COUNT(DISTINCT model_name)          AS unique_models,
     SUM(prompt_tokens)                  AS total_input_tokens,
     SUM(completion_tokens)              AS total_output_tokens,
-    SUM(quota)                          AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 2)     AS total_usd
+    SUM({_postpaid_quota_expr()})       AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 """
@@ -913,11 +995,11 @@ SELECT
     username,
     channel_id,
     model_name,
-    COUNT(*)                                AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens)                      AS total_input_tokens,
     SUM(completion_tokens)                  AS total_output_tokens,
-    SUM(quota)                              AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)         AS total_usd,
+    SUM({_postpaid_quota_expr()})           AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
         AS total_cache_hit_tokens,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
@@ -995,10 +1077,22 @@ def daily_trend_tz(year_month: str,
     return f"""
 SELECT
     DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d') AS local_date,
-    COUNT(*)                            AS call_count,
+    {_logical_call_count()},
     SUM(prompt_tokens + completion_tokens) AS total_tokens,
-    SUM(quota)                          AS total_quota,
-    ROUND(SUM(quota) / 500000.0, 4)     AS total_usd
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0))
+        AS total_cache_hit_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.cache_creation_tokens') AS BIGINT), 0))
+        AS total_cache_write_tokens,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_5m')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_5m')  AS BIGINT), 0))
+        AS total_cw_5m,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_1h')  AS BIGINT),
+                 CAST(json_extract_scalar(other, '$.cache_creation_tokens_1h')  AS BIGINT), 0))
+        AS total_cw_1h,
+    SUM(COALESCE(CAST(json_extract_scalar(other, '$.tiered_cache_creation_tokens_remaining') AS BIGINT), 0))
+        AS total_cw_remaining,
+    SUM({_postpaid_quota_expr()})       AS total_quota,
+    ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
 FROM ezmodel_logs.usage_logs
 WHERE {where}
 GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d')
@@ -1062,6 +1156,11 @@ SELECT
     completion_tokens,
     quota,
     ROUND(quota / 500000.0, 6)  AS billed_usd,
+    json_extract_scalar(other, '$.task_id') AS upstream_task_id,
+    json_extract_scalar(other, '$.billing_event') AS billing_event,
+    CAST(json_extract_scalar(other, '$.actual_quota') AS BIGINT) AS actual_quota,
+    CAST(json_extract_scalar(other, '$.preconsumed_quota') AS BIGINT) AS preconsumed_quota,
+    CAST(json_extract_scalar(other, '$.quota_delta') AS BIGINT) AS quota_delta,
     use_time_seconds,
     is_stream,
     COALESCE(CAST(json_extract_scalar(other, '$.cache_tokens') AS BIGINT), 0)

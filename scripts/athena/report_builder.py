@@ -435,6 +435,17 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
 
     # ── Tab 1: 按用户汇总 ──
+    has_cache = "total_cache_hit_tokens" in df_full.columns
+    cache_agg_cols = {}
+    if has_cache:
+        cache_agg_cols = {
+            "total_cache_hit_tokens": "sum",
+            "total_cache_write_tokens": "sum",
+            "total_cw_5m": "sum",
+            "total_cw_1h": "sum",
+            "total_cw_remaining": "sum",
+        }
+
     user_agg = df_full.groupby(["user_id", "username"]).agg({
         "call_count": "sum",
         "total_input_tokens": "sum",
@@ -443,17 +454,22 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         "revenue_usd": "sum",
         "cost_usd": "sum",
         "profit_usd": "sum",
+        **cache_agg_cols,
     }).reset_index().sort_values("list_price_usd", ascending=False)
     user_agg["margin"] = user_agg["profit_usd"] / user_agg["revenue_usd"].replace(0, np.nan)
+    if has_cache:
+        user_agg["cw_5m_total"] = (user_agg["total_cw_5m"].astype(float)
+                                   + user_agg["total_cw_remaining"].astype(float))
 
     if customer_view:
         u_hdrs = [
             "用户 ID", "用户名", "调用次数",
-            "输入 Tokens", "输出 Tokens",
+            "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
+            "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
             f"刊例价 ({symbol})", f"应付金额 ({symbol})",
         ]
-        u_wids = [10, 16, 12, 14, 14, 16, 16]
-        u_fmts = [TOK, None, TOK, TOK, TOK, USD2, USD2]
+        u_wids = [10, 16, 12, 14, 14, 14, 14, 14, 16, 16]
+        u_fmts = [TOK, None, TOK, TOK, TOK, TOK, TOK, TOK, USD2, USD2]
     else:
         u_hdrs = [
             "用户 ID", "用户名", "调用次数",
@@ -469,6 +485,14 @@ def generate_monthly_bill(year_month: str, output_dir: str,
         row = [
             int(r["user_id"]), r["username"], int(r["call_count"]),
             int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+        ]
+        if customer_view and has_cache:
+            row += [
+                int(r["total_cache_hit_tokens"]),
+                int(r["cw_5m_total"]),
+                int(r["total_cw_1h"]),
+            ]
+        row += [
             float(r["list_price_usd"]) * rate,
             float(r["revenue_usd"]) * rate,
         ]
@@ -482,12 +506,20 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     u_tots_cols = ["call_count", "total_input_tokens", "total_output_tokens",
                    "list_price_usd", "revenue_usd"]
+    if has_cache:
+        u_tots_cols += ["total_cache_hit_tokens", "cw_5m_total", "total_cw_1h"]
     u_tots = {c: float(user_agg[c].sum()) for c in u_tots_cols}
     u_tot = [
         "合计", "", int(u_tots["call_count"]),
         int(u_tots["total_input_tokens"]), int(u_tots["total_output_tokens"]),
-        u_tots["list_price_usd"] * rate, u_tots["revenue_usd"] * rate,
     ]
+    if customer_view and has_cache:
+        u_tot += [
+            int(u_tots["total_cache_hit_tokens"]),
+            int(u_tots["cw_5m_total"]),
+            int(u_tots["total_cw_1h"]),
+        ]
+    u_tot += [u_tots["list_price_usd"] * rate, u_tots["revenue_usd"] * rate]
     if not customer_view:
         u_tots.update({c: float(user_agg[c].sum()) for c in ["cost_usd", "profit_usd"]})
         u_tot_margin = u_tots["profit_usd"] / u_tots["revenue_usd"] if u_tots["revenue_usd"] else 0
@@ -498,17 +530,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                 total_row=u_tot, total_fmts=u_fmts)
 
     # ── Tab 2: 按模型汇总（含 cache token 拆分 + image token）──
-    has_cache = "total_cache_hit_tokens" in df_full.columns
+    show_cache_in_model_summary = has_cache
     has_image = "total_image_output_tokens" in df_full.columns
-    cache_agg_cols = {}
-    if has_cache:
-        cache_agg_cols = {
-            "total_cache_hit_tokens": "sum",
-            "total_cache_write_tokens": "sum",
-            "total_cw_5m": "sum",
-            "total_cw_1h": "sum",
-            "total_cw_remaining": "sum",
-        }
     image_agg_cols = {}
     if has_image:
         image_agg_cols = {
@@ -545,8 +568,8 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     m_wids = [28, 10]
     m_fmts = [None, TOK]
 
-    if has_cache:
-        m_hdrs += ["输入 Tokens", "输出 Tokens", "缓存命中",
+    if show_cache_in_model_summary:
+        m_hdrs += ["输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
                    "缓存写入\n(5min)", "缓存写入\n(1h)"]
         m_wids += [14, 14, 14, 14, 14]
         m_fmts += [TOK, TOK, TOK, TOK, TOK]
@@ -576,7 +599,7 @@ def generate_monthly_bill(year_month: str, output_dir: str,
     m_data = []
     for _, r in model_agg.iterrows():
         row_data = [r["model_name"], int(r["call_count"])]
-        if has_cache:
+        if show_cache_in_model_summary:
             row_data += [
                 int(r["total_input_tokens"]), int(r["total_output_tokens"]),
                 int(r["total_cache_hit_tokens"]),
@@ -618,24 +641,38 @@ def generate_monthly_bill(year_month: str, output_dir: str,
             "total_output_tokens": "sum",
             "list_price_usd": "sum",
             "revenue_usd": "sum",
+            **cache_agg_cols,
         }).reset_index().sort_values("list_price_usd", ascending=False)
+        if has_cache:
+            df_cv["cw_5m_total"] = (df_cv["total_cw_5m"].astype(float)
+                                    + df_cv["total_cw_remaining"].astype(float))
         d_hdrs = [
             "用户 ID", "用户名", "模型名称", "调用次数",
-            "输入 Tokens", "输出 Tokens",
+            "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
+            "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
             f"刊例价 ({symbol})", f"应付金额 ({symbol})",
         ]
-        d_wids = [10, 16, 28, 10, 14, 14, 16, 16]
-        d_fmts = [TOK, None, None, TOK, TOK, TOK, USD4, USD4]
+        d_wids = [10, 16, 28, 10, 14, 14, 14, 14, 14, 16, 16]
+        d_fmts = [TOK, None, None, TOK, TOK, TOK, TOK, TOK, TOK, USD4, USD4]
 
         d_data = []
         for _, r in df_cv.iterrows():
-            d_data.append([
+            row = [
                 int(r["user_id"]), r["username"],
                 r["model_name"], int(r["call_count"]),
                 int(r["total_input_tokens"]), int(r["total_output_tokens"]),
+            ]
+            if has_cache:
+                row += [
+                    int(r["total_cache_hit_tokens"]),
+                    int(r["cw_5m_total"]),
+                    int(r["total_cw_1h"]),
+                ]
+            row += [
                 float(r["list_price_usd"]) * rate,
                 float(r["revenue_usd"]) * rate,
-            ])
+            ]
+            d_data.append(row)
     else:
         # Internal view: keep channel dimension for cost analysis
         df_sorted = df_full.sort_values("list_price_usd", ascending=False)
@@ -687,9 +724,11 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     # ── Tab 4: 每日趋势 ──
     if customer_view:
-        t_hdrs = ["日期", "调用次数", "总 Tokens", f"刊例价 ({symbol})"]
-        t_wids = [14, 12, 14, 14]
-        t_fmts = [None, TOK, TOK, USD4]
+        t_hdrs = ["日期", "调用次数", "输入+输出 Tokens",
+                  "缓存命中 Tokens", "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
+                  f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 16, 14, 14, 14, 14]
+        t_fmts = [None, TOK, TOK, TOK, TOK, TOK, USD4]
     else:
         t_hdrs = ["日期", "调用次数", "总 Tokens", "总额度", f"刊例价 ({symbol})"]
         t_wids = [14, 12, 14, 14, 14]
@@ -701,6 +740,12 @@ def generate_monthly_bill(year_month: str, output_dir: str,
                 f"{year_month}-{int(r['day']):02d}",
                 int(r["call_count"]), int(r["total_tokens"]),
             ]
+            if customer_view and "total_cache_hit_tokens" in df_trend.columns:
+                row_data += [
+                    int(r["total_cache_hit_tokens"]),
+                    int(r["total_cw_5m"]) + int(r["total_cw_remaining"]),
+                    int(r["total_cw_1h"]),
+                ]
             if not customer_view:
                 row_data.append(int(r["total_quota"]))
             row_data.append(float(r["total_usd"]) * rate)
@@ -710,27 +755,35 @@ def generate_monthly_bill(year_month: str, output_dir: str,
 
     # ── Tab 5: 每日模型明细 ──
     if customer_view:
-        dm_hdrs = ["日期", "模型名称", "调用次数",
-                   "输入 Tokens", "输出 Tokens",
+        dm_hdrs = ["日期", "Token 名称", "模型名称", "调用次数",
+                   "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
+                   "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
                    f"刊例价 ({symbol})"]
-        dm_wids = [14, 28, 12, 14, 14, 16]
-        dm_fmts = [None, None, TOK, TOK, TOK, USD4]
+        dm_wids = [14, 18, 28, 12, 14, 14, 14, 14, 14, 16]
+        dm_fmts = [None, None, None, TOK, TOK, TOK, TOK, TOK, TOK, USD4]
     else:
-        dm_hdrs = ["日期", "模型名称", "调用次数",
+        dm_hdrs = ["日期", "Token 名称", "模型名称", "调用次数",
                    "输入 Tokens", "输出 Tokens", "总额度",
                    f"刊例价 ({symbol})"]
-        dm_wids = [14, 28, 12, 14, 14, 14, 16]
-        dm_fmts = [None, None, TOK, TOK, TOK, TOK, USD4]
+        dm_wids = [14, 18, 28, 12, 14, 14, 14, 16]
+        dm_fmts = [None, None, None, TOK, TOK, TOK, TOK, USD4]
     dm_data = []
     if not df_trend_model.empty:
         for _, r in df_trend_model.iterrows():
             row_data = [
                 f"{year_month}-{int(r['day']):02d}",
+                r.get("token_name", ""),
                 r["model_name"],
                 int(r["call_count"]),
                 int(r["total_input_tokens"]),
                 int(r["total_output_tokens"]),
             ]
+            if customer_view and "total_cache_hit_tokens" in df_trend_model.columns:
+                row_data += [
+                    int(r["total_cache_hit_tokens"]),
+                    int(r["total_cw_5m"]) + int(r["total_cw_remaining"]),
+                    int(r["total_cw_1h"]),
+                ]
             if not customer_view:
                 row_data.append(int(r["total_quota"]))
             row_data.append(float(r["total_usd"]) * rate)
@@ -908,6 +961,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
 
     if customer_view:
+        df_all = pricing_engine.collapse_postpaid_detail_rows(df_all)
         out_path = _write_detail_xlsx_customer(
             df_all, year_month, output_dir, user_id=user_id,
             channel_id=channel_id, channel_ids=channel_ids,
@@ -1075,6 +1129,91 @@ _CUSTOMER_DETAIL_COLS = [
 ]
 
 
+def _customer_daily_key_model_rows(df: pd.DataFrame, year_month: str):
+    """Build customer-facing daily rows grouped by date, token key, and model."""
+    required = {"created_at", "model_name"}
+    if df.empty or not required.issubset(df.columns):
+        return [], None
+
+    work = df.copy()
+    if "local_date" not in work.columns:
+        created = work["created_at"]
+        if pd.api.types.is_numeric_dtype(created):
+            work["local_date"] = (
+                pd.to_datetime(created, unit="s", utc=True)
+                .dt.tz_convert("Asia/Shanghai")
+                .dt.strftime("%Y-%m-%d")
+            )
+        else:
+            work["local_date"] = created.astype(str).str.slice(0, 10)
+    if "token_name" not in work.columns:
+        work["token_name"] = ""
+    if "request_id" not in work.columns:
+        work["request_id"] = work.index.astype(str)
+
+    sum_cols = [
+        "prompt_tokens", "completion_tokens",
+        "cache_hit_tokens", "cw_5m", "cw_1h",
+        "list_price_usd", "revenue_usd",
+    ]
+    agg_spec = {c: "sum" for c in sum_cols if c in work.columns}
+    if not agg_spec:
+        return [], None
+
+    grouped = (
+        work.groupby(["local_date", "token_name", "model_name"], dropna=False)
+        .agg({**agg_spec, "request_id": "count"})
+        .rename(columns={"request_id": "call_count"})
+        .reset_index()
+    )
+
+    if "list_price_usd" in grouped.columns:
+        grouped = grouped.sort_values(
+            ["local_date", "token_name", "list_price_usd"],
+            ascending=[True, True, False],
+        )
+    else:
+        grouped = grouped.sort_values(["local_date", "token_name", "model_name"])
+
+    headers = ["日期 (UTC+8)", "Token 名称", "模型名称", "调用次数"]
+    widths = [14, 18, 30, 12]
+    fmts = [None, None, None, TOK]
+    metric_cols = []
+
+    for col, header, width, fmt in [
+        ("prompt_tokens", "输入 Tokens", 14, TOK),
+        ("completion_tokens", "输出 Tokens", 14, TOK),
+        ("cache_hit_tokens", "缓存命中 Tokens", 14, TOK),
+        ("cw_5m", "缓存写入 Tokens\n(5min)", 14, TOK),
+        ("cw_1h", "缓存写入 Tokens\n(1h)", 14, TOK),
+        ("list_price_usd", "刊例价 ($)", 14, USD6),
+        ("revenue_usd", "应付金额 ($)", 14, USD6),
+    ]:
+        if col in grouped.columns:
+            metric_cols.append(col)
+            headers.append(header)
+            widths.append(width)
+            fmts.append(fmt)
+
+    rows = []
+    for _, r in grouped.iterrows():
+        row = [
+            r["local_date"],
+            "" if pd.isna(r["token_name"]) else r["token_name"],
+            r["model_name"],
+            int(r["call_count"]),
+        ]
+        for col in metric_cols:
+            value = r[col]
+            if col in {"list_price_usd", "revenue_usd"}:
+                row.append(float(value))
+            else:
+                row.append(int(value))
+        rows.append(row)
+
+    return rows, (headers, widths, fmts)
+
+
 def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
                                 output_dir: str, user_id: int = None,
                                 channel_id: int = None,
@@ -1114,6 +1253,15 @@ def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
         )
 
     # Build column mapping — only include columns that exist in df
+    if "cw_5m" in df.columns and "cw_remaining" in df.columns:
+        df = df.copy()
+        df["cw_5m"] = (
+            df["cw_5m"].fillna(0).astype(float)
+            + df["cw_remaining"].fillna(0).astype(float)
+        )
+
+    agg_rows, agg_sheet = _customer_daily_key_model_rows(df, year_month)
+
     col_spec = [(ic, ch, w, nf) for ic, ch, w, nf in _CUSTOMER_DETAIL_COLS
                 if ic in df.columns and ic not in _HIDDEN_IMAGE_TOKEN_COLS]
     internal_cols = [c[0] for c in col_spec]
@@ -1138,6 +1286,17 @@ def _write_detail_xlsx_customer(df: pd.DataFrame, year_month: str,
         return _write_detail_csv_zip(df_out, base, output_dir)
 
     wb = xlsxwriter.Workbook(xlsx_path, {"constant_memory": False})
+    if agg_sheet:
+        agg_headers, agg_widths, agg_fmts = agg_sheet
+        write_sheet(
+            wb,
+            f"{user_label}API 账单 -- {year_month} (每日模型明细，按日期×Token×模型){tier_tag}",
+            "每日模型明细",
+            agg_headers,
+            agg_widths,
+            agg_rows,
+            agg_fmts,
+        )
     write_sheet(wb, title_base, "调用明细", headers, col_widths,
                 data_rows, num_fmts)
     wb.close()
@@ -1697,6 +1856,17 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     wb = xlsxwriter.Workbook(filepath, {"constant_memory": False})
 
     # ── Tab 1: 按用户汇总 ──
+    has_cache = "total_cache_hit_tokens" in df_full.columns
+    cache_agg_cols = {}
+    if has_cache:
+        cache_agg_cols = {
+            "total_cache_hit_tokens": "sum",
+            "total_cache_write_tokens": "sum",
+            "total_cw_5m": "sum",
+            "total_cw_1h": "sum",
+            "total_cw_remaining": "sum",
+        }
+
     user_agg = df_full.groupby(["user_id", "username"]).agg({
         "call_count": "sum",
         "total_input_tokens": "sum",
@@ -1705,15 +1875,20 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
         "revenue_usd": "sum",
         "cost_usd": "sum",
         "profit_usd": "sum",
+        **cache_agg_cols,
     }).reset_index().sort_values("list_price_usd", ascending=False)
     user_agg["margin"] = user_agg["profit_usd"] / user_agg["revenue_usd"].replace(0, np.nan)
+    if has_cache:
+        user_agg["cw_5m_total"] = (user_agg["total_cw_5m"].astype(float)
+                                   + user_agg["total_cw_remaining"].astype(float))
 
     if customer_view:
         u_hdrs = ["用户 ID", "用户名", "调用次数",
-                  "输入 Tokens", "输出 Tokens",
+                  "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
+                  "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
                   f"刊例价 ({symbol})", f"应付金额 ({symbol})"]
-        u_wids = [10, 16, 12, 14, 14, 16, 16]
-        u_fmts = [TOK, None, TOK, TOK, TOK, USD2, USD2]
+        u_wids = [10, 16, 12, 14, 14, 14, 14, 14, 16, 16]
+        u_fmts = [TOK, None, TOK, TOK, TOK, TOK, TOK, TOK, USD2, USD2]
     else:
         u_hdrs = ["用户 ID", "用户名", "调用次数",
                   "输入 Tokens", "输出 Tokens",
@@ -1726,8 +1901,15 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     for _, r in user_agg.iterrows():
         row = [int(r["user_id"]), r["username"], int(r["call_count"]),
                int(r["total_input_tokens"]), int(r["total_output_tokens"]),
-               float(r["list_price_usd"]) * rate,
-               float(r["revenue_usd"]) * rate]
+        ]
+        if customer_view and has_cache:
+            row += [
+                int(r["total_cache_hit_tokens"]),
+                int(r["cw_5m_total"]),
+                int(r["total_cw_1h"]),
+            ]
+        row += [float(r["list_price_usd"]) * rate,
+                float(r["revenue_usd"]) * rate]
         if not customer_view:
             row += [float(r["cost_usd"]) * rate,
                     float(r["profit_usd"]) * rate,
@@ -1737,9 +1919,19 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     u_tots = {c: float(user_agg[c].sum()) for c in
               ["call_count", "total_input_tokens", "total_output_tokens",
                "list_price_usd", "revenue_usd"]}
+    if has_cache:
+        u_tots.update({c: float(user_agg[c].sum()) for c in
+                       ["total_cache_hit_tokens", "cw_5m_total", "total_cw_1h"]})
     u_tot = ["合计", "", int(u_tots["call_count"]),
              int(u_tots["total_input_tokens"]), int(u_tots["total_output_tokens"]),
-             u_tots["list_price_usd"] * rate, u_tots["revenue_usd"] * rate]
+    ]
+    if customer_view and has_cache:
+        u_tot += [
+            int(u_tots["total_cache_hit_tokens"]),
+            int(u_tots["cw_5m_total"]),
+            int(u_tots["total_cw_1h"]),
+        ]
+    u_tot += [u_tots["list_price_usd"] * rate, u_tots["revenue_usd"] * rate]
     if not customer_view:
         u_tots.update({c: float(user_agg[c].sum()) for c in ["cost_usd", "profit_usd"]})
         u_tot_margin = u_tots["profit_usd"] / u_tots["revenue_usd"] if u_tots["revenue_usd"] else 0
@@ -1750,15 +1942,7 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
                 total_row=u_tot, total_fmts=u_fmts)
 
     # ── Tab 2: 按模型汇总 ──
-    has_cache = "total_cache_hit_tokens" in df_full.columns
-    cache_agg_cols = {}
-    if has_cache:
-        cache_agg_cols = {
-            "total_cache_hit_tokens": "sum",
-            "total_cache_write_tokens": "sum",
-            "total_cw_5m": "sum", "total_cw_1h": "sum",
-            "total_cw_remaining": "sum",
-        }
+    show_cache_in_model_summary = has_cache
     model_agg = df_full.groupby("model_name").agg({
         "call_count": "sum",
         "total_input_tokens": "sum",
@@ -1780,8 +1964,8 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     m_hdrs = ["模型名称", "调用次数"]
     m_wids = [28, 10]
     m_fmts = [None, TOK]
-    if has_cache:
-        m_hdrs += ["输入 Tokens", "输出 Tokens", "缓存命中",
+    if show_cache_in_model_summary:
+        m_hdrs += ["输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
                    "缓存写入\n(5min)", "缓存写入\n(1h)"]
         m_wids += [14, 14, 14, 14, 14]
         m_fmts += [TOK, TOK, TOK, TOK, TOK]
@@ -1802,7 +1986,7 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     m_data = []
     for _, r in model_agg.iterrows():
         row_data = [r["model_name"], int(r["call_count"])]
-        if has_cache:
+        if show_cache_in_model_summary:
             row_data += [int(r["total_input_tokens"]), int(r["total_output_tokens"]),
                          int(r["total_cache_hit_tokens"]),
                          int(r["cw_5m_total"]), int(r["total_cw_1h"])]
@@ -1832,12 +2016,17 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
                 "total_output_tokens": "sum",
                 "list_price_usd": "sum",
                 "revenue_usd": "sum",
+                **cache_agg_cols,
             }).reset_index().sort_values(["local_date", "list_price_usd"], ascending=[True, False])
+            if has_cache:
+                date_model_agg["cw_5m_total"] = (date_model_agg["total_cw_5m"].astype(float)
+                                                 + date_model_agg["total_cw_remaining"].astype(float))
             dm_hdrs = [f"日期 ({tz_display})", "模型名称", "调用次数",
-                       "输入 Tokens", "输出 Tokens",
+                       "输入 Tokens", "输出 Tokens", "缓存命中 Tokens",
+                       "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
                        f"刊例价 ({symbol})", f"应付金额 ({symbol})"]
-            dm_wids = [14, 28, 10, 14, 14, 16, 16]
-            dm_fmts = [None, None, TOK, TOK, TOK, USD4, USD4]
+            dm_wids = [14, 28, 10, 14, 14, 14, 14, 14, 16, 16]
+            dm_fmts = [None, None, TOK, TOK, TOK, TOK, TOK, TOK, USD4, USD4]
         else:
             date_model_agg = df_full.groupby(["local_date", "model_name"]).agg({
                 "call_count": "sum",
@@ -1859,8 +2048,15 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
         for _, r in date_model_agg.iterrows():
             row = [r["local_date"], r["model_name"], int(r["call_count"]),
                    int(r["total_input_tokens"]), int(r["total_output_tokens"]),
-                   float(r["list_price_usd"]) * rate,
-                   float(r["revenue_usd"]) * rate]
+            ]
+            if customer_view and has_cache:
+                row += [
+                    int(r["total_cache_hit_tokens"]),
+                    int(r["cw_5m_total"]),
+                    int(r["total_cw_1h"]),
+                ]
+            row += [float(r["list_price_usd"]) * rate,
+                    float(r["revenue_usd"]) * rate]
             if not customer_view:
                 row += [float(r["cost_usd"]) * rate,
                         float(r["profit_usd"]) * rate]
@@ -1871,9 +2067,11 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
 
     # ── Tab 4: 每日趋势 ──
     if customer_view:
-        t_hdrs = [f"日期 ({tz_display})", "调用次数", "总 Tokens", f"刊例价 ({symbol})"]
-        t_wids = [14, 12, 14, 14]
-        t_fmts = [None, TOK, TOK, USD4]
+        t_hdrs = [f"日期 ({tz_display})", "调用次数", "输入+输出 Tokens",
+                  "缓存命中 Tokens", "缓存写入 Tokens\n(5min)", "缓存写入 Tokens\n(1h)",
+                  f"刊例价 ({symbol})"]
+        t_wids = [14, 12, 16, 14, 14, 14, 14]
+        t_fmts = [None, TOK, TOK, TOK, TOK, TOK, USD4]
     else:
         t_hdrs = [f"日期 ({tz_display})", "调用次数", "总 Tokens", "总额度", f"刊例价 ({symbol})"]
         t_wids = [14, 12, 14, 14, 14]
@@ -1882,6 +2080,12 @@ def generate_tz_offset_export(year_month: str, output_dir: str,
     if not df_trend.empty:
         for _, r in df_trend.iterrows():
             row_data = [r["local_date"], int(r["call_count"]), int(r["total_tokens"])]
+            if customer_view and "total_cache_hit_tokens" in df_trend.columns:
+                row_data += [
+                    int(r["total_cache_hit_tokens"]),
+                    int(r["total_cw_5m"]) + int(r["total_cw_remaining"]),
+                    int(r["total_cw_1h"]),
+                ]
             if not customer_view:
                 row_data.append(int(r["total_quota"]))
             row_data.append(float(r["total_usd"]) * rate)
@@ -1983,6 +2187,7 @@ def _export_detail_csv_tz(year_month: str, output_dir: str,
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
 
     if customer_view:
+        df_all = pricing_engine.collapse_postpaid_detail_rows(df_all)
         out_path = _write_detail_xlsx_customer(
             df_all, year_month, output_dir, user_id=user_id,
             channel_id=channel_id, channel_ids=channel_ids,
@@ -2056,6 +2261,13 @@ def generate_row_level_crosscheck_report(
     our_sql = queries.usage_by_created_at_range(
         ts_min, ts_max, channel_id=channel_id)
     our_df = run_query_cached(our_sql, no_cache=no_cache)
+    if not our_df.empty and "upstream_task_id" in our_df.columns:
+        vendor_ids = set(vendor_df["request_id"].astype(str))
+        upstream_ids = our_df["upstream_task_id"].fillna("").astype(str)
+        use_upstream_id = upstream_ids.isin(vendor_ids)
+        if use_upstream_id.any():
+            our_df = our_df.copy()
+            our_df.loc[use_upstream_id, "request_id"] = upstream_ids[use_upstream_id]
     our_amount = float(our_df['billed_usd'].sum()) if not our_df.empty else 0.0
     logger.info("Our data queried",
                 extra={"event": "crosscheck_our_queried", "our_rows": len(our_df), "our_amount": our_amount})

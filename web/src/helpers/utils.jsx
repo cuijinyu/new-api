@@ -669,21 +669,44 @@ export const calculateModelPrice = ({
   const exchangeRate = getExchangeRate();
   const unitDivisor = tokenUnit === 'K' ? 1000 : 1;
   const unitLabel = tokenUnit === 'K' ? 'K' : 'M';
+  const toNumberOrNull = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+  const formatTokenPrice = (priceUSD) => {
+    const displayVal = displayPrice(priceUSD);
+    const numericVal = Number(String(displayVal).replace(/[^0-9.-]/g, ''));
+    const convertedVal = Number.isFinite(numericVal) ? numericVal : 0;
+    return `${symbol}${(convertedVal / unitDivisor).toFixed(precision)}`;
+  };
 
   // 2. 检查是否启用分段计费
-  if (record.tiered_pricing_enabled && Array.isArray(record.tiered_pricing) && record.tiered_pricing.length > 0) {
+  if (
+    record.tiered_pricing_enabled &&
+    Array.isArray(record.tiered_pricing) &&
+    record.tiered_pricing.length > 0
+  ) {
     // 分段计费：返回分段价格信息
     const tieredPrices = record.tiered_pricing.map((tier) => {
-      const inputPriceConverted = (tier.input_price * exchangeRate) / unitDivisor;
-      const outputPriceConverted = (tier.output_price * exchangeRate) / unitDivisor;
-      const cacheHitPriceConverted = (tier.cache_hit_price * exchangeRate) / unitDivisor;
+      const inputPriceConverted =
+        (tier.input_price * exchangeRate) / unitDivisor;
+      const outputPriceConverted =
+        (tier.output_price * exchangeRate) / unitDivisor;
+      const cacheHitPriceConverted =
+        (tier.cache_hit_price * exchangeRate) / unitDivisor;
 
       return {
         minTokens: tier.min_tokens,
         maxTokens: tier.max_tokens,
         inputPrice: `${symbol}${inputPriceConverted.toFixed(precision)}`,
         outputPrice: `${symbol}${outputPriceConverted.toFixed(precision)}`,
-        cacheHitPrice: tier.cache_hit_price > 0 ? `${symbol}${cacheHitPriceConverted.toFixed(precision)}` : null,
+        cacheHitPrice:
+          tier.cache_hit_price > 0
+            ? `${symbol}${cacheHitPriceConverted.toFixed(precision)}`
+            : null,
         // 原始数值用于计算
         inputPriceRaw: tier.input_price,
         outputPriceRaw: tier.output_price,
@@ -713,17 +736,24 @@ export const calculateModelPrice = ({
     const completionRatioPriceUSD =
       record.model_ratio * record.completion_ratio * 2 * usedGroupRatio;
 
-    const rawDisplayInput = displayPrice(inputRatioPriceUSD);
-    const rawDisplayCompletion = displayPrice(completionRatioPriceUSD);
-
-    const numInput =
-      parseFloat(rawDisplayInput.replace(/[^0-9.]/g, '')) / unitDivisor;
-    const numCompletion =
-      parseFloat(rawDisplayCompletion.replace(/[^0-9.]/g, '')) / unitDivisor;
+    const imageRatio = toNumberOrNull(record.image_ratio);
+    const imageCompletionRatio = toNumberOrNull(record.image_completion_ratio);
 
     return {
-      inputPrice: `${symbol}${numInput.toFixed(precision)}`,
-      completionPrice: `${symbol}${numCompletion.toFixed(precision)}`,
+      inputPrice: formatTokenPrice(inputRatioPriceUSD),
+      completionPrice: formatTokenPrice(completionRatioPriceUSD),
+      imageInputPrice:
+        imageRatio !== null
+          ? formatTokenPrice(inputRatioPriceUSD * imageRatio)
+          : null,
+      imageOutputPrice:
+        imageCompletionRatio !== null
+          ? formatTokenPrice(
+              record.model_ratio * 2 * imageCompletionRatio * usedGroupRatio,
+            )
+          : null,
+      imageRatio,
+      imageCompletionRatio,
       unitLabel,
       isPerToken: true,
       usedGroup,
@@ -782,6 +812,16 @@ export const formatPriceInfo = (priceData, t) => {
         <span style={{ color: 'var(--semi-color-text-1)' }}>
           {t('输出')} {priceData.completionPrice}/{priceData.unitLabel}
         </span>
+        {priceData.imageInputPrice && (
+          <span style={{ color: 'var(--semi-color-text-1)' }}>
+            {t('图片输入')} {priceData.imageInputPrice}/{priceData.unitLabel}
+          </span>
+        )}
+        {priceData.imageOutputPrice && (
+          <span style={{ color: 'var(--semi-color-text-1)' }}>
+            {t('图片输出')} {priceData.imageOutputPrice}/{priceData.unitLabel}
+          </span>
+        )}
       </>
     );
   }

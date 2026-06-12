@@ -67,6 +67,7 @@ export const useSidebar = () => {
       diagnostic: true,
       billing_probe: true,
       reconciliation: true,
+      price_inspection: true,
       setting: true,
     },
   };

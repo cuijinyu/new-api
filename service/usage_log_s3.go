@@ -24,6 +24,7 @@ type UsageLogPayload struct {
 	CreatedAt        int64                  `json:"created_at"`
 	UserID           int                    `json:"user_id"`
 	Username         string                 `json:"username"`
+	Type             int                    `json:"type,omitempty"`
 	ChannelID        int                    `json:"channel_id"`
 	ModelName        string                 `json:"model_name"`
 	TokenName        string                 `json:"token_name"`

@@ -36,6 +36,7 @@ const zhSidebar = [
     items: [
       { text: '创建视频', link: '/api/video/video-generations' },
       { text: '查询状态', link: '/api/video/video-generations-status' },
+      { text: 'Seedance 2.0', link: '/api/video/seedance-2' },
       { text: 'Vidu 视频', link: '/api/video/vidu' },
     ]
   },
@@ -115,6 +116,7 @@ const enSidebar = [
     items: [
       { text: 'Create Video', link: '/en/api/video/video-generations' },
       { text: 'Query Status', link: '/en/api/video/video-generations-status' },
+      { text: 'Seedance 2.0', link: '/en/api/video/seedance-2' },
       { text: 'Vidu Video', link: '/en/api/video/vidu' },
     ]
   },

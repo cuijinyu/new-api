@@ -37,6 +37,8 @@ type Pricing struct {
 	ModelPrice             float64                 `json:"model_price"`
 	OwnerBy                string                  `json:"owner_by"`
 	CompletionRatio        float64                 `json:"completion_ratio"`
+	ImageRatio             *float64                `json:"image_ratio,omitempty"`
+	ImageCompletionRatio   *float64                `json:"image_completion_ratio,omitempty"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
 	CreatedTime            int64                   `json:"created_time"`
@@ -306,6 +308,12 @@ func updatePricing() {
 			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
 			pricing.ModelRatio = modelRatio
 			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
+			if imageRatio, ok := ratio_setting.GetImageRatio(model); ok {
+				pricing.ImageRatio = &imageRatio
+			}
+			if imageCompletionRatio, ok := ratio_setting.GetImageCompletionRatio(model); ok {
+				pricing.ImageCompletionRatio = &imageCompletionRatio
+			}
 			pricing.QuotaType = 0
 		}
 

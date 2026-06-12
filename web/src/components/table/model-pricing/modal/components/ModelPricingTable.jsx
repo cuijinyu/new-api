@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Card, Avatar, Typography, Table, Tag, Collapsible } from '@douyinfe/semi-ui';
+import {
+  Card,
+  Avatar,
+  Typography,
+  Table,
+  Tag,
+  Collapsible,
+} from '@douyinfe/semi-ui';
 import { IconCoinMoneyStroked, IconChevronDown } from '@douyinfe/semi-icons';
 import { calculateModelPrice } from '../../../../../helpers';
 
@@ -54,8 +61,9 @@ const ModelPricingTable = ({
   const autoChain = autoGroups.filter((g) => modelEnableGroups.includes(g));
 
   // 检查是否启用分段计费
-  const isTieredPricing = modelData?.tiered_pricing_enabled && 
-    Array.isArray(modelData?.tiered_pricing) && 
+  const isTieredPricing =
+    modelData?.tiered_pricing_enabled &&
+    Array.isArray(modelData?.tiered_pricing) &&
     modelData.tiered_pricing.length > 0;
 
   // 渲染分段计费表格
@@ -123,7 +131,7 @@ const ModelPricingTable = ({
       columns.push({
         title: t('缓存命中'),
         dataIndex: 'cacheHitPrice',
-        render: (text) => (
+        render: (text) =>
           text ? (
             <>
               <div className='font-semibold text-green-600'>{text}</div>
@@ -131,8 +139,9 @@ const ModelPricingTable = ({
                 / {tokenUnit === 'K' ? '1K' : '1M'} tokens
               </div>
             </>
-          ) : '-'
-        ),
+          ) : (
+            '-'
+          ),
       });
     }
 
@@ -203,6 +212,10 @@ const ModelPricingTable = ({
           modelData?.quota_type === 0
             ? priceData.completionPrice || priceData.outputPrice
             : '-',
+        imageInputPrice:
+          modelData?.quota_type === 0 ? priceData.imageInputPrice : null,
+        imageOutputPrice:
+          modelData?.quota_type === 0 ? priceData.imageOutputPrice : null,
         fixedPrice: modelData?.quota_type === 1 ? priceData.price : '-',
         isTieredPricing: priceData.isTieredPricing,
       };
@@ -292,6 +305,40 @@ const ModelPricingTable = ({
           ),
         },
       );
+      if (tableData.some((row) => row.imageInputPrice)) {
+        columns.push({
+          title: t('图片输入'),
+          dataIndex: 'imageInputPrice',
+          render: (text) =>
+            text ? (
+              <>
+                <div className='font-semibold text-orange-600'>{text}</div>
+                <div className='text-xs text-gray-500'>
+                  / {tokenUnit === 'K' ? '1K' : '1M'} tokens
+                </div>
+              </>
+            ) : (
+              '-'
+            ),
+        });
+      }
+      if (tableData.some((row) => row.imageOutputPrice)) {
+        columns.push({
+          title: t('图片输出'),
+          dataIndex: 'imageOutputPrice',
+          render: (text) =>
+            text ? (
+              <>
+                <div className='font-semibold text-orange-600'>{text}</div>
+                <div className='text-xs text-gray-500'>
+                  / {tokenUnit === 'K' ? '1K' : '1M'} tokens
+                </div>
+              </>
+            ) : (
+              '-'
+            ),
+        });
+      }
     } else {
       // 按次计费
       columns.push({

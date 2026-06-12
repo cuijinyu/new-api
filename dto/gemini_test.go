@@ -2,7 +2,10 @@ package dto
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestGeminiUsageMetadata_CachedContentTokenCount(t *testing.T) {
@@ -136,6 +139,39 @@ func TestGeminiUsageMetadata_JSONRoundTrip(t *testing.T) {
 	}
 	if len(decoded.PromptTokensDetails) != len(original.PromptTokensDetails) {
 		t.Errorf("PromptTokensDetails length = %d, want %d", len(decoded.PromptTokensDetails), len(original.PromptTokensDetails))
+	}
+}
+
+func TestGeminiChatRequestIsStreamFromNativePath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1beta/models/gemini-2.5-pro:streamGenerateContent", nil)
+
+	req := GeminiChatRequest{}
+	if !req.IsStream(c) {
+		t.Fatalf("IsStream() = false, want true for streamGenerateContent path")
+	}
+}
+
+func TestGeminiChatRequestIsStreamFromAltSSE(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1beta/models/gemini-2.5-pro:generateContent?alt=sse", nil)
+
+	req := GeminiChatRequest{}
+	if !req.IsStream(c) {
+		t.Fatalf("IsStream() = false, want true for alt=sse")
+	}
+}
+
+func TestGeminiChatRequestIsStreamFalseForGenerateContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1beta/models/gemini-2.5-pro:generateContent", nil)
+
+	req := GeminiChatRequest{}
+	if req.IsStream(c) {
+		t.Fatalf("IsStream() = true, want false for generateContent path")
 	}
 }
 

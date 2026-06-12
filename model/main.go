@@ -292,6 +292,16 @@ func migrateDB() error {
 			&ReconDiscount{},
 			&ReconUpstream{},
 			&ReconResult{},
+			&OpenRouterPriceSnapshot{},
+			&OpenRouterModelMapping{},
+			&OpenRouterInspectionRun{},
+			&OpenRouterInspectionItem{},
+			&PriceModelMapping{},
+			&PriceSourceSnapshot{},
+			&PriceInspectionCoverageReport{},
+			&PriceInspectionRun{},
+			&PriceInspectionItem{},
+			&PriceInspectionIssueResolution{},
 		)
 	})
 }

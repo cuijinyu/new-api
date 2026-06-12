@@ -27,7 +27,11 @@ _AMOUNT_ALIASES = {"amount", "额度", "total", "cost", "金额", "Amount", "Cos
 _COUNT_ALIASES = {"count", "记录数", "calls", "Count", "Calls", "数量"}
 
 # Row-level bill column aliases
-_REQUEST_ID_ALIASES = {"request_id", "Request ID", "RequestID"}
+_REQUEST_ID_ALIASES = {
+    "request_id", "Request ID", "RequestID",
+    "task_id", "Task ID", "TaskID",
+    "upstream_task_id", "upstream_request_id",
+}
 _QUOTA_ALIASES = {"quota", "Quota"}
 _CREATED_AT_ALIASES = {"created_at", "CreatedAt", "created_time"}
 

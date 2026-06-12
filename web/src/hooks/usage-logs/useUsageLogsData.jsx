@@ -57,6 +57,7 @@ export const useLogsData = () => {
     COMPLETION: 'completion',
     COST: 'cost',
     RETRY: 'retry',
+    UPSTREAM_REQUEST_ID: 'upstream_request_id',
     IP: 'ip',
     DETAILS: 'details',
   };
@@ -93,6 +94,7 @@ export const useLogsData = () => {
     username: '',
     token_name: '',
     model_name: '',
+    upstream_request_id: '',
     channel: '',
     group: '',
     dateRange: [
@@ -153,6 +155,7 @@ export const useLogsData = () => {
       [COLUMN_KEYS.COMPLETION]: true,
       [COLUMN_KEYS.COST]: true,
       [COLUMN_KEYS.RETRY]: isAdminUser,
+      [COLUMN_KEYS.UPSTREAM_REQUEST_ID]: isAdminUser,
       [COLUMN_KEYS.IP]: true,
       [COLUMN_KEYS.DETAILS]: true,
     };
@@ -180,6 +183,7 @@ export const useLogsData = () => {
       if (
         (key === COLUMN_KEYS.CHANNEL ||
           key === COLUMN_KEYS.USERNAME ||
+          key === COLUMN_KEYS.UPSTREAM_REQUEST_ID ||
           key === COLUMN_KEYS.RETRY) &&
         !isAdminUser
       ) {
@@ -219,6 +223,7 @@ export const useLogsData = () => {
       username: formValues.username || '',
       token_name: formValues.token_name || '',
       model_name: formValues.model_name || '',
+      upstream_request_id: formValues.upstream_request_id || '',
       start_timestamp,
       end_timestamp,
       channel: formValues.channel || '',
@@ -232,6 +237,7 @@ export const useLogsData = () => {
     const {
       token_name,
       model_name,
+      upstream_request_id,
       start_timestamp,
       end_timestamp,
       group,
@@ -265,7 +271,7 @@ export const useLogsData = () => {
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&upstream_request_id=${upstream_request_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -598,6 +604,7 @@ export const useLogsData = () => {
       username,
       token_name,
       model_name,
+      upstream_request_id,
       start_timestamp,
       end_timestamp,
       channel,
@@ -615,9 +622,9 @@ export const useLogsData = () => {
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
     if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&upstream_request_id=${upstream_request_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
     } else {
-      url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
+      url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&upstream_request_id=${upstream_request_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
     }
     url = encodeURI(url);
     const res = await API.get(url);
@@ -661,6 +668,7 @@ export const useLogsData = () => {
         username,
         token_name,
         model_name,
+        upstream_request_id,
         start_timestamp,
         end_timestamp,
         channel,
@@ -679,9 +687,9 @@ export const useLogsData = () => {
 
       let url;
       if (isAdminUser) {
-        url = `/api/log/export?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+        url = `/api/log/export?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&upstream_request_id=${upstream_request_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
       } else {
-        url = `/api/log/self/export?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
+        url = `/api/log/self/export?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&upstream_request_id=${upstream_request_id}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
       }
       url = encodeURI(url);
       const res = await API.get(url, { responseType: 'blob' });

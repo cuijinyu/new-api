@@ -154,8 +154,9 @@ const PricingCardView = ({
   // 渲染标签
   const renderTags = (record) => {
     // 检查是否启用分段计费
-    const isTieredPricing = record.tiered_pricing_enabled && 
-      Array.isArray(record.tiered_pricing) && 
+    const isTieredPricing =
+      record.tiered_pricing_enabled &&
+      Array.isArray(record.tiered_pricing) &&
       record.tiered_pricing.length > 0;
 
     // 计费类型标签（左边）
@@ -276,7 +277,7 @@ const PricingCardView = ({
                       <h3 className='text-lg font-bold text-gray-900 truncate'>
                         {model.model_name}
                       </h3>
-                      <div className='flex items-center gap-3 text-xs mt-1'>
+                      <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-xs mt-1'>
                         {formatPriceInfo(priceData, t)}
                       </div>
                     </div>
@@ -344,7 +345,9 @@ const PricingCardView = ({
                           />
                         </Tooltip>
                       </div>
-                      <div className={`grid ${isAdminUser ? 'grid-cols-3' : 'grid-cols-2'} gap-2 text-xs text-gray-600`}>
+                      <div
+                        className={`grid ${isAdminUser ? 'grid-cols-3' : 'grid-cols-2'} gap-2 text-xs text-gray-600`}
+                      >
                         <div>
                           {t('模型')}:{' '}
                           {model.quota_type === 0 ? model.model_ratio : t('无')}

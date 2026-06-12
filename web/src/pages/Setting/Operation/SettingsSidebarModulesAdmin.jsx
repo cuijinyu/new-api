@@ -68,6 +68,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       diagnostic: true,
       billing_probe: true,
       reconciliation: true,
+      price_inspection: true,
       setting: true,
     },
   });
@@ -131,6 +132,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         diagnostic: true,
         billing_probe: true,
         reconciliation: true,
+        price_inspection: true,
         setting: true,
       },
     };
@@ -209,6 +211,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             diagnostic: true,
             billing_probe: true,
             reconciliation: true,
+            price_inspection: true,
             setting: true,
           },
         };
@@ -293,6 +296,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'reconciliation',
           title: t('对账管理'),
           description: t('上游渠道对账'),
+        },
+        {
+          key: 'price_inspection',
+          title: t('价格巡检'),
+          description: t('价格源与实际扣费巡检'),
         },
         {
           key: 'setting',

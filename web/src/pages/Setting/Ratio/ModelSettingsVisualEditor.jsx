@@ -39,6 +39,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess, getQuotaPerUnit } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { parseJsonObject } from './jsonUtils';
 
 export default function ModelSettingsVisualEditor(props) {
   const { t } = useTranslation();
@@ -58,9 +59,9 @@ export default function ModelSettingsVisualEditor(props) {
 
   useEffect(() => {
     try {
-      const modelPrice = JSON.parse(props.options.ModelPrice || '{}');
-      const modelRatio = JSON.parse(props.options.ModelRatio || '{}');
-      const completionRatio = JSON.parse(props.options.CompletionRatio || '{}');
+      const modelPrice = parseJsonObject(props.options.ModelPrice);
+      const modelRatio = parseJsonObject(props.options.ModelRatio);
+      const completionRatio = parseJsonObject(props.options.CompletionRatio);
 
       // 合并所有模型名称
       const modelNames = new Set([

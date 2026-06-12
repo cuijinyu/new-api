@@ -1,7 +1,30 @@
 {
   "permissions": {
     "allow": [
-      "Edit"
+      "Edit",
+      "Bash(python:*)",
+      "Bash(sqlite3:*)",
+      "Bash(grep:*)",
+      "Bash(streamlit run:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "mcp__web-search-prime__web_search_prime",
+      "mcp__web-reader__webReader",
+      "Bash(export:*)",
+      "Bash(env:*)",
+      "Bash(go run:*)",
+      "Bash(/tmp/athena_query_423.txt:*)",
+      "Read(//tmp/**)",
+      "Bash(/tmp/test_request.json:*)",
+      "Bash(ls -lt /e/new-api/logs/*.log)",
+      "Bash(/tmp/test_gemini_native.json:*)",
+      "Bash(do:*)",
+      "Bash(echo:*)",
+      "Bash(tasklist:*)",
+      "Bash(netstat:*)",
+      "mcp__zread__search_doc",
+      "mcp__zread__get_repo_structure",
+      "mcp__zread__read_file"
     ]
   }
 }

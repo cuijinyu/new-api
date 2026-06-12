@@ -34,12 +34,21 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 }
 
 func InitHttpClient() {
+	transport := &http.Transport{
+		MaxIdleConns:        common.RelayMaxIdleConns,
+		MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
+		IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
+		ForceAttemptHTTP2:   true,
+		Proxy:               http.ProxyFromEnvironment,
+	}
 	if common.RelayTimeout == 0 {
 		httpClient = &http.Client{
+			Transport:     transport,
 			CheckRedirect: checkRedirect,
 		}
 	} else {
 		httpClient = &http.Client{
+			Transport:     transport,
 			Timeout:       time.Duration(common.RelayTimeout) * time.Second,
 			CheckRedirect: checkRedirect,
 		}
@@ -82,10 +91,15 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 
 	switch parsedURL.Scheme {
 	case "http", "https":
+		transport := &http.Transport{
+			MaxIdleConns:        common.RelayMaxIdleConns,
+			MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
+			IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
+			ForceAttemptHTTP2:   true,
+			Proxy:               http.ProxyURL(parsedURL),
+		}
 		client := &http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(parsedURL),
-			},
+			Transport:     transport,
 			CheckRedirect: checkRedirect,
 		}
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
@@ -114,12 +128,17 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 			return nil, err
 		}
 
-		client := &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-					return dialer.Dial(network, addr)
-				},
+		transport := &http.Transport{
+			MaxIdleConns:        common.RelayMaxIdleConns,
+			MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
+			IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
+			ForceAttemptHTTP2:   true,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
 			},
+		}
+		client := &http.Client{
+			Transport:     transport,
 			CheckRedirect: checkRedirect,
 		}
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second

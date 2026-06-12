@@ -617,6 +617,18 @@ def _parse_other_batch(other_series: pd.Series) -> pd.DataFrame:
             "cw_5m": cw_5m, "cw_1h": cw_1h, "cw_rem": cw_rem,
             "is_new": is_new,
             "cond_mult": cond_mult,
+            "provider": o.get("provider", ""),
+            "billing_event": o.get("billing_event", ""),
+            "upstream_task_id": o.get("task_id", ""),
+            "actual_usage": o.get("actual_usage"),
+            "total_tokens": o.get("total_tokens"),
+            "duration_seconds": o.get("duration_seconds"),
+            "unit_scale": o.get("unit_scale"),
+            "group_ratio": o.get("group_ratio"),
+            "price_or_ratio": o.get("price_or_ratio"),
+            "preconsumed_quota": o.get("preconsumed_quota"),
+            "actual_quota": o.get("actual_quota"),
+            "quota_delta": o.get("quota_delta"),
             "ip_new":     o.get("tiered_input_price"),
             "op_new":     o.get("tiered_output_price"),
             "chp_new":    o.get("tiered_cache_hit_price"),
@@ -781,7 +793,65 @@ def recalc_from_raw(df: pd.DataFrame,
     if "cond_mult" in df.columns:
         expected_usd = expected_usd * df["cond_mult"].astype(float).fillna(1.0)
 
+    expected_usd = pd.Series(expected_usd, index=df.index, dtype="float64")
     billed_usd = df["quota"].astype(float) / QUOTA_TO_USD
+
+    model_series = df["model"].astype(str)
+    seedance_model_mask = model_series.str.contains("seedance", case=False, na=False)
+    provider_series = df["provider"].astype(str) if "provider" in df.columns else pd.Series("", index=df.index)
+    event_series = df["billing_event"].astype(str) if "billing_event" in df.columns else pd.Series("", index=df.index)
+    trust_quota_mask = seedance_model_mask
+
+    settlement_mask = (
+        seedance_model_mask
+        & provider_series.eq("service-inference")
+        & event_series.eq("video_task_settlement")
+    )
+
+    if settlement_mask.any():
+        total_tokens = pd.to_numeric(df.get("total_tokens"), errors="coerce")
+        actual_usage = pd.to_numeric(df.get("actual_usage"), errors="coerce")
+        usage = total_tokens.where(total_tokens > 0, actual_usage)
+        unit_scale = pd.to_numeric(df.get("unit_scale"), errors="coerce").fillna(1.0 / 1_000_000)
+        group_ratio = pd.to_numeric(df.get("group_ratio"), errors="coerce").fillna(1.0)
+        price_or_ratio = pd.to_numeric(df.get("price_or_ratio"), errors="coerce")
+        preconsumed_quota = pd.to_numeric(df.get("preconsumed_quota"), errors="coerce").fillna(0)
+        logged_actual_quota = pd.to_numeric(df.get("actual_quota"), errors="coerce")
+        logged_quota_delta = pd.to_numeric(df.get("quota_delta"), errors="coerce")
+
+        can_recalc = settlement_mask & usage.notna() & price_or_ratio.notna()
+        expected_actual_quota = pd.Series(np.nan, index=df.index, dtype="float64")
+        expected_delta_quota = pd.Series(np.nan, index=df.index, dtype="float64")
+
+        # Match Go settlement math: int(value * (usage * unit_scale) * groupRatio * QuotaPerUnit).
+        # For Service Inference, unit_scale is persisted from the runtime float32 scale; using it
+        # avoids 1-quota drift versus a literal 1e-6.
+        expected_actual_quota.loc[can_recalc] = np.floor(
+            price_or_ratio.loc[can_recalc]
+            * (usage.loc[can_recalc] * unit_scale.loc[can_recalc])
+            * group_ratio.loc[can_recalc]
+            * QUOTA_TO_USD
+        )
+        expected_delta_quota.loc[can_recalc] = (
+            expected_actual_quota.loc[can_recalc] - preconsumed_quota.loc[can_recalc]
+        )
+
+        df["seedance_expected_actual_quota"] = expected_actual_quota
+        df["seedance_expected_delta_quota"] = expected_delta_quota
+        df["seedance_logged_actual_quota"] = logged_actual_quota
+        df["seedance_logged_quota_delta"] = logged_quota_delta
+        df["seedance_actual_quota_diff"] = logged_actual_quota - expected_actual_quota
+        df["seedance_delta_quota_diff"] = df["quota"].astype(float) - expected_delta_quota
+        df["recalc_source"] = np.where(can_recalc, "service_inference_seedance", df.get("recalc_source", ""))
+
+        expected_usd.loc[can_recalc] = expected_delta_quota.loc[can_recalc] / QUOTA_TO_USD
+
+    # For Seedance rows without enough settlement metadata (for example the
+    # initial preconsume row), keep quota-derived billing as the row-level
+    # expected value. Settlement rows above are independently recomputed from
+    # provider usage tokens and persisted price metadata.
+    if trust_quota_mask.any():
+        expected_usd.loc[trust_quota_mask & expected_usd.isna()] = billed_usd.loc[trust_quota_mask & expected_usd.isna()]
 
     # Choose price base
     if flat_tier:
@@ -798,7 +868,7 @@ def recalc_from_raw(df: pd.DataFrame,
     df["billed_usd"]     = billed_usd
     df["recalc_usd"]     = price_base
     df["diff_usd"]       = billed_usd - expected_usd
-    df["has_pricing"]    = df["ip"].notna()
+    df["has_pricing"]    = df["ip"].notna() | trust_quota_mask
 
     # Apply discounts
     df["cost_discount"] = df.apply(
@@ -926,6 +996,29 @@ def cross_check_row_level(our_df: pd.DataFrame,
     if "vendor_usd" not in vendor.columns and "quota" in vendor.columns:
         vendor["vendor_usd"] = vendor["quota"].astype(float) / QUOTA_TO_USD
 
+    def _collapse_request_rows(df: pd.DataFrame, usd_col: str) -> pd.DataFrame:
+        if df.empty or "request_id" not in df.columns:
+            return df
+        if not df["request_id"].astype(str).duplicated().any():
+            return df
+
+        df = df.copy()
+        df["_match_request_id"] = df["request_id"].astype(str)
+        sum_cols = [c for c in ("quota", usd_col, "prompt_tokens", "completion_tokens")
+                    if c in df.columns]
+        first_cols = [c for c in df.columns if c not in set(sum_cols + ["request_id", "_match_request_id"])]
+        agg = {c: "sum" for c in sum_cols}
+        agg.update({c: "first" for c in first_cols})
+        collapsed = df.groupby("_match_request_id", as_index=False).agg(agg)
+        collapsed = collapsed.rename(columns={"_match_request_id": "request_id"})
+        return collapsed
+
+    # Task/video flows can emit multiple local billing rows for one request
+    # (preconsume + refund/supplement). Compare providers against the final
+    # request total instead of the first log row.
+    ours = _collapse_request_rows(ours, "billed_usd")
+    vendor = _collapse_request_rows(vendor, "vendor_usd")
+
     our_ids = set(ours["request_id"].astype(str))
     vendor_ids = set(vendor["request_id"].astype(str))
 
@@ -1007,3 +1100,94 @@ def cross_check_row_level(our_df: pd.DataFrame,
         "only_vendor": only_vendor_df,
         "stats": stats,
     }
+
+
+def collapse_postpaid_detail_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse multi-row accounting events into customer-facing bill rows.
+
+    Postpaid invoices should show one logical item per request/task. Two-stage
+    task billing rows (preconsume + settlement refund/supplement) share the
+    same request_id; their quota and money columns are summed into a final
+    amount while descriptive fields are kept from the latest row.
+    """
+    if df.empty or "request_id" not in df.columns:
+        return df
+
+    original_cols = list(df.columns)
+    working = df.copy()
+
+    if "model_name" in working.columns:
+        seedance_mask = working["model_name"].astype(str).str.contains("seedance", case=False, na=False)
+    else:
+        seedance_mask = pd.Series(False, index=working.index)
+    if "billing_event" in working.columns:
+        settlement_mask = working["billing_event"].astype(str).eq("video_task_settlement")
+    else:
+        settlement_mask = pd.Series(False, index=working.index)
+
+    if seedance_mask.any():
+        # Postpaid invoices bill completed task settlement rows at final
+        # actual_quota. Preconsume/refund balance rows are not invoice lines.
+        working = working[~seedance_mask | settlement_mask].copy()
+        seedance_settlement = (
+            working["model_name"].astype(str).str.contains("seedance", case=False, na=False)
+            & working.get("billing_event", pd.Series("", index=working.index)).astype(str).eq("video_task_settlement")
+        )
+        if "actual_quota" in working.columns:
+            actual_quota = pd.to_numeric(working["actual_quota"], errors="coerce")
+            has_actual = seedance_settlement & actual_quota.notna()
+            working.loc[has_actual, "quota"] = actual_quota.loc[has_actual]
+
+        billable_usd = working["quota"].astype(float) / QUOTA_TO_USD
+        for col in ("billed_usd", "expected_usd", "list_price_usd"):
+            if col in working.columns:
+                working[col] = billable_usd
+        if "cost_discount" in working.columns and "cost_usd" in working.columns:
+            working["cost_usd"] = billable_usd * working["cost_discount"].astype(float)
+        if "revenue_discount" in working.columns and "revenue_usd" in working.columns:
+            working["revenue_usd"] = billable_usd * working["revenue_discount"].astype(float)
+        if "profit_usd" in working.columns and "revenue_usd" in working.columns and "cost_usd" in working.columns:
+            working["profit_usd"] = working["revenue_usd"] - working["cost_usd"]
+
+    request_ids = working["request_id"].fillna("").astype(str)
+    duplicate_mask = request_ids.ne("") & request_ids.duplicated(keep=False)
+    if not duplicate_mask.any():
+        return working[original_cols]
+
+    working["_logical_request_id"] = request_ids
+    working["_row_order"] = range(len(working))
+    if "created_at" not in working.columns:
+        working["created_at"] = working["_row_order"]
+
+    passthrough = working[~duplicate_mask].copy()
+    collapsible = working[duplicate_mask].copy()
+    collapsible = collapsible.sort_values(["_logical_request_id", "created_at", "_row_order"])
+
+    sum_cols = [
+        "prompt_tokens", "completion_tokens",
+        "cache_hit_tokens", "cache_write_tokens", "cw_5m", "cw_1h", "cw_remaining",
+        "quota", "billed_usd", "expected_usd", "list_price_usd",
+        "cost_usd", "revenue_usd", "profit_usd",
+    ]
+    sum_cols = [c for c in sum_cols if c in collapsible.columns]
+
+    agg: dict[str, str] = {c: "sum" for c in sum_cols}
+    for col in collapsible.columns:
+        if col in agg or col in {"_logical_request_id", "_row_order"}:
+            continue
+        if col == "created_at":
+            agg[col] = "max"
+        else:
+            agg[col] = "last"
+
+    collapsed = collapsible.groupby("_logical_request_id", as_index=False).agg(agg)
+    collapsed["request_id"] = collapsed["_logical_request_id"]
+    collapsed = collapsed.drop(columns=["_logical_request_id"], errors="ignore")
+    passthrough = passthrough.drop(columns=["_logical_request_id", "_row_order"], errors="ignore")
+    collapsed = collapsed.drop(columns=["_row_order"], errors="ignore")
+
+    result = pd.concat([passthrough, collapsed], ignore_index=True, sort=False)
+    sort_cols = [c for c in ("created_at", "request_id") if c in result.columns]
+    if sort_cols:
+        result = result.sort_values(sort_cols).reset_index(drop=True)
+    return result[original_cols]

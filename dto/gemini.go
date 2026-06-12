@@ -130,6 +130,9 @@ func (r *GeminiChatRequest) IsStream(c *gin.Context) bool {
 	if c.Query("alt") == "sse" {
 		return true
 	}
+	if c != nil && c.Request != nil && strings.Contains(c.Request.URL.Path, "streamGenerateContent") {
+		return true
+	}
 	return false
 }
 
@@ -380,13 +383,15 @@ type GeminiChatResponse struct {
 }
 
 type GeminiUsageMetadata struct {
-	PromptTokenCount          int                         `json:"promptTokenCount"`
-	CandidatesTokenCount      int                         `json:"candidatesTokenCount"`
-	TotalTokenCount           int                         `json:"totalTokenCount"`
-	ThoughtsTokenCount        int                         `json:"thoughtsTokenCount"`
-	CachedContentTokenCount   int                         `json:"cachedContentTokenCount"`
-	PromptTokensDetails       []GeminiPromptTokensDetails `json:"promptTokensDetails"`
-	CandidatesTokensDetails   []GeminiPromptTokensDetails `json:"candidatesTokensDetails"`
+	PromptTokenCount           int                         `json:"promptTokenCount"`
+	ToolUsePromptTokenCount    int                         `json:"toolUsePromptTokenCount"`
+	CandidatesTokenCount       int                         `json:"candidatesTokenCount"`
+	TotalTokenCount            int                         `json:"totalTokenCount"`
+	ThoughtsTokenCount         int                         `json:"thoughtsTokenCount"`
+	CachedContentTokenCount    int                         `json:"cachedContentTokenCount"`
+	PromptTokensDetails        []GeminiPromptTokensDetails `json:"promptTokensDetails"`
+	ToolUsePromptTokensDetails []GeminiPromptTokensDetails `json:"toolUsePromptTokensDetails"`
+	CandidatesTokensDetails    []GeminiPromptTokensDetails `json:"candidatesTokensDetails"`
 }
 
 type GeminiPromptTokensDetails struct {

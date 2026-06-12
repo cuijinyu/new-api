@@ -77,6 +77,7 @@ import {
   Stethoscope,
   Scale,
   ReceiptText,
+  SearchCheck,
 } from 'lucide-react';
 
 // 获取侧边栏Lucide图标组件
@@ -128,6 +129,8 @@ export function getLucideIcon(key, selected = false) {
       return <ReceiptText {...commonProps} color={iconColor} />;
     case 'reconciliation':
       return <Scale {...commonProps} color={iconColor} />;
+    case 'price_inspection':
+      return <SearchCheck {...commonProps} color={iconColor} />;
     default:
       return <CircleUser {...commonProps} color={iconColor} />;
   }
@@ -176,21 +179,21 @@ export const getModelCategories = (() => {
       gemini: {
         label: 'Gemini',
         icon: <Gemini.Color />,
-        filter: (model) => 
-          model.model_name.toLowerCase().includes('gemini') || 
+        filter: (model) =>
+          model.model_name.toLowerCase().includes('gemini') ||
           model.model_name.toLowerCase().includes('gemma') ||
-          model.model_name.toLowerCase().includes('learnlm') || 
+          model.model_name.toLowerCase().includes('learnlm') ||
           model.model_name.toLowerCase().startsWith('embedding-') ||
           model.model_name.toLowerCase().includes('text-embedding-004') ||
-          model.model_name.toLowerCase().includes('imagen-4') || 
-          model.model_name.toLowerCase().includes('veo-') || 
-          model.model_name.toLowerCase().includes('aqa') ,
+          model.model_name.toLowerCase().includes('imagen-4') ||
+          model.model_name.toLowerCase().includes('veo-') ||
+          model.model_name.toLowerCase().includes('aqa'),
       },
       moonshot: {
         label: 'Moonshot',
         icon: <Moonshot />,
-        filter: (model) => 
-          model.model_name.toLowerCase().includes('moonshot') || 
+        filter: (model) =>
+          model.model_name.toLowerCase().includes('moonshot') ||
           model.model_name.toLowerCase().includes('kimi'),
       },
       zhipu: {
@@ -198,8 +201,8 @@ export const getModelCategories = (() => {
         icon: <Zhipu.Color />,
         filter: (model) =>
           model.model_name.toLowerCase().includes('chatglm') ||
-          model.model_name.toLowerCase().includes('glm-') || 
-          model.model_name.toLowerCase().includes('cogview') || 
+          model.model_name.toLowerCase().includes('glm-') ||
+          model.model_name.toLowerCase().includes('cogview') ||
           model.model_name.toLowerCase().includes('cogvideo'),
       },
       qwen: {
@@ -215,8 +218,8 @@ export const getModelCategories = (() => {
       minimax: {
         label: 'MiniMax',
         icon: <Minimax.Color />,
-        filter: (model) => 
-          model.model_name.toLowerCase().includes('abab') || 
+        filter: (model) =>
+          model.model_name.toLowerCase().includes('abab') ||
           model.model_name.toLowerCase().includes('minimax'),
       },
       baidu: {
@@ -242,7 +245,7 @@ export const getModelCategories = (() => {
       cohere: {
         label: 'Cohere',
         icon: <Cohere.Color />,
-        filter: (model) => 
+        filter: (model) =>
           model.model_name.toLowerCase().includes('command') ||
           model.model_name.toLowerCase().includes('c4ai-') ||
           model.model_name.toLowerCase().includes('embed-'),
@@ -265,7 +268,7 @@ export const getModelCategories = (() => {
       mistral: {
         label: 'Mistral AI',
         icon: <Mistral.Color />,
-        filter: (model) => 
+        filter: (model) =>
           model.model_name.toLowerCase().includes('mistral') ||
           model.model_name.toLowerCase().includes('codestral') ||
           model.model_name.toLowerCase().includes('pixtral') ||
@@ -380,6 +383,8 @@ export function getChannelIcon(channelType) {
       return <Doubao.Color size={iconSize} />;
     case 56: // Replicate
       return <Replicate size={iconSize} />;
+    case 57: // Service Inference Video
+      return <Package size={iconSize} />;
     case 8: // 自定义渠道
     case 22: // 知识库：FastGPT
       return <FastGPT.Color size={iconSize} />;
@@ -1299,14 +1304,18 @@ export function renderModelPrice(
               })}
             </p>
           )}
-          {tieredCacheCreationTokensRemaining > 0 && tieredCacheStorePrice > 0 && (
-            <p>
-              {i18next.t('缓存创建(默认)价格：{{symbol}}{{price}} / 1M tokens', {
-                symbol: symbol,
-                price: (tieredCacheStorePrice * rate).toFixed(6),
-              })}
-            </p>
-          )}
+          {tieredCacheCreationTokensRemaining > 0 &&
+            tieredCacheStorePrice > 0 && (
+              <p>
+                {i18next.t(
+                  '缓存创建(默认)价格：{{symbol}}{{price}} / 1M tokens',
+                  {
+                    symbol: symbol,
+                    price: (tieredCacheStorePrice * rate).toFixed(6),
+                  },
+                )}
+              </p>
+            )}
           <p>
             {(() => {
               let inputDesc = '';
@@ -1357,7 +1366,10 @@ export function renderModelPrice(
                   ),
                 );
               }
-              if (tieredCacheCreationTokensRemaining > 0 && tieredCacheStorePrice > 0) {
+              if (
+                tieredCacheCreationTokensRemaining > 0 &&
+                tieredCacheStorePrice > 0
+              ) {
                 cacheCreationDesc.push(
                   i18next.t(
                     '缓存创建(默认) {{tokens}} tokens / 1M * {{symbol}}{{price}}',
@@ -1601,9 +1613,9 @@ export function renderModelPrice(
                     imageCompletion: imageCompletionTokens,
                     symbol: symbol,
                     compPrice: (completionRatioPrice * rate).toFixed(6),
-                    imageCompPrice: (
-                      imageCompletionRatioPrice * rate
-                    ).toFixed(6),
+                    imageCompPrice: (imageCompletionRatioPrice * rate).toFixed(
+                      6,
+                    ),
                     ratio: groupRatio,
                     ratioType: ratioLabel,
                   },
@@ -2092,7 +2104,10 @@ export function renderClaudeModelPrice(
 
     let price =
       (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
-      (completionTokens / 1000000) * completionRatioPrice * groupRatio * claude200kOutputMult;
+      (completionTokens / 1000000) *
+        completionRatioPrice *
+        groupRatio *
+        claude200kOutputMult;
 
     const inputUnitPrice = inputRatioPrice * rate;
     const completionUnitPrice = completionRatioPrice * rate;

@@ -118,6 +118,9 @@ var BatchUpdateEnabled = false
 var BatchUpdateInterval int
 
 var RelayTimeout int // unit is second
+var RelayIdleConnTimeout int
+var RelayMaxIdleConns int
+var RelayMaxIdleConnsPerHost int
 
 var GeminiSafetySetting string
 
@@ -125,7 +128,8 @@ var GeminiSafetySetting string
 var CohereSafetySetting string
 
 const (
-	RequestIdKey = "X-Oneapi-Request-Id"
+	RequestIdKey         = "X-Oneapi-Request-Id"
+	UpstreamRequestIdKey = "X-Upstream-Request-Id"
 )
 
 const (

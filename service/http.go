@@ -5,12 +5,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 
 	"github.com/gin-gonic/gin"
 )
+
+func ShouldCopyUpstreamHeader(c *gin.Context, key string, values []string) bool {
+	if strings.EqualFold(key, "Content-Length") {
+		return false
+	}
+	if strings.EqualFold(key, common.RequestIdKey) {
+		if c != nil && len(values) > 0 {
+			c.Set(common.UpstreamRequestIdKey, values[0])
+		}
+		return false
+	}
+	return true
+}
 
 func CloseResponseBodyGracefully(httpResponse *http.Response) {
 	if httpResponse == nil || httpResponse.Body == nil {
@@ -35,8 +49,7 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 	// For example, Postman will report error, and we cannot check the response at all.
 	if src != nil {
 		for k, v := range src.Header {
-			// avoid setting Content-Length
-			if k == "Content-Length" {
+			if !ShouldCopyUpstreamHeader(c, k, v) {
 				continue
 			}
 			c.Writer.Header().Set(k, v[0])

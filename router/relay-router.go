@@ -13,6 +13,7 @@ import (
 func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.CORS())
 	router.Use(middleware.DecompressRequestMiddleware())
+	router.Use(middleware.BodyStorageCleanup())
 	router.Use(middleware.StatsMiddleware())
 	router.Use(middleware.MetricsMiddleware())
 	// https://platform.openai.com/docs/api-reference/introduction

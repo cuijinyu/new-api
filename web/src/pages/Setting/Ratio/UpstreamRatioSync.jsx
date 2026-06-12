@@ -53,6 +53,7 @@ import {
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
 import ChannelSelectorModal from '../../../components/settings/ChannelSelectorModal';
+import { parseJsonObject } from './jsonUtils';
 
 function ConflictConfirmModal({ t, visible, items, onOk, onCancel }) {
   const isMobile = useIsMobile();
@@ -107,16 +108,16 @@ export default function UpstreamRatioSync(props) {
   const [differences, setDifferences] = useState({});
   const [resolutions, setResolutions] = useState({});
 
-  // 计费模式分桶：{ model: 'text' | 'tiered' | 'image' | 'once' }
+  // 计费模式分类: { model: 'text' | 'tiered' | 'image' | 'once' }
   const [categories, setCategories] = useState({});
 
-  // 价格源选择：'channel'（其他 new-api 渠道）/ 'models.dev' / 'openrouter'
+  // 价格源选择: 'channel'(其他 new-api 渠道) / 'models.dev' / 'openrouter'
   const [source, setSource] = useState('channel');
-  // 外部源的指定模型（逗号/空格分隔，支持通配 *），留空=全量
+  // 外部源的指定模型(逗号/空格分隔，支持通配 *)，留空=全量
   const [modelsInput, setModelsInput] = useState('');
   // 仅同步本站已有模型
   const [onlyExisting, setOnlyExisting] = useState(false);
-  // 排除名单（逗号/空格分隔，支持通配 *）
+  // 排除名单(逗号/空格分隔，支持通配 *)
   const [excludeInput, setExcludeInput] = useState('');
 
   // 是否已经执行过同步
@@ -222,7 +223,7 @@ export default function UpstreamRatioSync(props) {
       const res = await API.post('/api/ratio_sync/fetch', payload);
 
       if (!res.data.success) {
-        showError(res.data.message || t('后端请求失败'));
+          showError(res.data.message || t('后端请求失败'));
         setSyncLoading(false);
         return;
       }
@@ -256,19 +257,20 @@ export default function UpstreamRatioSync(props) {
     }
   };
 
-  // 解析“指定模型/排除名单”输入：逗号、空格或换行分隔
+  // 解析“指定模型 / 排除名单”输入: 逗号、空格或换行分隔
   const parseModelList = (raw) =>
     (raw || '')
       .split(/[\s,]+/)
       .map((s) => s.trim())
       .filter(Boolean);
 
-  // 计算外部源默认勾选项：仅对“纯文本 + 新增（本地未设置）”自动勾选
+  // 计算外部源默认勾选项: 仅对“纯文本 + 新增(本地未设置)”自动勾选
   const computeDefaultResolutions = (diffs, cats, channelName) => {
     const res = {};
     Object.entries(diffs).forEach(([model, ratioTypes]) => {
-      if ((cats[model] || 'text') !== 'text') return;
       Object.entries(ratioTypes).forEach(([ratioType, diff]) => {
+        if (ratioType !== 'tiered_pricing' && (cats[model] || 'text') !== 'text')
+          return;
         if (diff.current !== null && diff.current !== undefined) return; // 只增不改
         const val = diff.upstreams?.[channelName];
         if (val === null || val === undefined || val === 'same') return;
@@ -279,7 +281,7 @@ export default function UpstreamRatioSync(props) {
     return res;
   };
 
-  // 从外部价格源（models.dev / OpenRouter）获取价格预览（仅预览，不落库）
+  // 从外部价格源(models.dev / OpenRouter / LiteLLM)获取价格预览(仅预览，不落库)
   const fetchRatiosFromSource = async () => {
     setSyncLoading(true);
     const payload = {
@@ -304,7 +306,13 @@ export default function UpstreamRatioSync(props) {
         categories = {},
       } = res.data.data;
 
-      const sourceChannelName = source === 'openrouter' ? 'OpenRouter' : 'models.dev';
+      const sourceChannelName =
+        {
+          openrouter: 'OpenRouter',
+          'models.dev': 'models.dev',
+          litellm: 'LiteLLM',
+          tiered: 'models.dev + LiteLLM',
+        }[source] || 'models.dev';
 
       setDifferences(differences);
       setCategories(categories);
@@ -323,43 +331,54 @@ export default function UpstreamRatioSync(props) {
     }
   };
 
-  // 计费模式分桶元信息（标签/颜色/提示）
+  // 计费模式分类元信息(标签/颜色/提示)
   const categoryMeta = (cat) => {
     switch (cat) {
       case 'tiered':
         return {
           label: t('分段计费'),
           color: 'purple',
-          tip: t(
-            '运行时由分段价计费，扁平同步仅供参考，覆盖会被运行时忽略，默认不勾选',
-          ),
+          tip: t('运行时由分段价计费，扁平同步仅供参考'),
         };
       case 'image':
         return {
           label: t('图片计费'),
           color: 'orange',
-          tip: t(
-            '运行时由图片专用价（尺寸/质量/张数或图片token倍率）计费，扁平同步仅供参考，默认不勾选',
-          ),
+          tip: t('运行时由图片专用计费，扁平同步仅供参考，默认不勾选'),
         };
       case 'once':
         return {
           label: t('按次计费'),
           color: 'blue',
-          tip: t('运行时由固定价格（按次）计费，扁平同步仅供参考，默认不勾选'),
+          tip: t('运行时由固定价格按次计费，扁平同步仅供参考，默认不勾选'),
         };
       default:
         return { label: t('纯文本'), color: 'green', tip: '' };
     }
   };
 
-  // 判断某模型是否需复核（非纯文本，默认不勾选并置灰）
-  const isLockedModel = (model) =>
-    (categories[model] || 'text') !== 'text';
+  // 判断某模型是否需要复核(非纯文本默认不勾选并置灰)
+  const isLockedModel = (model, ratioType) =>
+    ratioType !== 'tiered_pricing' && (categories[model] || 'text') !== 'text';
 
   function getBillingCategory(ratioType) {
+    if (ratioType === 'tiered_pricing') return 'tiered';
     return ratioType === 'model_price' ? 'price' : 'ratio';
   }
+
+  const formatSyncValue = (value) => {
+    if (value === null || value === undefined || value === 'same') return value;
+    if (typeof value !== 'object') return value;
+    if (Array.isArray(value?.tiers)) {
+      return value.tiers
+        .map((tier) => {
+          const max = tier.max_tokens === -1 ? '+' : `-${tier.max_tokens}K`;
+          return `${tier.min_tokens}K${max} $${tier.input_price}/$${tier.output_price}`;
+        })
+        .join(', ');
+    }
+    return JSON.stringify(value);
+  };
 
   const selectValue = useCallback(
     (model, ratioType, value) => {
@@ -387,15 +406,17 @@ export default function UpstreamRatioSync(props) {
 
   const applySync = async () => {
     const currentRatios = {
-      ModelRatio: JSON.parse(props.options.ModelRatio || '{}'),
-      CompletionRatio: JSON.parse(props.options.CompletionRatio || '{}'),
-      CacheRatio: JSON.parse(props.options.CacheRatio || '{}'),
-      ModelPrice: JSON.parse(props.options.ModelPrice || '{}'),
+      ModelRatio: parseJsonObject(props.options.ModelRatio),
+      CompletionRatio: parseJsonObject(props.options.CompletionRatio),
+      CacheRatio: parseJsonObject(props.options.CacheRatio),
+      ModelPrice: parseJsonObject(props.options.ModelPrice),
+      TieredPricing: parseJsonObject(props.options.TieredPricing),
     };
 
     const conflicts = [];
 
     const getLocalBillingCategory = (model) => {
+      if (currentRatios.TieredPricing[model]?.enabled) return 'tiered';
       if (currentRatios.ModelPrice[model] !== undefined) return 'price';
       if (
         currentRatios.ModelRatio[model] !== undefined ||
@@ -417,7 +438,12 @@ export default function UpstreamRatioSync(props) {
 
     Object.entries(resolutions).forEach(([model, ratios]) => {
       const localCat = getLocalBillingCategory(model);
-      const newCat = 'model_price' in ratios ? 'price' : 'ratio';
+      const newCat =
+        'tiered_pricing' in ratios
+          ? 'tiered'
+          : 'model_price' in ratios
+            ? 'price'
+            : 'ratio';
 
       if (localCat && localCat !== newCat) {
         const currentDesc =
@@ -426,7 +452,9 @@ export default function UpstreamRatioSync(props) {
             : `${t('模型倍率')} : ${currentRatios.ModelRatio[model] ?? '-'}\n${t('补全倍率')} : ${currentRatios.CompletionRatio[model] ?? '-'}`;
 
         let newDesc = '';
-        if (newCat === 'price') {
+        if (newCat === 'tiered') {
+          newDesc = `${t('分段计费')} : ${formatSyncValue(ratios['tiered_pricing'])}`;
+        } else if (newCat === 'price') {
           newDesc = `${t('固定价格')} : ${ratios['model_price']}`;
         } else {
           const newModelRatio = ratios['model_ratio'] ?? '-';
@@ -464,20 +492,27 @@ export default function UpstreamRatioSync(props) {
         CompletionRatio: { ...currentRatios.CompletionRatio },
         CacheRatio: { ...currentRatios.CacheRatio },
         ModelPrice: { ...currentRatios.ModelPrice },
+        TieredPricing: { ...currentRatios.TieredPricing },
       };
 
       Object.entries(resolutions).forEach(([model, ratios]) => {
         const selectedTypes = Object.keys(ratios);
+        const hasTiered = selectedTypes.includes('tiered_pricing');
         const hasPrice = selectedTypes.includes('model_price');
-        const hasRatio = selectedTypes.some((rt) => rt !== 'model_price');
+        const hasRatio = selectedTypes.some(
+          (rt) => rt !== 'model_price' && rt !== 'tiered_pricing',
+        );
 
-        if (hasPrice) {
+        if (hasTiered || hasPrice) {
           delete finalRatios.ModelRatio[model];
           delete finalRatios.CompletionRatio[model];
           delete finalRatios.CacheRatio[model];
         }
-        if (hasRatio) {
+        if (hasTiered || hasRatio) {
           delete finalRatios.ModelPrice[model];
+        }
+        if (hasPrice || hasRatio) {
+          delete finalRatios.TieredPricing[model];
         }
 
         Object.entries(ratios).forEach(([ratioType, value]) => {
@@ -485,7 +520,8 @@ export default function UpstreamRatioSync(props) {
             .split('_')
             .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
             .join('');
-          finalRatios[optionKey][model] = parseFloat(value);
+          finalRatios[optionKey][model] =
+            ratioType === 'tiered_pricing' ? value : parseFloat(value);
         });
       });
 
@@ -555,6 +591,8 @@ export default function UpstreamRatioSync(props) {
               {t('其他 new-api 渠道')}
             </Select.Option>
             <Select.Option value='models.dev'>models.dev</Select.Option>
+            <Select.Option value='tiered'>models.dev + LiteLLM</Select.Option>
+            <Select.Option value='litellm'>LiteLLM</Select.Option>
             <Select.Option value='openrouter'>OpenRouter</Select.Option>
           </Select>
 
@@ -569,7 +607,7 @@ export default function UpstreamRatioSync(props) {
                 }
               }}
             >
-              {t('选择同步渠道')}
+                {t('选择同步渠道')}
             </Button>
           ) : (
             <>
@@ -638,6 +676,7 @@ export default function UpstreamRatioSync(props) {
               </Select.Option>
               <Select.Option value='cache_ratio'>{t('缓存倍率')}</Select.Option>
               <Select.Option value='model_price'>{t('固定价格')}</Select.Option>
+              <Select.Option value='tiered_pricing'>{t('分段计费')}</Select.Option>
             </Select>
           </div>
         </div>
@@ -654,7 +693,7 @@ export default function UpstreamRatioSync(props) {
           />
           <div className='text-xs text-gray-500'>
             {t(
-              '外部源仅提供扁平 token 价：model_ratio = 输入价(USD/1M) / 2，completion_ratio = 输出价 / 输入价。仅供预览，勾选后才会落库。分段/图片/按次模型默认不勾选（运行时由分段价/图片专用价/按次计费）。',
+              '外部源会返回可预览的倍率和分段价格；勾选后才会写入本地配置。',
             )}
           </div>
         </div>
@@ -778,6 +817,7 @@ export default function UpstreamRatioSync(props) {
             completion_ratio: t('补全倍率'),
             cache_ratio: t('缓存倍率'),
             model_price: t('固定价格'),
+            tiered_pricing: t('分段计费'),
           };
           const baseTag = (
             <Tag color={stringToColor(text)} shape='circle'>
@@ -854,7 +894,9 @@ export default function UpstreamRatioSync(props) {
             color={text !== null && text !== undefined ? 'blue' : 'default'}
             shape='circle'
           >
-            {text !== null && text !== undefined ? text : t('未设置')}
+            {text !== null && text !== undefined
+              ? formatSyncValue(text)
+              : t('未设置')}
           </Tag>
         ),
       },
@@ -869,7 +911,7 @@ export default function UpstreamRatioSync(props) {
               upstreamVal !== null &&
               upstreamVal !== undefined &&
               upstreamVal !== 'same' &&
-              !isLockedModel(row.model)
+              !isLockedModel(row.model, row.ratioType)
             ) {
               selectableCount++;
               const isSelected =
@@ -899,7 +941,7 @@ export default function UpstreamRatioSync(props) {
                 upstreamVal !== null &&
                 upstreamVal !== undefined &&
                 upstreamVal !== 'same' &&
-                !isLockedModel(row.model)
+                !isLockedModel(row.model, row.ratioType)
               ) {
                 selectValue(row.model, row.ratioType, upstreamVal);
               }
@@ -955,7 +997,7 @@ export default function UpstreamRatioSync(props) {
 
             const isSelected =
               resolutions[record.model]?.[record.ratioType] === upstreamVal;
-            const locked = isLockedModel(record.model);
+            const locked = isLockedModel(record.model, record.ratioType);
 
             return (
               <div className='flex items-center gap-2'>
@@ -980,7 +1022,7 @@ export default function UpstreamRatioSync(props) {
                     }
                   }}
                 >
-                  {upstreamVal}
+                  {formatSyncValue(upstreamVal)}
                 </Checkbox>
                 {!isConfident && (
                   <Tooltip
@@ -1061,10 +1103,11 @@ export default function UpstreamRatioSync(props) {
         onOk={async () => {
           setConfirmVisible(false);
           const curRatios = {
-            ModelRatio: JSON.parse(props.options.ModelRatio || '{}'),
-            CompletionRatio: JSON.parse(props.options.CompletionRatio || '{}'),
-            CacheRatio: JSON.parse(props.options.CacheRatio || '{}'),
-            ModelPrice: JSON.parse(props.options.ModelPrice || '{}'),
+            ModelRatio: parseJsonObject(props.options.ModelRatio),
+            CompletionRatio: parseJsonObject(props.options.CompletionRatio),
+            CacheRatio: parseJsonObject(props.options.CacheRatio),
+            ModelPrice: parseJsonObject(props.options.ModelPrice),
+            TieredPricing: parseJsonObject(props.options.TieredPricing),
           };
           await performSync(curRatios);
         }}

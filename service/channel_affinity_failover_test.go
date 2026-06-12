@@ -105,6 +105,99 @@ func TestInvalidateChannelAffinityOnFailure_NoAffinityContext(t *testing.T) {
 	InvalidateChannelAffinityOnFailure(c)
 }
 
+func TestClearCurrentChannelAffinityCache_ClearsCacheAndRetryFlag(t *testing.T) {
+	resetAffinityCache()
+	cache := getChannelAffinityCache()
+
+	cacheKeySuffix := "claude cli trace:default:user456"
+	cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
+	_ = cache.SetWithTTL(cacheKeySuffix, 55, time.Hour)
+
+	c, _ := newTestContext(`{}`)
+	setAffinityMeta(c, channelAffinityMeta{
+		CacheKey:   cacheKeyFull,
+		TTLSeconds: 3600,
+		RuleName:   "claude cli trace",
+		SkipRetry:  true,
+	})
+	c.Set(ginKeyChannelAffinitySkipRetry, true)
+
+	if !ClearCurrentChannelAffinityCache(c) {
+		t.Fatalf("ClearCurrentChannelAffinityCache() = false, want true")
+	}
+	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
+		t.Fatalf("skip retry flag should be reset after clearing current affinity cache")
+	}
+	if _, found, _ := cache.Get(cacheKeySuffix); found {
+		t.Fatalf("expected current affinity cache entry to be deleted")
+	}
+}
+
+func TestClearCurrentChannelAffinityCache_NoAffinityContext(t *testing.T) {
+	resetAffinityCache()
+	c, _ := newTestContext(`{}`)
+
+	if ClearCurrentChannelAffinityCache(c) {
+		t.Fatalf("ClearCurrentChannelAffinityCache() = true, want false without affinity context")
+	}
+}
+
+func TestShouldKeepChannelAffinityOnChannelDisabledDefaultFalse(t *testing.T) {
+	old := operation_setting.GetChannelAffinitySetting()
+	snapshot := *old
+	defer operation_setting.SetChannelAffinitySetting(&snapshot)
+
+	updated := snapshot
+	updated.KeepOnChannelDisabled = false
+	operation_setting.SetChannelAffinitySetting(&updated)
+
+	if ShouldKeepChannelAffinityOnChannelDisabled() {
+		t.Fatalf("ShouldKeepChannelAffinityOnChannelDisabled() = true, want false")
+	}
+}
+
+func TestBuildChannelAffinityCacheKeySuffixIncludesModelWhenEnabled(t *testing.T) {
+	rule := operation_setting.ChannelAffinityRule{
+		Name:              "codex",
+		IncludeRuleName:   true,
+		IncludeModelName:  true,
+		IncludeUsingGroup: true,
+	}
+
+	got := buildChannelAffinityCacheKeySuffix(rule, "gpt-5", "default", "session-a")
+	want := "codex:gpt-5:default:session-a"
+	if got != want {
+		t.Fatalf("cache key suffix = %q, want %q", got, want)
+	}
+}
+
+func TestBuildChannelAffinityCacheKeySuffixKeepsLegacyShape(t *testing.T) {
+	rule := operation_setting.ChannelAffinityRule{
+		Name:              "codex",
+		IncludeRuleName:   true,
+		IncludeUsingGroup: true,
+	}
+
+	got := buildChannelAffinityCacheKeySuffix(rule, "gpt-5", "default", "session-a")
+	want := "codex:default:session-a"
+	if got != want {
+		t.Fatalf("cache key suffix = %q, want %q", got, want)
+	}
+}
+
+func TestExtractChannelAffinityValueFromRequestHeader(t *testing.T) {
+	c, _ := newTestContext(`{}`)
+	c.Request.Header.Set("X-Session-ID", " session-123 ")
+
+	got := extractChannelAffinityValue(c, operation_setting.ChannelAffinityKeySource{
+		Type: "request_header",
+		Key:  "X-Session-ID",
+	})
+	if got != "session-123" {
+		t.Fatalf("header affinity value = %q, want session-123", got)
+	}
+}
+
 // --- Tests for RecordChannelAffinityPoison + GetChannelAffinityPoisonRewrite ---
 
 func TestPoisonCache_RecordAndRetrieve(t *testing.T) {

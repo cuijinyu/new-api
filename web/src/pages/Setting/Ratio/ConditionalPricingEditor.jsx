@@ -44,6 +44,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess, showWarning } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { parseJsonObject } from './jsonUtils';
 
 const { Text } = Typography;
 
@@ -86,12 +87,12 @@ export default function ConditionalPricingEditor(props) {
 
   useEffect(() => {
     try {
-      const cfg = JSON.parse(props.options.ConditionalPricing || '{}');
+      const cfg = parseJsonObject(props.options.ConditionalPricing);
       const modelData = Object.entries(cfg).map(([name, c]) => ({
         name,
-        enabled: c.enabled || false,
-        strategy: c.strategy || 'first-match',
-        rules: c.rules || [],
+        enabled: c?.enabled || false,
+        strategy: c?.strategy || 'first-match',
+        rules: Array.isArray(c?.rules) ? c.rules : [],
       }));
       setModels(modelData);
     } catch (error) {

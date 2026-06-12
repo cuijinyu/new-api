@@ -111,7 +111,9 @@ type RelayInfo struct {
 	FinalPreConsumedQuota  int  // 最终预消耗的配额
 	IsClaudeBetaQuery      bool // /v1/messages?beta=true
 
-	PriceData types.PriceData
+	PriceData               types.PriceData
+	UpstreamRequestBodySize int64
+	ParamOverrideAudit      []string
 
 	Request dto.Request
 

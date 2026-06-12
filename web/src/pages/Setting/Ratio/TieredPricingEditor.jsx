@@ -44,6 +44,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess, showWarning } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { parseJsonObject } from './jsonUtils';
 
 const { Text } = Typography;
 
@@ -63,12 +64,12 @@ export default function TieredPricingEditor(props) {
 
   useEffect(() => {
     try {
-      const tieredPricing = JSON.parse(props.options.TieredPricing || '{}');
+      const tieredPricing = parseJsonObject(props.options.TieredPricing);
 
       const modelData = Object.entries(tieredPricing).map(([name, config]) => ({
         name,
-        enabled: config.enabled || false,
-        tiers: config.tiers || [],
+        enabled: config?.enabled || false,
+        tiers: Array.isArray(config?.tiers) ? config.tiers : [],
       }));
 
       setModels(modelData);

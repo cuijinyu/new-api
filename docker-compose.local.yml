@@ -31,8 +31,8 @@ services:
       - TZ=Asia/Shanghai
       - ERROR_LOG_ENABLED=true
       - BATCH_UPDATE_ENABLED=true
-      - RELAY_TIMEOUT=1200
-      - STREAMING_TIMEOUT=1200
+      - RELAY_TIMEOUT=2400
+      - STREAMING_TIMEOUT=2400
       - SESSION_SECRET=local-docker-dev-only-change-in-prod
       - GIN_MODE=release
       - RAW_LOG_S3_ENABLED=true

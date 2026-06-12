@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -41,10 +42,47 @@ func valuesEqual(a, b interface{}) bool {
 	if aok && bok {
 		return nearlyEqual(af, bf)
 	}
+	if reflect.DeepEqual(normalizeCompareValue(a), normalizeCompareValue(b)) {
+		return true
+	}
 	return a == b
 }
 
-var ratioTypes = []string{"model_ratio", "completion_ratio", "cache_ratio", "model_price"}
+func normalizeCompareValue(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out interface{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return v
+	}
+	return out
+}
+
+func mapFromConfigValue(v interface{}) map[string]interface{} {
+	switch typed := v.(type) {
+	case map[string]interface{}:
+		return typed
+	case map[string]float64:
+		out := make(map[string]interface{}, len(typed))
+		for k, val := range typed {
+			out[k] = val
+		}
+		return out
+	default:
+		normalized := normalizeCompareValue(v)
+		if out, ok := normalized.(map[string]interface{}); ok {
+			return out
+		}
+		return nil
+	}
+}
+
+var ratioTypes = []string{"model_ratio", "completion_ratio", "cache_ratio", "model_price", "tiered_pricing"}
 
 type upstreamResult struct {
 	Name string         `json:"name"`
@@ -343,18 +381,16 @@ func buildDifferences(localData map[string]any, successfulChannels []struct {
 	allModels := make(map[string]struct{})
 
 	for _, ratioType := range ratioTypes {
-		if localRatioAny, ok := localData[ratioType]; ok {
-			if localRatio, ok := localRatioAny.(map[string]float64); ok {
-				for modelName := range localRatio {
-					allModels[modelName] = struct{}{}
-				}
+		if localRatio := mapFromConfigValue(localData[ratioType]); localRatio != nil {
+			for modelName := range localRatio {
+				allModels[modelName] = struct{}{}
 			}
 		}
 	}
 
 	for _, channel := range successfulChannels {
 		for _, ratioType := range ratioTypes {
-			if upstreamRatio, ok := channel.data[ratioType].(map[string]any); ok {
+			if upstreamRatio := mapFromConfigValue(channel.data[ratioType]); upstreamRatio != nil {
 				for modelName := range upstreamRatio {
 					allModels[modelName] = struct{}{}
 				}
@@ -402,11 +438,9 @@ func buildDifferences(localData map[string]any, successfulChannels []struct {
 	for modelName := range allModels {
 		for _, ratioType := range ratioTypes {
 			var localValue interface{} = nil
-			if localRatioAny, ok := localData[ratioType]; ok {
-				if localRatio, ok := localRatioAny.(map[string]float64); ok {
-					if val, exists := localRatio[modelName]; exists {
-						localValue = val
-					}
+			if localRatio := mapFromConfigValue(localData[ratioType]); localRatio != nil {
+				if val, exists := localRatio[modelName]; exists {
+					localValue = val
 				}
 			}
 
@@ -418,7 +452,7 @@ func buildDifferences(localData map[string]any, successfulChannels []struct {
 			for _, channel := range successfulChannels {
 				var upstreamValue interface{} = nil
 
-				if upstreamRatio, ok := channel.data[ratioType].(map[string]any); ok {
+				if upstreamRatio := mapFromConfigValue(channel.data[ratioType]); upstreamRatio != nil {
 					if val, exists := upstreamRatio[modelName]; exists {
 						upstreamValue = val
 						hasUpstreamValue = true

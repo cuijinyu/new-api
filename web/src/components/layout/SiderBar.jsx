@@ -51,6 +51,7 @@ const routerMap = {
   diagnostic: '/console/diagnostic',
   billing_probe: '/console/billing-probe',
   reconciliation: '/console/reconciliation',
+  price_inspection: '/console/price-inspection',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -195,6 +196,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('对账管理'),
         itemKey: 'reconciliation',
         to: '/console/reconciliation',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('价格巡检'),
+        itemKey: 'price_inspection',
+        to: '/console/price-inspection',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

@@ -1,15 +1,6 @@
 package controller
 
-// 价格源同步扩展：在不改动现有 FetchUpstreamRatios（其他 new-api 渠道）行为的前提下，
-// 新增 models.dev / OpenRouter 两个外部价格源，并提供分段/图片/按次计费护栏。
-//
-// 核心约定（与计划一致）：
-//   - 换算：model_ratio = input_usd_per_1M / 2（$2/1M => ratio 1.0）；
-//           completion_ratio = output_usd / input_usd；cache_ratio = cache_read_usd / input_usd。
-//   - 取价与落库严格两步：本文件只负责“获取->返回 diff 预览”，绝不写库。
-//   - 计费模式分流：每个模型按 分段(tiered)/图片(image)/按次(once)/纯文本(text) 归类，
-//     前端据此分桶展示；分段/图片/按次默认不勾选，避免扁平价覆盖运行时的分段/图片/按次计费。
-
+// External price source sync adapters.
 import (
 	"context"
 	"encoding/json"
@@ -17,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,22 +25,20 @@ const (
 	sourceChannel    = ""
 	sourceModelsDev  = "models.dev"
 	sourceOpenRouter = "openrouter"
+	sourceLiteLLM    = "litellm"
+	sourceTiered     = "tiered"
 
 	modelsDevURL  = "https://models.dev/api.json"
 	openRouterURL = "https://openrouter.ai/api/v1/models"
+	liteLLMURL    = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 
-	maxExternalBytes = 64 << 20 // 64MB，models.dev/OpenRouter 全量价目表
-
-	// 计费模式分桶标识，前端据此决定默认勾选/置灰与提示文案
-	categoryText   = "text"   // 纯文本 ratio，可直接预览/应用
-	categoryTiered = "tiered" // 分段计费，需复核
-	categoryImage  = "image"  // 图片专用计费，需复核
-	categoryOnce   = "once"   // 按次计费，需复核
+	maxExternalBytes = 64 << 20
+	categoryText     = "text"
+	categoryTiered   = "tiered"
+	categoryImage    = "image"
+	categoryOnce     = "once"
 )
 
-// imageModelNameKeywords 用于在外部源里识别“图像生成/图片”类模型名。
-// 这些模型在本站走图片专用计费（size/quality/N 或 image token 倍率），
-// 外部源的扁平 token 价无法表达，必须排除自动写入。
 var imageModelNameKeywords = []string{
 	"dall-e", "dalle", "gpt-image", "stable-diffusion", "sdxl", "flux",
 	"midjourney", "imagen", "ideogram", "recraft", "playground-v",
@@ -55,7 +46,6 @@ var imageModelNameKeywords = []string{
 	"qwen-image", "wan2", "wan-",
 }
 
-// normalizeSource 将前端传入的源名标准化为内部常量。
 func normalizeSource(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "channel", "channels", "newapi":
@@ -64,12 +54,15 @@ func normalizeSource(s string) string {
 		return sourceModelsDev
 	case "openrouter", "open_router", "open-router":
 		return sourceOpenRouter
+	case "litellm", "lite_llm", "lite-llm":
+		return sourceLiteLLM
+	case "tiered", "tiered_pricing", "models.dev+litellm", "modelsdev+litellm", "models.dev,litellm":
+		return sourceTiered
 	default:
 		return strings.ToLower(strings.TrimSpace(s))
 	}
 }
 
-// handleExternalSource 处理 models.dev / OpenRouter 外部源的获取与预览（不写库）。
 func handleExternalSource(c *gin.Context, req *dto.UpstreamRequest, source string) {
 	client := newExternalHTTPClient(req.Timeout)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(req.Timeout)*time.Second)
@@ -87,8 +80,14 @@ func handleExternalSource(c *gin.Context, req *dto.UpstreamRequest, source strin
 	case sourceOpenRouter:
 		srcName = "OpenRouter"
 		data, err = fetchOpenRouter(ctx, client)
+	case sourceLiteLLM:
+		srcName = "LiteLLM"
+		data, err = fetchLiteLLM(ctx, client)
+	case sourceTiered:
+		srcName = "models.dev + LiteLLM"
+		data, err = fetchTieredSources(ctx, client)
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "未知价格源"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unknown price source"})
 		return
 	}
 
@@ -96,7 +95,7 @@ func handleExternalSource(c *gin.Context, req *dto.UpstreamRequest, source strin
 		logger.LogWarn(c.Request.Context(), "fetch external price source failed ("+srcName+"): "+err.Error())
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": fmt.Sprintf("获取 %s 价目表失败：%s", srcName, err.Error()),
+			"message": fmt.Sprintf("failed to fetch %s price catalog: %s", srcName, err.Error()),
 			"data": gin.H{
 				"test_results": []dto.TestResult{{Name: srcName, Status: "error", Error: err.Error()}},
 			},
@@ -132,7 +131,6 @@ func handleExternalSource(c *gin.Context, req *dto.UpstreamRequest, source strin
 	})
 }
 
-// newExternalHTTPClient 构造用于外部源拉取的 http client（IPv4 优先，带超时）。
 func newExternalHTTPClient(timeoutSec int) *http.Client {
 	if timeoutSec <= 0 {
 		timeoutSec = defaultTimeoutSeconds
@@ -154,9 +152,27 @@ func newExternalHTTPClient(timeoutSec int) *http.Client {
 	return &http.Client{Transport: transport, Timeout: time.Duration(timeoutSec+5) * time.Second}
 }
 
-// fetchModelsDev 解析 models.dev 全量价目表 -> 与现有 upstreamResult.Data 同结构的 ratio map。
-// models.dev /api.json 结构：{ "<provider>": { "models": { "<model>": { "cost": { input, output, cache_read } } } } }
-// 其中 cost.* 单位为 USD / 1M tokens。
+type modelsDevTier struct {
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cache_read"`
+	CacheWrite float64 `json:"cache_write"`
+	Tier       struct {
+		Type string `json:"type"`
+		Size int    `json:"size"`
+	} `json:"tier"`
+}
+
+type modelsDevCost struct {
+	Input      float64         `json:"input"`
+	Output     float64         `json:"output"`
+	CacheRead  float64         `json:"cache_read"`
+	CacheWrite float64         `json:"cache_write"`
+	Tiers      []modelsDevTier `json:"tiers"`
+}
+
+// fetchModelsDev fetches models.dev pricing and converts it into upstreamResult.Data ratio maps.
+// models.dev /api.json shape: "<provider>": { "models": { "<model>": { "cost": { input, output, cache_read } } } } }
 func fetchModelsDev(ctx context.Context, client *http.Client) (map[string]any, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsDevURL, nil)
 	if err != nil {
@@ -170,26 +186,23 @@ func fetchModelsDev(ctx context.Context, client *http.Client) (map[string]any, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models.dev 返回 %s", resp.Status)
+		return nil, fmt.Errorf("models.dev 閺夆晜鏌ㄥú?%s", resp.Status)
 	}
 
 	limited := io.LimitReader(resp.Body, maxExternalBytes)
 	var providers map[string]struct {
 		Models map[string]struct {
-			Cost *struct {
-				Input     float64 `json:"input"`
-				Output    float64 `json:"output"`
-				CacheRead float64 `json:"cache_read"`
-			} `json:"cost"`
+			Cost *modelsDevCost `json:"cost"`
 		} `json:"models"`
 	}
 	if err := json.NewDecoder(limited).Decode(&providers); err != nil {
-		return nil, fmt.Errorf("解析 models.dev 数据失败：%w", err)
+		return nil, fmt.Errorf("parse models.dev data failed: %w", err)
 	}
 
 	modelRatio := make(map[string]any)
 	completion := make(map[string]any)
 	cache := make(map[string]any)
+	tiered := make(map[string]any)
 
 	for _, p := range providers {
 		for name, m := range p.Models {
@@ -198,15 +211,15 @@ func fetchModelsDev(ctx context.Context, client *http.Client) (map[string]any, e
 			}
 			applyExternalPricing(name, m.Cost.Input, m.Cost.Output, m.Cost.CacheRead,
 				modelRatio, completion, cache)
+			if cfg := buildModelsDevTieredPricing(m.Cost.Input, m.Cost.Output, m.Cost.CacheRead, m.Cost.CacheWrite, m.Cost.Tiers); cfg != nil {
+				tiered[name] = cfg
+			}
 		}
 	}
 
-	return assembleSourceData(modelRatio, completion, cache), nil
+	return assembleSourceData(modelRatio, completion, cache, nil, tiered), nil
 }
 
-// fetchOpenRouter 解析 OpenRouter /api/v1/models -> 同结构 ratio map。
-// pricing.* 单位为 USD / token（字符串），需 ×1e6 转成 USD / 1M tokens。
-// model id 形如 "anthropic/claude-3.5-sonnet"，取最后一段作为本站模型名。
 func fetchOpenRouter(ctx context.Context, client *http.Client) (map[string]any, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, openRouterURL, nil)
 	if err != nil {
@@ -220,7 +233,7 @@ func fetchOpenRouter(ctx context.Context, client *http.Client) (map[string]any, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenRouter 返回 %s", resp.Status)
+		return nil, fmt.Errorf("OpenRouter 閺夆晜鏌ㄥú?%s", resp.Status)
 	}
 
 	limited := io.LimitReader(resp.Body, maxExternalBytes)
@@ -235,7 +248,7 @@ func fetchOpenRouter(ctx context.Context, client *http.Client) (map[string]any, 
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(limited).Decode(&body); err != nil {
-		return nil, fmt.Errorf("解析 OpenRouter 数据失败：%w", err)
+		return nil, fmt.Errorf("parse OpenRouter data failed: %w", err)
 	}
 
 	modelRatio := make(map[string]any)
@@ -254,20 +267,19 @@ func fetchOpenRouter(ctx context.Context, client *http.Client) (map[string]any, 
 			modelRatio, completion, cache)
 	}
 
-	return assembleSourceData(modelRatio, completion, cache), nil
+	return assembleSourceData(modelRatio, completion, cache, nil, nil), nil
 }
 
-// applyExternalPricing 按换算约定把单模型价格写入三张 map（保留首个有效报价）。
 func applyExternalPricing(name string, inputPer1M, outputPer1M, cacheReadPer1M float64,
 	modelRatio, completion, cache map[string]any) {
 	if name == "" {
 		return
 	}
 	if _, exists := modelRatio[name]; exists {
-		return // 多 provider 同名时保留首个
+		return
 	}
 	if inputPer1M <= 0 {
-		return // 免费/缺失输入价无法表达为倍率，跳过
+		return
 	}
 	modelRatio[name] = inputPer1M / 2.0
 	if outputPer1M > 0 {
@@ -278,7 +290,247 @@ func applyExternalPricing(name string, inputPer1M, outputPer1M, cacheReadPer1M f
 	}
 }
 
-func assembleSourceData(modelRatio, completion, cache map[string]any) map[string]any {
+func fetchTieredSources(ctx context.Context, client *http.Client) (map[string]any, error) {
+	modelsDevData, modelsDevErr := fetchModelsDev(ctx, client)
+	liteLLMData, liteLLMErr := fetchLiteLLM(ctx, client)
+	if modelsDevErr != nil && liteLLMErr != nil {
+		return nil, fmt.Errorf("models.dev: %v; LiteLLM: %v", modelsDevErr, liteLLMErr)
+	}
+	if modelsDevErr != nil {
+		return liteLLMData, nil
+	}
+	if liteLLMErr != nil {
+		return modelsDevData, nil
+	}
+	return mergeExternalSourceData(modelsDevData, liteLLMData), nil
+}
+
+func mergeExternalSourceData(primary, fallback map[string]any) map[string]any {
+	out := make(map[string]any)
+	for _, ratioType := range ratioTypes {
+		merged := make(map[string]any)
+		if sub := mapFromConfigValue(primary[ratioType]); sub != nil {
+			for k, v := range sub {
+				merged[k] = v
+			}
+		}
+		if sub := mapFromConfigValue(fallback[ratioType]); sub != nil {
+			for k, v := range sub {
+				if _, exists := merged[k]; !exists {
+					merged[k] = v
+				}
+			}
+		}
+		if len(merged) > 0 {
+			out[ratioType] = merged
+		}
+	}
+	return out
+}
+
+func buildModelsDevTieredPricing(baseInput, baseOutput, baseCacheRead, baseCacheWrite float64, sourceTiers []modelsDevTier) *ratio_setting.TieredPricing {
+	if len(sourceTiers) == 0 || (baseInput <= 0 && baseOutput <= 0) {
+		return nil
+	}
+	tiers := make([]modelsDevTier, 0, len(sourceTiers))
+	for _, tier := range sourceTiers {
+		if tier.Tier.Size <= 0 {
+			continue
+		}
+		if tier.Tier.Type != "" && tier.Tier.Type != "context" {
+			continue
+		}
+		tiers = append(tiers, tier)
+	}
+	if len(tiers) == 0 {
+		return nil
+	}
+	sort.Slice(tiers, func(i, j int) bool {
+		return tiers[i].Tier.Size < tiers[j].Tier.Size
+	})
+	out := make([]ratio_setting.PriceTier, 0, len(tiers)+1)
+	out = append(out, ratio_setting.PriceTier{MinTokens: 0, MaxTokens: tokensToK(tiers[0].Tier.Size), InputPrice: baseInput, OutputPrice: baseOutput, CacheHitPrice: baseCacheRead, CacheStorePrice: baseCacheWrite})
+	for i, tier := range tiers {
+		maxTokens := -1
+		if i+1 < len(tiers) {
+			maxTokens = tokensToK(tiers[i+1].Tier.Size)
+		}
+		out = append(out, ratio_setting.PriceTier{MinTokens: tokensToK(tier.Tier.Size), MaxTokens: maxTokens, InputPrice: priceOrFallback(tier.Input, baseInput), OutputPrice: priceOrFallback(tier.Output, baseOutput), CacheHitPrice: priceOrFallback(tier.CacheRead, baseCacheRead), CacheStorePrice: priceOrFallback(tier.CacheWrite, baseCacheWrite)})
+	}
+	return &ratio_setting.TieredPricing{Enabled: true, Tiers: out}
+}
+
+var liteLLMAboveCostPattern = regexp.MustCompile(`^(input_cost_per_token|output_cost_per_token|cache_read_input_token_cost|cache_creation_input_token_cost)_above_([0-9]+)k_tokens$`)
+
+type liteLLMThresholdCost struct {
+	Input       float64
+	Output      float64
+	CacheRead   float64
+	CacheCreate float64
+}
+
+func fetchLiteLLM(ctx context.Context, client *http.Client) (map[string]any, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, liteLLMURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Accept", "application/json")
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("LiteLLM returned %s", resp.Status)
+	}
+	limited := io.LimitReader(resp.Body, maxExternalBytes)
+	var catalog map[string]map[string]any
+	if err := json.NewDecoder(limited).Decode(&catalog); err != nil {
+		return nil, fmt.Errorf("parse LiteLLM data failed: %w", err)
+	}
+	modelRatio := make(map[string]any)
+	completion := make(map[string]any)
+	cache := make(map[string]any)
+	tiered := make(map[string]any)
+	for sourceName, raw := range catalog {
+		if sourceName == "sample_spec" || raw == nil {
+			continue
+		}
+		baseInput := floatField(raw, "input_cost_per_token") * 1e6
+		baseOutput := floatField(raw, "output_cost_per_token") * 1e6
+		baseCacheRead := firstFloatField(raw, "cache_read_input_token_cost", "input_cost_per_token_cache_read") * 1e6
+		baseCacheCreate := firstFloatField(raw, "cache_creation_input_token_cost", "input_cost_per_token_cache_creation") * 1e6
+		for _, name := range localModelAliases(sourceName) {
+			applyExternalPricing(name, baseInput, baseOutput, baseCacheRead, modelRatio, completion, cache)
+		}
+		thresholds := map[int]*liteLLMThresholdCost{}
+		for key, value := range raw {
+			matches := liteLLMAboveCostPattern.FindStringSubmatch(key)
+			if len(matches) != 3 {
+				continue
+			}
+			thresholdK, _ := strconv.Atoi(matches[2])
+			if thresholdK <= 0 {
+				continue
+			}
+			cost := thresholds[thresholdK]
+			if cost == nil {
+				cost = &liteLLMThresholdCost{}
+				thresholds[thresholdK] = cost
+			}
+			price := numericValue(value) * 1e6
+			switch matches[1] {
+			case "input_cost_per_token":
+				cost.Input = price
+			case "output_cost_per_token":
+				cost.Output = price
+			case "cache_read_input_token_cost":
+				cost.CacheRead = price
+			case "cache_creation_input_token_cost":
+				cost.CacheCreate = price
+			}
+		}
+		if len(thresholds) == 0 || (baseInput <= 0 && baseOutput <= 0) {
+			continue
+		}
+		cfg := buildLiteLLMTieredPricing(baseInput, baseOutput, baseCacheRead, baseCacheCreate, thresholds)
+		if cfg == nil {
+			continue
+		}
+		for _, name := range localModelAliases(sourceName) {
+			if _, exists := tiered[name]; !exists {
+				tiered[name] = cfg
+			}
+		}
+	}
+	return assembleSourceData(modelRatio, completion, cache, nil, tiered), nil
+}
+
+func buildLiteLLMTieredPricing(baseInput, baseOutput, baseCacheRead, baseCacheCreate float64, thresholds map[int]*liteLLMThresholdCost) *ratio_setting.TieredPricing {
+	keys := make([]int, 0, len(thresholds))
+	for thresholdK := range thresholds {
+		keys = append(keys, thresholdK)
+	}
+	sort.Ints(keys)
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]ratio_setting.PriceTier, 0, len(keys)+1)
+	out = append(out, ratio_setting.PriceTier{MinTokens: 0, MaxTokens: keys[0], InputPrice: baseInput, OutputPrice: baseOutput, CacheHitPrice: baseCacheRead, CacheStorePrice: baseCacheCreate})
+	for i, thresholdK := range keys {
+		cost := thresholds[thresholdK]
+		maxTokens := -1
+		if i+1 < len(keys) {
+			maxTokens = keys[i+1]
+		}
+		out = append(out, ratio_setting.PriceTier{MinTokens: thresholdK, MaxTokens: maxTokens, InputPrice: priceOrFallback(cost.Input, baseInput), OutputPrice: priceOrFallback(cost.Output, baseOutput), CacheHitPrice: priceOrFallback(cost.CacheRead, baseCacheRead), CacheStorePrice: priceOrFallback(cost.CacheCreate, baseCacheCreate)})
+	}
+	return &ratio_setting.TieredPricing{Enabled: true, Tiers: out}
+}
+
+func localModelAliases(sourceName string) []string {
+	sourceName = strings.TrimSpace(sourceName)
+	if sourceName == "" {
+		return nil
+	}
+	if idx := strings.LastIndex(sourceName, "/"); idx >= 0 && idx+1 < len(sourceName) {
+		last := sourceName[idx+1:]
+		if last != sourceName {
+			return []string{last, sourceName}
+		}
+	}
+	return []string{sourceName}
+}
+
+func tokensToK(tokens int) int {
+	if tokens <= 0 {
+		return 0
+	}
+	return (tokens + 999) / 1000
+}
+
+func priceOrFallback(price, fallback float64) float64 {
+	if price > 0 {
+		return price
+	}
+	return fallback
+}
+
+func floatField(raw map[string]any, key string) float64 {
+	return numericValue(raw[key])
+}
+
+func firstFloatField(raw map[string]any, keys ...string) float64 {
+	for _, key := range keys {
+		if value := numericValue(raw[key]); value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func numericValue(value any) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case json.Number:
+		f, _ := v.Float64()
+		return f
+	case string:
+		f, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f
+	default:
+		return 0
+	}
+}
+
+func assembleSourceData(modelRatio, completion, cache, modelPrice, tieredPricing map[string]any) map[string]any {
 	data := make(map[string]any)
 	if len(modelRatio) > 0 {
 		data["model_ratio"] = modelRatio
@@ -288,6 +540,12 @@ func assembleSourceData(modelRatio, completion, cache map[string]any) map[string
 	}
 	if len(cache) > 0 {
 		data["cache_ratio"] = cache
+	}
+	if len(modelPrice) > 0 {
+		data["model_price"] = modelPrice
+	}
+	if len(tieredPricing) > 0 {
+		data["tiered_pricing"] = tieredPricing
 	}
 	return data
 }
@@ -304,13 +562,15 @@ func parseFloatSafe(s string) float64 {
 	return f
 }
 
-// buildModelFilter 构造“是否纳入”谓词：OnlyExisting 与 Models 取并集；二者皆空 => 全量。
 func buildModelFilter(req *dto.UpstreamRequest) func(string) bool {
 	exact := make(map[string]struct{})
 	var wildcards []string
 
 	if req.OnlyExisting {
 		for k := range ratio_setting.GetModelRatioCopy() {
+			exact[k] = struct{}{}
+		}
+		for k := range ratio_setting.GetTieredPricingCopy() {
 			exact[k] = struct{}{}
 		}
 	}
@@ -342,7 +602,6 @@ func buildModelFilter(req *dto.UpstreamRequest) func(string) bool {
 	}
 }
 
-// buildExcludeFilter 构造排除谓词（命中则剔除，不出现在预览中）。
 func buildExcludeFilter(req *dto.UpstreamRequest) func(string) bool {
 	exact := make(map[string]struct{})
 	var wildcards []string
@@ -373,7 +632,7 @@ func buildExcludeFilter(req *dto.UpstreamRequest) func(string) bool {
 	}
 }
 
-// filterSourceData 原地过滤源数据的三张 ratio map。
+// filterSourceData filters all ratio maps in source data by include/exclude predicates.
 func filterSourceData(data map[string]any, include func(string) bool, exclude func(string) bool) {
 	for _, rt := range ratioTypes {
 		sub, ok := data[rt].(map[string]any)
@@ -391,8 +650,6 @@ func filterSourceData(data map[string]any, include func(string) bool, exclude fu
 	}
 }
 
-// classifyBillingMode 复用现有判定函数，按运行时优先级归类模型计费模式。
-// 顺序与 relay/helper/price.go 的优先级一致：分段 > 图片 > 按次 > 扁平文本。
 func classifyBillingMode(model string) string {
 	if ratio_setting.IsTieredPricingEnabled(model) {
 		return categoryTiered
@@ -406,7 +663,6 @@ func classifyBillingMode(model string) string {
 	return categoryText
 }
 
-// isImageModel 判定是否为图片/图像生成模型：命中图片专用倍率或图像模型名特征。
 func isImageModel(model string) bool {
 	if _, ok := ratio_setting.GetImageRatio(model); ok {
 		return true
@@ -423,10 +679,13 @@ func isImageModel(model string) bool {
 	return false
 }
 
-// computeCategories 为预览中出现的每个模型计算计费模式分桶。
 func computeCategories(differences map[string]map[string]dto.DifferenceItem) map[string]string {
 	cats := make(map[string]string, len(differences))
-	for model := range differences {
+	for model, ratioMap := range differences {
+		if _, ok := ratioMap["tiered_pricing"]; ok {
+			cats[model] = categoryTiered
+			continue
+		}
 		cats[model] = classifyBillingMode(model)
 	}
 	return cats

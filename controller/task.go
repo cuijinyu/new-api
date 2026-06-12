@@ -23,6 +23,7 @@ import (
 )
 
 func UpdateTaskBulk() {
+	common.SysLog("task update worker started")
 	for {
 		time.Sleep(time.Duration(15) * time.Second)
 		if !common.TryRunOnce("poll:task", 14*time.Second) {
@@ -30,6 +31,9 @@ func UpdateTaskBulk() {
 		}
 		ctx := context.TODO()
 		allTasks := model.GetAllUnFinishSyncTasks(500)
+		if len(allTasks) > 0 {
+			logger.LogInfo(ctx, fmt.Sprintf("task update worker found %d unfinished tasks", len(allTasks)))
+		}
 		platformTask := make(map[constant.TaskPlatform][]*model.Task)
 		for _, t := range allTasks {
 			platformTask[t.Platform] = append(platformTask[t.Platform], t)

@@ -512,6 +512,11 @@ func taskRelayHandler(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dto.Tas
 	var err *dto.TaskError
 	switch relayInfo.RelayMode {
 	case relayconstant.RelayModeSunoFetch, relayconstant.RelayModeSunoFetchByID, relayconstant.RelayModeVideoFetchByID:
+		if relayInfo.RelayMode == relayconstant.RelayModeVideoFetchByID {
+			if refreshErr := RefreshVideoTaskForFetch(c); refreshErr != nil {
+				logger.LogWarn(c, fmt.Sprintf("refresh video task before fetch failed: %s", refreshErr.Error()))
+			}
+		}
 		err = relay.RelayTaskFetch(c, relayInfo.RelayMode)
 	default:
 		err = relay.RelayTaskSubmit(c, relayInfo)

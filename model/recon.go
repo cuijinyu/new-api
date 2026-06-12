@@ -81,7 +81,7 @@ type SystemSummaryRow struct {
 func GetSystemSummary(startDate, endDate string, channelId int) ([]SystemSummaryRow, error) {
 	var rows []SystemSummaryRow
 
-	dateFunc := "DATE(FROM_UNIXTIME(created_at))"
+	dateFunc := "DATE_FORMAT(FROM_UNIXTIME(created_at), '%Y-%m-%d')"
 	if common.UsingPostgreSQL {
 		dateFunc = "TO_CHAR(TO_TIMESTAMP(created_at), 'YYYY-MM-DD')"
 	}

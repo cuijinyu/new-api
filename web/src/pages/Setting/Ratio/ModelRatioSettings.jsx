@@ -59,6 +59,7 @@ import {
   verifyJSON,
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { parseJsonObject, parseJsonObjectWithError } from './jsonUtils';
 
 const { Text, Title } = Typography;
 
@@ -110,6 +111,17 @@ const WEEKDAY_OPTIONS = [
   { label: '周四', value: 4 },
   { label: '周五', value: 5 },
   { label: '周六', value: 6 },
+];
+
+const EDIT_PRICE_SOURCE_OPTIONS = [
+  { value: 'openrouter', label: 'OpenRouter', placeholder: 'openai/gpt-4o' },
+  { value: 'models.dev', label: 'models.dev', placeholder: 'gpt-4o' },
+  { value: 'litellm', label: 'LiteLLM', placeholder: 'gpt-4o' },
+  {
+    value: 'tiered',
+    label: 'models.dev + LiteLLM',
+    placeholder: 'claude-sonnet-4-5',
+  },
 ];
 
 const SIMPLE_JSON_KEYS = [
@@ -189,21 +201,11 @@ const JSON_FIELD_META = [
 ];
 
 function safeParseJSON(value, fallback = {}) {
-  if (value === undefined || value === null || value === '') return fallback;
-  try {
-    return JSON.parse(value);
-  } catch (error) {
-    return fallback;
-  }
+  return parseJsonObject(value, fallback);
 }
 
 function parseJSONWithError(value, key) {
-  if (!value || !String(value).trim()) return { data: {}, error: null };
-  try {
-    return { data: JSON.parse(value), error: null };
-  } catch (error) {
-    return { data: {}, error: `${key}: ${error.message}` };
-  }
+  return parseJsonObjectWithError(value, key);
 }
 
 function isBlank(value) {
@@ -703,6 +705,22 @@ function valuesSame(left, right) {
   return left === right;
 }
 
+function jsonValuesSame(left, right) {
+  if (!hasValue(left) && !hasValue(right)) return true;
+  try {
+    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  } catch (error) {
+    return false;
+  }
+}
+
+function getEditPriceSourceMeta(source) {
+  return (
+    EDIT_PRICE_SOURCE_OPTIONS.find((item) => item.value === source) ||
+    EDIT_PRICE_SOURCE_OPTIONS[0]
+  );
+}
+
 function validateRows(rows, parseErrors, groupRatio) {
   const issues = parseErrors.map((message) => ({
     level: 'error',
@@ -957,6 +975,7 @@ export default function ModelRatioSettings(props) {
   const [ruleFilter, setRuleFilter] = useState('all');
   const [advancedValues, setAdvancedValues] = useState(INITIAL_INPUTS);
   const [editingRow, setEditingRow] = useState(null);
+  const [editSource, setEditSource] = useState('openrouter');
   const [editSourceModel, setEditSourceModel] = useState('');
   const [editSourceQuote, setEditSourceQuote] = useState(null);
   const [editSourceLoading, setEditSourceLoading] = useState(false);
@@ -1186,10 +1205,11 @@ export default function ModelRatioSettings(props) {
     setEditingRow({ ...clone(row), key: row.name });
   };
 
-  const fetchOpenRouterQuoteForEditing = async () => {
+  const fetchSourceQuoteForEditing = async () => {
     const modelName = (editSourceModel || editingRow?.name || '').trim();
+    const sourceMeta = getEditPriceSourceMeta(editSource);
     if (!modelName) {
-      showWarning(t('请先填写 OpenRouter 模型名'));
+      showWarning(t('请先填写模型名'));
       return;
     }
 
@@ -1198,13 +1218,16 @@ export default function ModelRatioSettings(props) {
     try {
       const modelCandidates = buildOpenRouterModelCandidates(modelName);
       const res = await API.post('/api/ratio_sync/fetch', {
-        source: 'openrouter',
+        source: editSource,
         models: modelCandidates,
         timeout: 20,
       });
 
       if (!res.data.success) {
-        showError(res.data.message || t('获取 OpenRouter 价格失败'));
+        showError(
+          res.data.message ||
+            t('获取 {{source}} 价格失败', { source: sourceMeta.label }),
+        );
         return;
       }
 
@@ -1227,12 +1250,18 @@ export default function ModelRatioSettings(props) {
           'cache_ratio',
           modelCandidates,
         ),
+        tiered_pricing: pickExternalSourceValue(
+          sourceData,
+          'tiered_pricing',
+          modelCandidates,
+        ),
       };
       const matchedDiffModel = findModelInMap(differences, modelCandidates);
       const matchedSourceModel =
         sourcePicks.model_ratio.model ||
         sourcePicks.completion_ratio.model ||
         sourcePicks.cache_ratio.model ||
+        sourcePicks.tiered_pricing.model ||
         '';
       const matchedModel = matchedDiffModel || matchedSourceModel;
 
@@ -1240,16 +1269,14 @@ export default function ModelRatioSettings(props) {
         setEditSourceQuote({
           model: modelName,
           empty: true,
-          message: t('OpenRouter 未返回差异：可能未收录该模型，或当前配置已经一致'),
+          message: t('{{source}} 未收录或未匹配到该模型', {
+            source: sourceMeta.label,
+          }),
         });
-        setEditSourceQuote((prev) => ({
-          ...prev,
-          message: t('OpenRouter 未收录或未匹配到该模型'),
-        }));
         return;
       }
 
-      const sourceName = 'OpenRouter';
+      const sourceName = sourceMeta.label;
       const diff = differences[matchedModel] || {};
       const pickFromDiff = (key) => {
         const value = diff[key]?.upstreams?.[sourceName];
@@ -1268,43 +1295,68 @@ export default function ModelRatioSettings(props) {
         modelRatio: pick('model_ratio'),
         completionRatio: pick('completion_ratio'),
         cacheRatio: pick('cache_ratio'),
+        tieredPricing: pick('tiered_pricing'),
+        source: editSource,
+        sourceLabel: sourceMeta.label,
       };
       quote.sameAsCurrent =
         valuesSame(quote.modelRatio, editingRow?.modelRatio) &&
         valuesSame(quote.completionRatio, editingRow?.completionRatio) &&
-        valuesSame(quote.cacheRatio, editingRow?.cacheRatio);
+        valuesSame(quote.cacheRatio, editingRow?.cacheRatio) &&
+        jsonValuesSame(quote.tieredPricing, {
+          enabled: editingRow?.tieredEnabled,
+          tiers: editingRow?.tieredTiers || [],
+        });
 
       setEditSourceQuote(quote);
       if (
         quote.sameAsCurrent &&
         (quote.modelRatio !== undefined ||
           quote.completionRatio !== undefined ||
-          quote.cacheRatio !== undefined)
+          quote.cacheRatio !== undefined ||
+          quote.tieredPricing !== undefined)
       ) {
-        showSuccess(t('已匹配 OpenRouter，当前配置已与价格源一致'));
+        showSuccess(t('已匹配价格源，当前配置已与价格源一致'));
         return;
       }
       if (
         quote.modelRatio === undefined &&
         quote.completionRatio === undefined &&
-        quote.cacheRatio === undefined
+        quote.cacheRatio === undefined &&
+        quote.tieredPricing === undefined
       ) {
-        showWarning(t('OpenRouter 没有可回填的按量倍率'));
+        showWarning(t('价格源没有可回填的价格'));
       } else {
-        showSuccess(t('已获取 OpenRouter 参考价格'));
+        showSuccess(t('已获取 {{source}} 参考价格', { source: sourceMeta.label }));
       }
     } catch (error) {
       console.error(error);
-      showError(t('请求 OpenRouter 价格失败'));
+      showError(t('请求价格源失败'));
     } finally {
       setEditSourceLoading(false);
     }
   };
 
-  const applyOpenRouterQuote = () => {
+  const applySourceQuote = () => {
     if (!editSourceQuote || editSourceQuote.empty) return;
     setEditingRow((prev) => ({
       ...prev,
+      billingMode:
+        editSourceQuote.tieredPricing !== undefined
+          ? 'tiered'
+          : prev.billingMode,
+      tieredEnabled:
+        editSourceQuote.tieredPricing !== undefined
+          ? editSourceQuote.tieredPricing?.enabled !== false
+          : prev.tieredEnabled,
+      tieredTiers:
+        editSourceQuote.tieredPricing !== undefined
+          ? Array.isArray(editSourceQuote.tieredPricing?.tiers)
+            ? editSourceQuote.tieredPricing.tiers
+            : []
+          : prev.tieredTiers,
+      fixedPrice:
+        editSourceQuote.tieredPricing !== undefined ? '' : prev.fixedPrice,
       modelRatio:
         editSourceQuote.modelRatio !== undefined
           ? editSourceQuote.modelRatio
@@ -1318,7 +1370,7 @@ export default function ModelRatioSettings(props) {
           ? editSourceQuote.cacheRatio
           : prev.cacheRatio,
     }));
-    showSuccess(t('已回填 OpenRouter 倍率，请确认后保存'));
+    showSuccess(t('已回填价格源结果，请确认后保存'));
   };
 
   const updateEditingUsdPrice = (field, value) => {
@@ -2656,15 +2708,21 @@ export default function ModelRatioSettings(props) {
 
   const renderEditSourcePanel = () => {
     if (!editingRow) return null;
+    const sourceMeta = getEditPriceSourceMeta(editSource);
+    const hasTieredQuote = editSourceQuote?.tieredPricing !== undefined;
     const hasQuote =
       editSourceQuote &&
       !editSourceQuote.empty &&
       (editSourceQuote.modelRatio !== undefined ||
         editSourceQuote.completionRatio !== undefined ||
-        editSourceQuote.cacheRatio !== undefined);
+        editSourceQuote.cacheRatio !== undefined ||
+        hasTieredQuote);
     const quoteUsdPrices = editSourceQuote?.empty
       ? {}
       : getEquivalentUsdPrices(editSourceQuote || {});
+    const tierCount = Array.isArray(editSourceQuote?.tieredPricing?.tiers)
+      ? editSourceQuote.tieredPricing.tiers.length
+      : 0;
 
     return (
       <div
@@ -2677,45 +2735,54 @@ export default function ModelRatioSettings(props) {
         }}
       >
         <Row gutter={16}>
-          <Col span={10}>
+          <Col span={8}>
             <Text strong>{t('价格源参考')}</Text>
             <br />
             <Text type='secondary'>
-              {t(
-                '从 OpenRouter 拉取当前模型的 token 价，并转换为本站倍率。拉取只做预览，点击回填后仍需确认保存。',
-              )}
+              {t('从外部价格源拉取当前模型价格，预览后可回填到编辑表单，仍需确认保存。')}
             </Text>
           </Col>
-          <Col span={8}>
-            <Text type='secondary'>{t('OpenRouter 模型名')}</Text>
+          <Col span={5}>
+            <Text type='secondary'>{t('价格源')}</Text>
+            <Select
+              value={editSource}
+              style={{ width: '100%', marginTop: 6 }}
+              onChange={(value) => {
+                setEditSource(value);
+                setEditSourceQuote(null);
+              }}
+            >
+              {EDIT_PRICE_SOURCE_OPTIONS.map((item) => (
+                <Select.Option key={item.value} value={item.value}>
+                  {item.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col span={7}>
+            <Text type='secondary'>{t('模型名')}</Text>
             <Input
               value={editSourceModel}
-              placeholder='openai/gpt-4o'
+              placeholder={sourceMeta.placeholder}
               onChange={(value) => {
                 setEditSourceQuote(null);
                 setEditSourceModel(value);
               }}
               style={{ marginTop: 6 }}
             />
-            <Text type='tertiary'>
-              {t('可填本地名或 OpenRouter ID；系统会自动尝试前缀通配匹配。')}
-            </Text>
+            <Text type='tertiary'>{t('可填本地名或供应商模型 ID。')}</Text>
           </Col>
-          <Col span={6} style={{ textAlign: 'right' }}>
+          <Col span={4} style={{ textAlign: 'right' }}>
             <Space>
               <Button
                 icon={<IconRefresh />}
                 loading={editSourceLoading}
                 disabled={!editSourceModel && !editingRow.name}
-                onClick={fetchOpenRouterQuoteForEditing}
+                onClick={fetchSourceQuoteForEditing}
               >
                 {t('拉取')}
               </Button>
-              <Button
-                type='primary'
-                disabled={!hasQuote}
-                onClick={applyOpenRouterQuote}
-              >
+              <Button type='primary' disabled={!hasQuote} onClick={applySourceQuote}>
                 {t('回填')}
               </Button>
             </Space>
@@ -2728,7 +2795,7 @@ export default function ModelRatioSettings(props) {
             ) : (
               <>
                 <Space wrap style={{ marginBottom: 10 }}>
-                  <Tag color='blue'>OpenRouter</Tag>
+                  <Tag color='blue'>{editSourceQuote.sourceLabel}</Tag>
                   <Tag color={editSourceQuote.sameAsCurrent ? 'green' : 'orange'}>
                     {editSourceQuote.sameAsCurrent
                       ? t('当前配置一致')
@@ -2737,8 +2804,7 @@ export default function ModelRatioSettings(props) {
                   {editSourceQuote.sourceMatchedModel &&
                     editSourceQuote.sourceMatchedModel !== editSourceQuote.model && (
                       <Tag color='grey'>
-                        {t('OpenRouter 实际模型')}:
-                        {editSourceQuote.sourceMatchedModel}
+                        {t('价格源实际模型')}:{editSourceQuote.sourceMatchedModel}
                       </Tag>
                     )}
                   <Tag color='grey'>
@@ -2749,12 +2815,10 @@ export default function ModelRatioSettings(props) {
                   </Tag>
                 </Space>
                 <Row gutter={12}>
-                  <Col span={8}>
+                  <Col span={hasTieredQuote ? 6 : 8}>
                     <Text type='secondary'>{t('模型倍率')}</Text>
                     <br />
-                    <Text strong>
-                      {formatMaybeNumber(editSourceQuote.modelRatio)}
-                    </Text>
+                    <Text strong>{formatMaybeNumber(editSourceQuote.modelRatio)}</Text>
                     <Text type='secondary'>
                       {' '}
                       ({formatUsdPerMillion(
@@ -2767,7 +2831,7 @@ export default function ModelRatioSettings(props) {
                       {t('输入价')} {formatUsdPerMillion(quoteUsdPrices.inputUsd)}
                     </Text>
                   </Col>
-                  <Col span={8}>
+                  <Col span={hasTieredQuote ? 6 : 8}>
                     <Text type='secondary'>{t('补全倍率')}</Text>
                     <br />
                     <Text strong>
@@ -2778,17 +2842,26 @@ export default function ModelRatioSettings(props) {
                       {t('输出价')} {formatUsdPerMillion(quoteUsdPrices.outputUsd)}
                     </Text>
                   </Col>
-                  <Col span={8}>
+                  <Col span={hasTieredQuote ? 6 : 8}>
                     <Text type='secondary'>{t('缓存倍率')}</Text>
                     <br />
-                    <Text strong>
-                      {formatMaybeNumber(editSourceQuote.cacheRatio)}
-                    </Text>
+                    <Text strong>{formatMaybeNumber(editSourceQuote.cacheRatio)}</Text>
                     <br />
                     <Text type='secondary'>
                       {t('缓存价')} {formatUsdPerMillion(quoteUsdPrices.cacheUsd)}
                     </Text>
                   </Col>
+                  {hasTieredQuote && (
+                    <Col span={6}>
+                      <Text type='secondary'>{t('分段价格')}</Text>
+                      <br />
+                      <Text strong>{tierCount} tiers</Text>
+                      <br />
+                      <Text type='secondary'>
+                        {t('回填后会切换为分段计费模式')}
+                      </Text>
+                    </Col>
+                  )}
                 </Row>
               </>
             )}

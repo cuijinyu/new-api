@@ -31,6 +31,24 @@ import ConditionalPricingEditor from '../../pages/Setting/Ratio/ConditionalPrici
 
 import { API, showError, toBoolean } from '../../helpers';
 
+const JSON_OBJECT_KEYS = [
+  'ModelPrice',
+  'ModelRatio',
+  'CacheRatio',
+  'TieredPricing',
+  'ConditionalPricing',
+  'CompletionRatio',
+  'GroupRatio',
+  'GroupGroupRatio',
+  'ImageRatio',
+  'ImageCompletionRatio',
+  'AudioRatio',
+  'AudioCompletionRatio',
+  'UserUsableGroups',
+  'group_ratio_setting.group_special_usable_group',
+];
+const JSON_ARRAY_KEYS = ['AutoGroups'];
+
 const RatioSetting = () => {
   const { t } = useTranslation();
 
@@ -62,6 +80,21 @@ const RatioSetting = () => {
     if (success) {
       let newInputs = {};
       data.forEach((item) => {
+        if (item.value === null || item.value === undefined) {
+          item.value = '';
+        }
+        if (
+          JSON_OBJECT_KEYS.includes(item.key) &&
+          (item.value === 'null' || item.value === '')
+        ) {
+          item.value = '{}';
+        }
+        if (
+          JSON_ARRAY_KEYS.includes(item.key) &&
+          (item.value === 'null' || item.value === '')
+        ) {
+          item.value = '[]';
+        }
         if (item.value.startsWith('{') || item.value.startsWith('[')) {
           try {
             item.value = JSON.stringify(JSON.parse(item.value), null, 2);

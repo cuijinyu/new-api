@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"log"
@@ -19,6 +20,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
+	openrouterinspection "github.com/QuantumNous/new-api/service/openrouter_inspection"
+	priceinspection "github.com/QuantumNous/new-api/service/price_inspection"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -80,11 +83,15 @@ func main() {
 				safeCtx, _ = gin.CreateTestContext(nil)
 			}
 			requestID = safeCtx.GetString(common.RequestIdKey)
+			if requestID == "" {
+				requestID = l.RequestId
+			}
 			service.EnqueueUsageLog(safeCtx, service.UsageLogPayload{
 				RequestID:        requestID,
 				CreatedAt:        l.CreatedAt,
 				UserID:           l.UserId,
 				Username:         l.Username,
+				Type:             l.Type,
 				ChannelID:        l.ChannelId,
 				ModelName:        l.ModelName,
 				TokenName:        l.TokenName,
@@ -145,11 +152,52 @@ func main() {
 	go controller.AutomaticallyTestChannels()
 	go controller.AutomaticallyFingerprintChannels()
 
+	if os.Getenv("OPENROUTER_BILLING_INSPECTION_ENABLED") == "true" {
+		inspectionInterval, _ := strconv.Atoi(os.Getenv("OPENROUTER_BILLING_INSPECTION_INTERVAL_MINUTES"))
+		priceInterval, _ := strconv.Atoi(os.Getenv("OPENROUTER_PRICE_SNAPSHOT_INTERVAL_HOURS"))
+		inspectionCtx := context.Background()
+		openrouterinspection.StartScheduledWorker(inspectionCtx, inspectionInterval)
+		openrouterinspection.StartScheduledPriceFetcher(inspectionCtx, priceInterval)
+		common.SysLog("openrouter billing inspection worker enabled")
+	}
+
+	if os.Getenv("PRICE_INSPECTION_ENABLED") == "true" {
+		priceInspectionCtx := context.Background()
+		priceinspection.StartScheduledWorker(priceInspectionCtx, priceinspection.ScheduleOptions{
+			IntervalMinutes: envInt("PRICE_INSPECTION_INTERVAL_MINUTES", 15),
+			WindowMinutes:   envInt("PRICE_INSPECTION_WINDOW_MINUTES", 30),
+			DelayMinutes:    envInt("PRICE_INSPECTION_DELAY_MINUTES", 5),
+			Limit:           envInt("PRICE_INSPECTION_LIMIT", 5000),
+			SourceProviders: envCSV("PRICE_INSPECTION_SOURCE_PROVIDERS"),
+			IncludeLegacy:   os.Getenv("PRICE_INSPECTION_INCLUDE_LEGACY") == "true",
+		})
+		if os.Getenv("PRICE_INSPECTION_PRICE_FETCH_ENABLED") == "true" {
+			priceinspection.StartScheduledPriceSourceFetcher(priceInspectionCtx, priceinspection.PriceFetchScheduleOptions{
+				IntervalHours:   envInt("PRICE_INSPECTION_PRICE_FETCH_INTERVAL_HOURS", 6),
+				SourceProviders: envCSV("PRICE_INSPECTION_PRICE_SOURCE_PROVIDERS"),
+				RetentionDays:   envInt("PRICE_INSPECTION_PRICE_SNAPSHOT_RETENTION_DAYS", 0),
+			})
+			common.SysLog("price source fetch worker enabled")
+		}
+		common.SysLog("price inspection worker enabled")
+	}
+
+	common.SysLog(fmt.Sprintf("task updater enabled: %t", constant.UpdateTask))
 	if constant.UpdateTask {
 		gopool.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysError(fmt.Sprintf("UpdateMidjourneyTaskBulk panic: %v", r))
+				}
+			}()
 			controller.UpdateMidjourneyTaskBulk()
 		})
 		gopool.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysError(fmt.Sprintf("UpdateTaskBulk panic: %v", r))
+				}
+			}()
 			controller.UpdateTaskBulk()
 		})
 	}
@@ -216,6 +264,35 @@ func main() {
 	if err != nil {
 		common.FatalLog("failed to start HTTP server: " + err.Error())
 	}
+}
+
+func envInt(name string, defaultValue int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		common.SysError("failed to parse " + name + ": " + err.Error())
+		return defaultValue
+	}
+	return value
+}
+
+func envCSV(name string) []string {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func InjectUmamiAnalytics() {

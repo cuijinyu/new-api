@@ -99,6 +99,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err = prepareReusableBody(req, requestBody); err != nil {
 		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
+	applyUpstreamContentLength(req, info)
 	headers := req.Header
 	applyPassHeaders(c, info, &headers)
 	err = a.SetupRequestHeader(c, &headers, info)
@@ -132,6 +133,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err = prepareReusableBody(req, requestBody); err != nil {
 		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
+	applyUpstreamContentLength(req, info)
 	// set form data
 	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	headers := req.Header
@@ -333,6 +335,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		return nil, respNilErr
 	}
 
+	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
+		c.Set(common2.UpstreamRequestIdKey, upID)
+	}
+
 	emitUpstreamMetric(c, upstreamLatencyMs, resp.StatusCode, false)
 
 	service.AttachRawLogCapture(c, info, req, resp)
@@ -388,6 +394,7 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err = prepareReusableBody(req, requestBody); err != nil {
 		return nil, fmt.Errorf("prepare request body failed: %w", err)
 	}
+	applyUpstreamContentLength(req, info)
 
 	err = a.BuildRequestHeader(c, req, info)
 	if err != nil {
@@ -404,6 +411,20 @@ func prepareReusableBody(req *http.Request, requestBody io.Reader) error {
 	if req == nil || requestBody == nil {
 		return nil
 	}
+	if storage, ok := requestBody.(common2.BodyStorage); ok {
+		if _, err := storage.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		req.Body = io.NopCloser(common2.ReaderOnly(storage))
+		req.GetBody = func() (io.ReadCloser, error) {
+			if _, err := storage.Seek(0, io.SeekStart); err != nil {
+				return nil, err
+			}
+			return io.NopCloser(common2.ReaderOnly(storage)), nil
+		}
+		req.ContentLength = storage.Size()
+		return nil
+	}
 	bodyBytes, err := io.ReadAll(requestBody)
 	if err != nil {
 		return err
@@ -414,4 +435,13 @@ func prepareReusableBody(req *http.Request, requestBody io.Reader) error {
 	}
 	req.ContentLength = int64(len(bodyBytes))
 	return nil
+}
+
+func applyUpstreamContentLength(req *http.Request, info *common.RelayInfo) {
+	if req == nil || info == nil {
+		return
+	}
+	if info.UpstreamRequestBodySize > 0 && req.ContentLength <= 0 {
+		req.ContentLength = info.UpstreamRequestBodySize
+	}
 }

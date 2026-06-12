@@ -28,6 +28,40 @@ func UpdateVideoTaskAll(ctx context.Context, platform constant.TaskPlatform, tas
 	return nil
 }
 
+func RefreshVideoTaskForFetch(c *gin.Context) error {
+	taskId := c.Param("task_id")
+	if taskId == "" {
+		taskId = c.GetString("task_id")
+	}
+	if taskId == "" {
+		return nil
+	}
+
+	userId := c.GetInt("id")
+	task, exist, err := model.GetByTaskId(userId, taskId)
+	if err != nil {
+		return err
+	}
+	if !exist || task == nil {
+		return nil
+	}
+	if task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure || task.Progress == "100%" {
+		return nil
+	}
+
+	channelModel, err := model.GetChannelById(task.ChannelId, true)
+	if err != nil {
+		return err
+	}
+	adaptor := relay.GetTaskAdaptor(task.Platform)
+	if adaptor == nil {
+		return fmt.Errorf("video adaptor not found for platform %s", task.Platform)
+	}
+	return updateVideoSingleTask(c.Request.Context(), adaptor, channelModel, task.TaskID, map[string]*model.Task{
+		task.TaskID: task,
+	})
+}
+
 func updateVideoTaskAll(ctx context.Context, platform constant.TaskPlatform, channelId int, taskIds []string, taskM map[string]*model.Task) error {
 	logger.LogInfo(ctx, fmt.Sprintf("Channel #%d pending video tasks: %d", channelId, len(taskIds)))
 	if len(taskIds) == 0 {
@@ -106,7 +140,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 	} else if taskResult, err = adaptor.ParseTaskResult(responseBody); err != nil {
 		return fmt.Errorf("parseTaskResult failed for task %s: %w", taskId, err)
 	} else {
-		task.Data = redactVideoResponseBody(responseBody)
+		task.Data = mergeVideoLocalMetadata(task.Data, redactVideoResponseBody(responseBody))
 	}
 
 	logger.LogDebug(ctx, fmt.Sprintf("UpdateVideoSingleTask taskResult: %+v", taskResult))
@@ -145,7 +179,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		if taskResult.Duration > 0 || taskResult.TotalTokens > 0 {
 			// 优先使用 Duration，如果没有则回退到 TotalTokens
 			actualUsage := taskResult.Duration
-			if actualUsage <= 0 {
+			if channel.Type == constant.ChannelTypeServiceInferenceVideo && taskResult.TotalTokens > 0 {
+				actualUsage = float64(taskResult.TotalTokens)
+			} else if actualUsage <= 0 {
 				actualUsage = float64(taskResult.TotalTokens)
 			}
 
@@ -225,6 +261,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 					}
 					preConsumedQuota := task.Quota
 					quotaDelta := actualQuota - preConsumedQuota
+					settlementOther := videoTaskSettlementOther(channel.Type, task, taskResult, modelName, actualUsage, dynamicScale, finalGroupRatio, value, preConsumedQuota, actualQuota, quotaDelta, requestId)
 
 					calcProcess := ""
 					adjustmentHint := "预扣和实际一致，无需调整"
@@ -257,59 +294,68 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 					if quotaDelta > 0 {
 						logger.LogInfo(ctx, "视频任务补扣费: "+logDetail)
 						if err := model.DecreaseUserQuota(task.UserId, quotaDelta); err == nil {
+							if err := adjustVideoTaskTokenQuota(tokenId, quotaDelta); err != nil {
+								logger.LogError(ctx, fmt.Sprintf("video task supplement token quota failed: task_id=%s token_id=%d err=%s", task.TaskID, tokenId, err.Error()))
+							}
 							model.UpdateUserUsedQuota(task.UserId, quotaDelta)
 							model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
 							task.Quota = actualQuota
 							model.RecordConsumeLogNoContext(task.UserId, model.RecordConsumeLogParams{
-								ChannelId:      task.ChannelId,
-								ModelName:      modelName,
-								TokenName:      tokenName,
-								Quota:          quotaDelta,
-								Content:        "视频任务成功补扣费: " + logDetail,
-								TokenId:        tokenId,
-								RequestId:      requestId,
-								ClientIP:       clientIP,
-								UseTimeSeconds: int(actualUsage),
-								Group:          task.Group,
-								Other: map[string]interface{}{
-									"task_id":        task.TaskID,
-									"action":         task.Action,
-									"actual_usage":   actualUsage,
-									"unit_scale":     dynamicScale,
-									"group_ratio":    finalGroupRatio,
-									"price_or_ratio": value,
-									"request_id":     requestId,
-								},
+								ChannelId:        task.ChannelId,
+								ModelName:        modelName,
+								TokenName:        tokenName,
+								Quota:            quotaDelta,
+								Content:          "视频任务成功补扣费: " + logDetail,
+								TokenId:          tokenId,
+								RequestId:        requestId,
+								ClientIP:         clientIP,
+								UseTimeSeconds:   int(actualUsage),
+								CompletionTokens: taskResult.CompletionTokens,
+								Group:            task.Group,
+								Other:            settlementOther,
 							})
 						}
 					} else if quotaDelta < 0 {
 						refundQuota := -quotaDelta
 						logger.LogInfo(ctx, "视频任务额度返还: "+logDetail)
 						if err := model.IncreaseUserQuota(task.UserId, refundQuota, false); err == nil {
+							if err := adjustVideoTaskTokenQuota(tokenId, quotaDelta); err != nil {
+								logger.LogError(ctx, fmt.Sprintf("video task refund token quota failed: task_id=%s token_id=%d err=%s", task.TaskID, tokenId, err.Error()))
+							}
 							model.UpdateUserUsedQuota(task.UserId, -refundQuota)
 							model.UpdateChannelUsedQuota(task.ChannelId, -refundQuota)
 							task.Quota = actualQuota
 							model.RecordRefundLog(task.UserId, model.RecordRefundLogParams{
-								ChannelId:      task.ChannelId,
-								ModelName:      modelName,
-								TokenName:      tokenName,
-								Quota:          refundQuota,
-								Content:        "视频任务成功退还多扣费用: " + logDetail,
-								TokenId:        tokenId,
-								RequestId:      requestId,
-								ClientIP:       clientIP,
-								UseTimeSeconds: int(actualUsage),
-								Group:          task.Group,
-								Other: map[string]interface{}{
-									"task_id":      task.TaskID,
-									"action":       task.Action,
-									"actual_usage": actualUsage,
-									"request_id":   requestId,
-								},
+								ChannelId:        task.ChannelId,
+								ModelName:        modelName,
+								TokenName:        tokenName,
+								Quota:            refundQuota,
+								Content:          "视频任务成功退还多扣费用: " + logDetail,
+								TokenId:          tokenId,
+								RequestId:        requestId,
+								ClientIP:         clientIP,
+								UseTimeSeconds:   int(actualUsage),
+								CompletionTokens: taskResult.CompletionTokens,
+								Group:            task.Group,
+								Other:            settlementOther,
 							})
 						}
 					} else {
 						logger.LogInfo(ctx, "视频任务预扣费准确: "+logDetail)
+						model.RecordConsumeLogNoContext(task.UserId, model.RecordConsumeLogParams{
+							ChannelId:        task.ChannelId,
+							ModelName:        modelName,
+							TokenName:        tokenName,
+							Quota:            0,
+							Content:          "视频任务成功结算 " + logDetail,
+							TokenId:          tokenId,
+							RequestId:        requestId,
+							ClientIP:         clientIP,
+							UseTimeSeconds:   int(actualUsage),
+							CompletionTokens: taskResult.CompletionTokens,
+							Group:            task.Group,
+							Other:            settlementOther,
+						})
 					}
 				}
 			}
@@ -396,6 +442,7 @@ func redactVideoResponseBody(body []byte) []byte {
 	if err := json.Unmarshal(body, &m); err != nil {
 		return body
 	}
+	redactVideoOutputs(m)
 	resp, _ := m["response"].(map[string]any)
 	if resp != nil {
 		delete(resp, "bytesBase64Encoded")
@@ -415,6 +462,109 @@ func redactVideoResponseBody(body []byte) []byte {
 		return body
 	}
 	return b
+}
+
+func adjustVideoTaskTokenQuota(tokenId int, quotaDelta int) error {
+	if tokenId <= 0 || quotaDelta == 0 {
+		return nil
+	}
+	token, err := model.GetTokenById(tokenId)
+	if err != nil {
+		return err
+	}
+	if quotaDelta > 0 {
+		return model.DecreaseTokenQuota(token.Id, token.Key, quotaDelta)
+	}
+	return model.IncreaseTokenQuota(token.Id, token.Key, -quotaDelta)
+}
+
+func mergeVideoLocalMetadata(existing, updated []byte) []byte {
+	const serviceInferenceBillingKey = "_newapi_service_inference_billing"
+
+	var oldMap map[string]any
+	if err := json.Unmarshal(existing, &oldMap); err != nil {
+		return updated
+	}
+	localBilling, ok := oldMap[serviceInferenceBillingKey]
+	if !ok {
+		return updated
+	}
+
+	var newMap map[string]any
+	if err := json.Unmarshal(updated, &newMap); err != nil {
+		return updated
+	}
+	if _, exists := newMap[serviceInferenceBillingKey]; !exists {
+		newMap[serviceInferenceBillingKey] = localBilling
+	}
+	merged, err := json.Marshal(newMap)
+	if err != nil {
+		return updated
+	}
+	return merged
+}
+
+func redactVideoOutputs(m map[string]any) {
+	if m == nil {
+		return
+	}
+	redactOutputList(m)
+	if task, ok := m["task"].(map[string]any); ok {
+		redactOutputList(task)
+	}
+}
+
+func redactOutputList(m map[string]any) {
+	outputs, ok := m["outputs"].([]any)
+	if !ok {
+		return
+	}
+	m["outputs_count"] = len(outputs)
+	delete(m, "outputs")
+}
+
+func videoTaskSettlementOther(channelType int, task *model.Task, taskResult *relaycommon.TaskInfo, modelName string, actualUsage, unitScale, groupRatio, priceOrRatio float64, preConsumedQuota, actualQuota, quotaDelta int, requestId string) map[string]interface{} {
+	other := map[string]interface{}{
+		"provider":          videoTaskProviderName(channelType),
+		"billing_event":     "video_task_settlement",
+		"task_id":           task.TaskID,
+		"action":            task.Action,
+		"model_name":        modelName,
+		"actual_usage":      actualUsage,
+		"duration_seconds":  actualUsage,
+		"unit_scale":        unitScale,
+		"group_ratio":       groupRatio,
+		"price_or_ratio":    priceOrRatio,
+		"preconsumed_quota": preConsumedQuota,
+		"actual_quota":      actualQuota,
+		"quota_delta":       quotaDelta,
+		"request_id":        requestId,
+	}
+	if task.Properties.UpstreamModelName != "" {
+		other["upstream_model_name"] = task.Properties.UpstreamModelName
+	}
+	if taskResult != nil {
+		other["total_tokens"] = taskResult.TotalTokens
+		other["completion_tokens"] = taskResult.CompletionTokens
+		if taskResult.Duration > 0 {
+			other["duration_seconds"] = taskResult.Duration
+		}
+		if taskResult.Url != "" {
+			other["outputs_count"] = 1
+		}
+	}
+	return other
+}
+
+func videoTaskProviderName(channelType int) string {
+	switch channelType {
+	case constant.ChannelTypeServiceInferenceVideo:
+		return "service-inference"
+	case constant.ChannelTypeDoubaoVideo:
+		return "doubao-video"
+	default:
+		return constant.GetChannelTypeName(channelType)
+	}
 }
 
 func truncateBase64(s string) string {

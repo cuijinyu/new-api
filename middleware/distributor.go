@@ -100,6 +100,7 @@ func Distribute() func(c *gin.Context) {
 				}
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
+					affinityUsable := false
 					preferred, affinityErr := model.CacheGetChannel(preferredChannelID)
 					if affinityErr == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
 						if usingGroup == "auto" {
@@ -110,6 +111,7 @@ func Distribute() func(c *gin.Context) {
 									selectGroup = g
 									c.Set("auto_group", g)
 									channel = preferred
+									affinityUsable = true
 									service.MarkChannelAffinityUsed(c, g, preferred.Id)
 									break
 								}
@@ -117,8 +119,12 @@ func Distribute() func(c *gin.Context) {
 						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
 							channel = preferred
 							selectGroup = usingGroup
+							affinityUsable = true
 							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 						}
+					}
+					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+						service.ClearCurrentChannelAffinityCache(c)
 					}
 					logger.RecordAffinityResult(modelRequest.Model, channel != nil)
 				}
@@ -183,7 +189,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			}
 			midjourneyModel, mjErr, success := service.GetMjRequestModel(relayMode, &midjourneyRequest)
 			if mjErr != nil {
-				return nil, false, fmt.Errorf(mjErr.Description)
+				return nil, false, fmt.Errorf("%s", mjErr.Description)
 			}
 			if midjourneyModel == "" {
 				if !success {

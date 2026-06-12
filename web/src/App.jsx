@@ -46,6 +46,7 @@ import InvoicePage from './pages/Invoice';
 import DiagnosticPage from './pages/Diagnostic';
 import BillingProbePage from './pages/BillingProbe';
 import ReconciliationPage from './pages/Reconciliation';
+import PriceInspectionPage from './pages/PriceInspection';
 import Playground from './pages/Playground';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
@@ -134,6 +135,14 @@ function App() {
           element={
             <AdminRoute>
               <ReconciliationPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/price-inspection'
+          element={
+            <AdminRoute>
+              <PriceInspectionPage />
             </AdminRoute>
           }
         />

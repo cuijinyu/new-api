@@ -471,6 +471,30 @@ export const getLogsColumns = ({
       },
     },
     {
+      key: COLUMN_KEYS.UPSTREAM_REQUEST_ID,
+      title: t('Upstream Request ID'),
+      dataIndex: 'upstream_request_id',
+      render: (text, record, index) => {
+        return isAdminUser && text ? (
+          <Tooltip content={text}>
+            <span>
+              <Tag
+                color='blue'
+                shape='circle'
+                onClick={(event) => {
+                  copyText(event, text);
+                }}
+              >
+                {text}
+              </Tag>
+            </span>
+          </Tooltip>
+        ) : (
+          <></>
+        );
+      },
+    },
+    {
       key: COLUMN_KEYS.IP,
       title: (
         <div className='flex items-center gap-1'>

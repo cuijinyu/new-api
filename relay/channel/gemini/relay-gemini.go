@@ -1044,31 +1044,44 @@ func countGeminiInlineImages(response *dto.GeminiChatResponse) int {
 }
 
 func geminiUsageFromMetadata(metadata dto.GeminiUsageMetadata) dto.Usage {
+	promptTokens := metadata.PromptTokenCount + metadata.ToolUsePromptTokenCount
 	usage := dto.Usage{
-		PromptTokens:     metadata.PromptTokenCount,
-		CompletionTokens: metadata.CandidatesTokenCount + metadata.ThoughtsTokenCount,
-		TotalTokens:      metadata.TotalTokenCount,
+		PromptTokens:        promptTokens,
+		CompletionTokens:    metadata.CandidatesTokenCount + metadata.ThoughtsTokenCount,
+		TotalTokens:         metadata.TotalTokenCount,
+		ToolUsePromptTokens: metadata.ToolUsePromptTokenCount,
 	}
 	usage.CompletionTokenDetails.ReasoningTokens = metadata.ThoughtsTokenCount
-	if usage.TotalTokens > 0 {
+	if usage.TotalTokens > 0 && usage.CompletionTokens <= 0 {
 		usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
 	}
 	usage.PromptTokensDetails.CachedTokens = metadata.CachedContentTokenCount
 
-	for _, detail := range metadata.PromptTokensDetails {
+	for _, detail := range append(metadata.PromptTokensDetails, metadata.ToolUsePromptTokensDetails...) {
 		switch detail.Modality {
 		case "AUDIO":
-			usage.PromptTokensDetails.AudioTokens = detail.TokenCount
+			usage.PromptTokensDetails.AudioTokens += detail.TokenCount
 		case "TEXT":
-			usage.PromptTokensDetails.TextTokens = detail.TokenCount
+			usage.PromptTokensDetails.TextTokens += detail.TokenCount
 		case "IMAGE":
-			usage.PromptTokensDetails.ImageTokens = detail.TokenCount
+			usage.PromptTokensDetails.ImageTokens += detail.TokenCount
 		}
 	}
 	for _, detail := range metadata.CandidatesTokensDetails {
-		if detail.Modality == "IMAGE" {
-			usage.CompletionTokenDetails.ImageTokens = detail.TokenCount
+		switch detail.Modality {
+		case "IMAGE":
+			usage.CompletionTokenDetails.ImageTokens += detail.TokenCount
+		case "AUDIO":
+			usage.CompletionTokenDetails.AudioTokens += detail.TokenCount
+		case "TEXT":
+			usage.CompletionTokenDetails.TextTokens += detail.TokenCount
 		}
+	}
+	if usage.PromptTokens > 0 &&
+		usage.PromptTokensDetails.TextTokens == 0 &&
+		usage.PromptTokensDetails.AudioTokens == 0 &&
+		usage.PromptTokensDetails.ImageTokens == 0 {
+		usage.PromptTokensDetails.TextTokens = usage.PromptTokens
 	}
 	return usage
 }
@@ -1246,7 +1259,9 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 			logger.LogError(c, err.Error())
 		}
 		if isStop {
-			_ = handleStream(c, info, helper.GenerateStopResponse(id, createAt, info.UpstreamModelName, finishReason))
+			if info.RelayFormat != types.RelayFormatClaude {
+				_ = handleStream(c, info, helper.GenerateStopResponse(id, createAt, info.UpstreamModelName, finishReason))
+			}
 		}
 		return true
 	})
@@ -1258,6 +1273,10 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	c.Set("metric_finish_reason", finishReason)
 
 	response := helper.GenerateFinalUsageResponse(id, createAt, info.UpstreamModelName, *usage)
+	if info.RelayFormat == types.RelayFormatClaude && info.ClaudeConvertInfo != nil && !info.ClaudeConvertInfo.Done {
+		response = helper.GenerateStopResponse(id, createAt, info.UpstreamModelName, finishReason)
+		response.Usage = usage
+	}
 	handleErr := handleFinalStream(c, info, response)
 	if handleErr != nil {
 		common.SysLog("send final response failed: " + handleErr.Error())

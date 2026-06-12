@@ -49,6 +49,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	if taskErr != nil {
 		return
 	}
+	if err := applyTaskModelMapping(c, info); err != nil {
+		taskErr = service.TaskErrorWrapperLocal(err, "model_mapping_failed", http.StatusBadRequest)
+		return
+	}
 
 	modelName := info.OriginModelName
 	if modelName == "" {
@@ -171,9 +175,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		return
 	}
 	// handle response
-	if resp != nil && resp.StatusCode != http.StatusOK {
+	if resp != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
 		responseBody, _ := io.ReadAll(resp.Body)
-		taskErr = service.TaskErrorWrapper(fmt.Errorf(string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
+		taskErr = service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
 		return
 	}
 
@@ -257,6 +261,57 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		taskErr = service.TaskErrorWrapper(err, "insert_task_failed", http.StatusInternalServerError)
 		return
 	}
+	return nil
+}
+
+func applyTaskModelMapping(c *gin.Context, info *relaycommon.RelayInfo) error {
+	if info == nil {
+		return nil
+	}
+	v, exists := c.Get("task_request")
+	if !exists {
+		return nil
+	}
+	req, ok := v.(relaycommon.TaskSubmitReq)
+	if !ok {
+		return fmt.Errorf("invalid task request type")
+	}
+
+	currentModel := info.OriginModelName
+	if currentModel == "" {
+		currentModel = req.Model
+	}
+	if currentModel == "" {
+		return nil
+	}
+
+	modelMapping := c.GetString("model_mapping")
+	if modelMapping != "" && modelMapping != "{}" {
+		modelMap := make(map[string]string)
+		if err := json.Unmarshal([]byte(modelMapping), &modelMap); err != nil {
+			return fmt.Errorf("unmarshal_model_mapping_failed")
+		}
+		visitedModels := map[string]bool{currentModel: true}
+		for {
+			mappedModel, ok := modelMap[currentModel]
+			if !ok || mappedModel == "" {
+				break
+			}
+			if visitedModels[mappedModel] {
+				if mappedModel == currentModel {
+					break
+				}
+				return fmt.Errorf("model_mapping_contains_cycle")
+			}
+			visitedModels[mappedModel] = true
+			currentModel = mappedModel
+			info.IsModelMapped = true
+		}
+	}
+
+	info.UpstreamModelName = currentModel
+	req.Model = currentModel
+	c.Set("task_request", req)
 	return nil
 }
 

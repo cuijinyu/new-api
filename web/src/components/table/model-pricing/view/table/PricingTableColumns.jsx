@@ -166,8 +166,9 @@ export const getPricingTableColumns = ({
     title: t('计费类型'),
     dataIndex: 'quota_type',
     render: (text, record, index) => {
-      const isTieredPricing = record.tiered_pricing_enabled && 
-        Array.isArray(record.tiered_pricing) && 
+      const isTieredPricing =
+        record.tiered_pricing_enabled &&
+        Array.isArray(record.tiered_pricing) &&
         record.tiered_pricing.length > 0;
       return renderQuotaType(parseInt(text), isTieredPricing, t);
     },
@@ -257,7 +258,8 @@ export const getPricingTableColumns = ({
               {t('输入')} {firstTier.inputPrice} / 1{priceData.unitLabel} tokens
             </div>
             <div className='text-gray-700'>
-              {t('输出')} {firstTier.outputPrice} / 1{priceData.unitLabel} tokens
+              {t('输出')} {firstTier.outputPrice} / 1{priceData.unitLabel}{' '}
+              tokens
             </div>
             <div className='text-xs text-cyan-600'>
               {t('共 {{count}} 个价格区间', { count: tierCount })}
@@ -276,6 +278,18 @@ export const getPricingTableColumns = ({
               {t('输出')} {priceData.completionPrice} / 1{priceData.unitLabel}{' '}
               tokens
             </div>
+            {priceData.imageInputPrice && (
+              <div className='text-gray-700'>
+                {t('图片输入')} {priceData.imageInputPrice} / 1
+                {priceData.unitLabel} tokens
+              </div>
+            )}
+            {priceData.imageOutputPrice && (
+              <div className='text-gray-700'>
+                {t('图片输出')} {priceData.imageOutputPrice} / 1
+                {priceData.unitLabel} tokens
+              </div>
+            )}
           </div>
         );
       } else {

@@ -63,6 +63,36 @@ func TestPricingCreatedTimeZeroValue(t *testing.T) {
 	}
 }
 
+func TestPricingImageRatiosJSONSerialization(t *testing.T) {
+	imageRatio := 1.5
+	imageCompletionRatio := 0.0
+	pricing := Pricing{
+		ModelName:            "gemini-2.5-flash-image",
+		QuotaType:            0,
+		ModelRatio:           0.15,
+		CompletionRatio:      2.5 / 0.3,
+		ImageRatio:           &imageRatio,
+		ImageCompletionRatio: &imageCompletionRatio,
+	}
+
+	data, err := json.Marshal(pricing)
+	if err != nil {
+		t.Fatalf("Failed to marshal Pricing: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	if parsed["image_ratio"].(float64) != 1.5 {
+		t.Errorf("image_ratio = %v, want 1.5", parsed["image_ratio"])
+	}
+	if parsed["image_completion_ratio"].(float64) != 0 {
+		t.Errorf("image_completion_ratio = %v, want 0", parsed["image_completion_ratio"])
+	}
+}
+
 func TestPricingSortByCreatedTimeDescending(t *testing.T) {
 	pricings := []Pricing{
 		{ModelName: "old-model", CreatedTime: 1700000000},

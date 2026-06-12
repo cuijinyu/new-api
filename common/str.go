@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net/url"
 	"regexp"
@@ -10,6 +11,15 @@ import (
 	"strings"
 	"unsafe"
 )
+
+const LocalLogContentLimit = 2048
+
+func LocalLogPreview(content string) string {
+	if DebugEnabled || len(content) <= LocalLogContentLimit {
+		return content
+	}
+	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]", content[:LocalLogContentLimit], len(content), LocalLogContentLimit)
+}
 
 func GetStringIfEmpty(str string, defaultValue string) string {
 	if str == "" {

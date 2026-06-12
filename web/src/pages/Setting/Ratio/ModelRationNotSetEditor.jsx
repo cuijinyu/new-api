@@ -38,6 +38,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { parseJsonObject } from './jsonUtils';
 
 export default function ModelRatioNotSetEditor(props) {
   const { t } = useTranslation();
@@ -82,9 +83,9 @@ export default function ModelRatioNotSetEditor(props) {
 
   useEffect(() => {
     try {
-      const modelPrice = JSON.parse(props.options.ModelPrice || '{}');
-      const modelRatio = JSON.parse(props.options.ModelRatio || '{}');
-      const completionRatio = JSON.parse(props.options.CompletionRatio || '{}');
+      const modelPrice = parseJsonObject(props.options.ModelPrice);
+      const modelRatio = parseJsonObject(props.options.ModelRatio);
+      const completionRatio = parseJsonObject(props.options.CompletionRatio);
 
       // 找出所有未设置价格和倍率的模型
       const unsetModels = enabledModels.filter((modelName) => {
@@ -139,9 +140,9 @@ export default function ModelRatioNotSetEditor(props) {
   const SubmitData = async () => {
     setLoading(true);
     const output = {
-      ModelPrice: JSON.parse(props.options.ModelPrice || '{}'),
-      ModelRatio: JSON.parse(props.options.ModelRatio || '{}'),
-      CompletionRatio: JSON.parse(props.options.CompletionRatio || '{}'),
+      ModelPrice: parseJsonObject(props.options.ModelPrice),
+      ModelRatio: parseJsonObject(props.options.ModelRatio),
+      CompletionRatio: parseJsonObject(props.options.CompletionRatio),
     };
 
     try {

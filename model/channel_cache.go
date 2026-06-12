@@ -278,9 +278,14 @@ func CacheUpdateChannel(channel *Channel) {
 		return
 	}
 
-	println("CacheUpdateChannel:", channel.Id, channel.Name, channel.Status, channel.ChannelInfo.MultiKeyPollingIndex)
-
-	println("before:", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
+	if channelsIDM == nil {
+		channelsIDM = make(map[int]*Channel)
+	}
+	if common.DebugEnabled {
+		if oldChannel, ok := channelsIDM[channel.Id]; ok {
+			println("CacheUpdateChannel before:", channel.Id, channel.Name, oldChannel.Status, oldChannel.ChannelInfo.MultiKeyPollingIndex)
+		}
+		println("CacheUpdateChannel after :", channel.Id, channel.Name, channel.Status, channel.ChannelInfo.MultiKeyPollingIndex)
+	}
 	channelsIDM[channel.Id] = channel
-	println("after :", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
 }

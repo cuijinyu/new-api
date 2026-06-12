@@ -42,11 +42,124 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+type channelTestTokenBreakdown struct {
+	InputTextTokens        int
+	InputImageTokens       int
+	InputAudioTokens       int
+	OutputTextTokens       int
+	OutputNonImageTokens   int
+	OutputImageTokens      int
+	OutputAudioTokens      int
+	OutputReasoningTokens  int
+	CacheTokens            int
+	CacheCreationTokens    int
+	ImageCompletionRatio   float64
+	ImageRatio             float64
+	GeminiImageOutputCount int
+}
+
 func shouldStreamChannelTest(modelName string, endpointType string) bool {
 	if !common.IsCodexModel(modelName) {
 		return false
 	}
 	return endpointType == "" || constant.EndpointType(endpointType) == constant.EndpointTypeOpenAIResponse
+}
+
+func isGeminiNativeImageChannelTest(channelType int, modelName string) bool {
+	if channelType != constant.ChannelTypeGemini && channelType != constant.ChannelTypeVertexAi {
+		return false
+	}
+	_, ok := ratio_setting.GetImageCompletionRatio(modelName)
+	return ok
+}
+
+func channelTestEndpointPath(endpointType string, modelName string) (string, bool) {
+	endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType))
+	if !ok {
+		return "", false
+	}
+	return strings.ReplaceAll(endpointInfo.Path, "{model}", modelName), true
+}
+
+func buildChannelTestTokenBreakdown(c *gin.Context, usage *dto.Usage, priceData types.PriceData) channelTestTokenBreakdown {
+	if usage == nil {
+		return channelTestTokenBreakdown{
+			ImageRatio:           priceData.ImageRatio,
+			ImageCompletionRatio: priceData.ImageCompletionRatio,
+		}
+	}
+	breakdown := channelTestTokenBreakdown{
+		InputImageTokens:      usage.PromptTokensDetails.ImageTokens,
+		InputAudioTokens:      usage.PromptTokensDetails.AudioTokens,
+		OutputImageTokens:     usage.CompletionTokenDetails.ImageTokens,
+		OutputAudioTokens:     usage.CompletionTokenDetails.AudioTokens,
+		OutputReasoningTokens: usage.CompletionTokenDetails.ReasoningTokens,
+		CacheTokens:           usage.PromptTokensDetails.CachedTokens,
+		CacheCreationTokens:   usage.PromptTokensDetails.CachedCreationTokens,
+		ImageRatio:            priceData.ImageRatio,
+		ImageCompletionRatio:  priceData.ImageCompletionRatio,
+	}
+	if c != nil {
+		breakdown.GeminiImageOutputCount = c.GetInt("gemini_image_output_count")
+	}
+	breakdown.InputTextTokens = usage.PromptTokensDetails.TextTokens
+	if breakdown.InputTextTokens == 0 {
+		breakdown.InputTextTokens = usage.PromptTokens - breakdown.InputImageTokens - breakdown.InputAudioTokens
+		if breakdown.InputTextTokens < 0 {
+			breakdown.InputTextTokens = 0
+		}
+	}
+	breakdown.OutputNonImageTokens = usage.CompletionTokens - breakdown.OutputImageTokens
+	if breakdown.OutputNonImageTokens < 0 {
+		breakdown.OutputNonImageTokens = 0
+	}
+	breakdown.OutputTextTokens = usage.CompletionTokenDetails.TextTokens
+	if breakdown.OutputTextTokens == 0 {
+		breakdown.OutputTextTokens = breakdown.OutputNonImageTokens - breakdown.OutputAudioTokens
+		if breakdown.OutputTextTokens < 0 {
+			breakdown.OutputTextTokens = 0
+		}
+	}
+	return breakdown
+}
+
+func appendChannelTestTokenOther(other map[string]interface{}, breakdown channelTestTokenBreakdown) {
+	if other == nil {
+		return
+	}
+	if breakdown.InputTextTokens != 0 {
+		other["input_text_tokens"] = breakdown.InputTextTokens
+	}
+	if breakdown.InputImageTokens != 0 {
+		other["input_image_tokens"] = breakdown.InputImageTokens
+		other["image"] = true
+		other["image_ratio"] = breakdown.ImageRatio
+		other["image_output"] = breakdown.InputImageTokens
+	}
+	if breakdown.InputAudioTokens != 0 {
+		other["input_audio_tokens"] = breakdown.InputAudioTokens
+	}
+	if breakdown.OutputTextTokens != 0 {
+		other["output_text_tokens"] = breakdown.OutputTextTokens
+	}
+	if breakdown.OutputNonImageTokens != 0 {
+		other["output_non_image_tokens"] = breakdown.OutputNonImageTokens
+	}
+	if breakdown.OutputAudioTokens != 0 {
+		other["output_audio_tokens"] = breakdown.OutputAudioTokens
+	}
+	if breakdown.OutputReasoningTokens != 0 {
+		other["output_reasoning_tokens"] = breakdown.OutputReasoningTokens
+	}
+	if breakdown.OutputImageTokens != 0 {
+		other["image_completion"] = true
+		other["image_completion_ratio"] = breakdown.ImageCompletionRatio
+		other["image_completion_tokens"] = breakdown.OutputImageTokens
+		other["output_image_tokens"] = breakdown.OutputImageTokens
+		if breakdown.GeminiImageOutputCount > 0 {
+			other["gemini_image_output_count"] = breakdown.GeminiImageOutputCount
+		}
+	}
 }
 
 func detectErrorFromTestResponseBody(body []byte) error {
@@ -147,8 +260,8 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 
 	// 如果指定了端点类型，使用指定的端点类型
 	if endpointType != "" {
-		if endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType)); ok {
-			requestPath = endpointInfo.Path
+		if path, ok := channelTestEndpointPath(endpointType, testModel); ok {
+			requestPath = path
 		}
 	} else {
 		// 如果没有指定端点类型，使用原有的自动检测逻辑
@@ -164,6 +277,12 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		// VolcEngine 图像生成模型
 		if channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(testModel, "seedream") {
 			requestPath = "/v1/images/generations"
+		}
+
+		if isGeminiNativeImageChannelTest(channel.Type, testModel) {
+			if path, ok := channelTestEndpointPath(string(constant.EndpointTypeGemini), testModel); ok {
+				requestPath = path
+			}
 		}
 
 		if common.IsOpenAIResponseOnlyModel(testModel) || common.IsCodexModel(testModel) {
@@ -434,6 +553,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 
 	quota := 0
 	calculatedModelPrice := priceData.ModelPrice
+	breakdown := buildChannelTestTokenBreakdown(c, usage, priceData)
 	if priceData.UseTieredPricing && priceData.TieredPricingData != nil {
 		tieredData := priceData.TieredPricingData
 		inputTokensK := usage.PromptTokens / 1000
@@ -470,8 +590,21 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			quota = 1
 		}
 	} else if !priceData.UsePrice {
-		quota = usage.PromptTokens + int(math.Round(float64(usage.CompletionTokens)*priceData.CompletionRatio))
-		quota = int(math.Round(float64(quota) * priceData.ModelRatio))
+		promptTokens := usage.PromptTokens - breakdown.CacheTokens - breakdown.CacheCreationTokens - breakdown.InputImageTokens
+		if promptTokens < 0 {
+			promptTokens = 0
+		}
+		promptQuota := decimal.NewFromInt(int64(promptTokens)).
+			Add(decimal.NewFromInt(int64(breakdown.CacheTokens)).Mul(decimal.NewFromFloat(priceData.CacheRatio))).
+			Add(decimal.NewFromInt(int64(breakdown.CacheCreationTokens)).Mul(decimal.NewFromFloat(priceData.CacheCreationRatio))).
+			Add(decimal.NewFromInt(int64(breakdown.InputImageTokens)).Mul(decimal.NewFromFloat(priceData.ImageRatio)))
+		completionQuota := decimal.NewFromInt(int64(breakdown.OutputNonImageTokens)).Mul(decimal.NewFromFloat(priceData.CompletionRatio)).
+			Add(decimal.NewFromInt(int64(breakdown.OutputImageTokens)).Mul(decimal.NewFromFloat(priceData.ImageCompletionRatio)))
+		quotaDecimal := promptQuota.Add(completionQuota).
+			Mul(decimal.NewFromFloat(priceData.ModelRatio)).
+			Mul(decimal.NewFromFloat(priceData.GroupRatioInfo.GroupRatio)).
+			Mul(decimal.NewFromFloat(priceData.CondMultiplier()))
+		quota = int(quotaDecimal.Round(0).IntPart())
 		if priceData.ModelRatio != 0 && quota <= 0 {
 			quota = 1
 		}
@@ -483,6 +616,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	consumedTime := float64(milliseconds) / 1000.0
 	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
 		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, calculatedModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+	appendChannelTestTokenOther(other, breakdown)
 	if priceData.UseTieredPricing && priceData.TieredPricingData != nil {
 		tieredData := priceData.TieredPricingData
 		other["tiered_pricing"] = true
@@ -516,6 +650,15 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 }
 
 func buildTestRequest(model string, endpointType string, isStream bool) dto.Request {
+	isGeminiImageModel := false
+	if _, ok := ratio_setting.GetImageCompletionRatio(model); ok {
+		isGeminiImageModel = true
+	}
+	testPrompt := "hi"
+	if isGeminiImageModel {
+		testPrompt = "Generate one simple original image of a red square on a white background."
+	}
+
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
 		switch constant.EndpointType(endpointType) {
@@ -556,7 +699,7 @@ func buildTestRequest(model string, endpointType string, isStream bool) dto.Requ
 				Messages: []dto.Message{
 					{
 						Role:    "user",
-						Content: "hi",
+						Content: testPrompt,
 					},
 				},
 				MaxTokens: maxTokens,
@@ -587,7 +730,7 @@ func buildTestRequest(model string, endpointType string, isStream bool) dto.Requ
 		Messages: []dto.Message{
 			{
 				Role:    "user",
-				Content: "hi",
+				Content: testPrompt,
 			},
 		},
 	}

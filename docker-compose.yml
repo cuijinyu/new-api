@@ -32,8 +32,14 @@ services:
       - TZ=Asia/Shanghai
       - ERROR_LOG_ENABLED=true # 是否启用错误日志记录 (Whether to enable error log recording)
       - BATCH_UPDATE_ENABLED=true  # 是否启用批量更新 (Whether to enable batch update)
-      - RELAY_TIMEOUT=1200  # Upstream request timeout in seconds (20 minutes)
-      - STREAMING_TIMEOUT=1200  # Streaming timeout in seconds (20 minutes)
+      - RELAY_TIMEOUT=2400  # Upstream request timeout in seconds (40 minutes)
+      - RELAY_IDLE_CONN_TIMEOUT=90  # Relay HTTP client idle keep-alive timeout in seconds
+      - RELAY_MAX_IDLE_CONNS=500  # Relay HTTP client max idle connections
+      - RELAY_MAX_IDLE_CONNS_PER_HOST=100  # Relay HTTP client max idle connections per upstream host
+      - STREAMING_TIMEOUT=2400  # Streaming timeout in seconds (40 minutes)
+      - STREAM_SCANNER_MAX_BUFFER_MB=128  # Max stream scanner line buffer in MB
+      - MAX_REQUEST_BODY_MB=128  # Max decompressed request body size in MB
+      - ANONYMOUS_REQUEST_BODY_LIMIT_KB=512  # Max unauthenticated POST body size in KB
 #      - SESSION_SECRET=random_string  # 多机部署时设置，必须修改这个随机字符串！！ （multi-node deployment, set this to a random string!!!!!!!）
 #      - SYNC_FREQUENCY=60  # Uncomment if regular database syncing is needed
 #      - GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX  # Google Analytics 的测量 ID (Google Analytics Measurement ID)

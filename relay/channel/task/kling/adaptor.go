@@ -650,6 +650,9 @@ func calculateOmniVideoDuration(req *requestPayload) (int, error) {
 			if err != nil {
 				return 0, fmt.Errorf("multi_prompt[%d].duration invalid: %w", i, err)
 			}
+			if shotDuration < 3 {
+				return 0, fmt.Errorf("multi_prompt[%d].duration must be at least 3, got: %d", i, shotDuration)
+			}
 			totalDuration += shotDuration
 		}
 		if totalDuration < 3 || totalDuration > 15 {
