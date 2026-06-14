@@ -310,6 +310,39 @@ func (Task *Task) Update() error {
 	return err
 }
 
+func TaskClaimTerminalUpdate(id int64, status TaskStatus, progress string, finishTime int64, failReason string, data json.RawMessage) (bool, error) {
+	updates := map[string]any{
+		"status":     status,
+		"progress":   progress,
+		"updated_at": time.Now().Unix(),
+	}
+	if finishTime > 0 {
+		updates["finish_time"] = finishTime
+	}
+	updates["fail_reason"] = failReason
+	if data != nil {
+		updates["data"] = data
+	}
+	tx := DB.Model(&Task{}).
+		Where("id = ?", id).
+		Where("status <> ?", TaskStatusFailure).
+		Where("status <> ?", TaskStatusSuccess).
+		Where("progress <> ?", "100%").
+		Updates(updates)
+	return tx.RowsAffected > 0, tx.Error
+}
+
+func TaskUpdateSettlement(id int64, quota int, data json.RawMessage) error {
+	updates := map[string]any{
+		"quota":      quota,
+		"updated_at": time.Now().Unix(),
+	}
+	if data != nil {
+		updates["data"] = data
+	}
+	return DB.Model(&Task{}).Where("id = ?", id).Updates(updates).Error
+}
+
 func TaskBulkUpdate(TaskIds []string, params map[string]any) error {
 	if len(TaskIds) == 0 {
 		return nil

@@ -154,6 +154,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 	shouldRefund := false
 	quota := task.Quota
 	preStatus := task.Status
+	terminalClaimed := false
 
 	task.Status = model.TaskStatus(taskResult.Status)
 	switch taskResult.Status {
@@ -173,6 +174,18 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		}
 		if !(len(taskResult.Url) > 5 && taskResult.Url[:5] == "data:") {
 			task.FailReason = taskResult.Url
+		}
+		if taskResult.Progress != "" {
+			task.Progress = taskResult.Progress
+		}
+		var err error
+		terminalClaimed, err = model.TaskClaimTerminalUpdate(task.ID, model.TaskStatusSuccess, task.Progress, task.FinishTime, task.FailReason, task.Data)
+		if err != nil {
+			return fmt.Errorf("claim terminal video task failed for task %s: %w", taskId, err)
+		}
+		if !terminalClaimed {
+			logger.LogWarn(ctx, fmt.Sprintf("video task terminal update skipped: task_id=%s status=%s reason=already_finalized", task.TaskID, taskResult.Status))
+			return nil
 		}
 
 		// 如果返回了实际消耗数据，则进行精确核销
@@ -371,6 +384,18 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		}
 		task.FailReason = taskResult.Reason
 		taskResult.Progress = "100%"
+		if taskResult.Progress != "" {
+			task.Progress = taskResult.Progress
+		}
+		var err error
+		terminalClaimed, err = model.TaskClaimTerminalUpdate(task.ID, model.TaskStatusFailure, task.Progress, task.FinishTime, task.FailReason, task.Data)
+		if err != nil {
+			return fmt.Errorf("claim terminal video task failed for task %s: %w", taskId, err)
+		}
+		if !terminalClaimed {
+			logger.LogWarn(ctx, fmt.Sprintf("video task terminal update skipped: task_id=%s status=%s reason=already_finalized", task.TaskID, taskResult.Status))
+			return nil
+		}
 		logger.LogError(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		if quota != 0 {
 			if preStatus != model.TaskStatusFailure {
@@ -385,9 +410,16 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
-	if err := task.Update(); err != nil {
-		common.SysLog("UpdateVideoTask task error: " + err.Error())
-		shouldRefund = false
+	if terminalClaimed {
+		if err := model.TaskUpdateSettlement(task.ID, task.Quota, task.Data); err != nil {
+			common.SysLog("UpdateVideoTask settlement update error: " + err.Error())
+			shouldRefund = false
+		}
+	} else {
+		if err := task.Update(); err != nil {
+			common.SysLog("UpdateVideoTask task error: " + err.Error())
+			shouldRefund = false
+		}
 	}
 
 	logger.LogDebug(ctx, fmt.Sprintf("Task %s update completed, shouldRefund: %t", taskId, shouldRefund))
