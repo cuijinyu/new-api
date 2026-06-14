@@ -1,7 +1,37 @@
 # Local Seedance E2E Test
 
-This directory contains a local end-to-end script for Service Inference
+This directory contains local end-to-end scripts for Service Inference
 Seedance 2.0 through the Docker-started new-api service.
+
+## Mocked Run
+
+Use the mocked script for normal development. It does not call the real
+Service Inference upstream and does not create paid video tasks:
+
+```powershell
+python test\seedance_mock_e2e.py
+```
+
+The script starts a local mock server, temporarily points the local
+`ServiceInferenceVideo` channel at `host.docker.internal`, restarts
+`new-api-local` to refresh channel cache, submits a video task, verifies the
+proxied MP4 bytes, checks final settlement, then restores the channel.
+
+Expected mocked 480p text-to-video billing:
+
+```text
+preconsume = 4s * 12000 tok/s * $7 / 1M tok = 168000 quota
+settlement = 40594 tok * $7 / 1M tok = 142078 quota
+refund     = 25922 quota
+```
+
+Reports are written to:
+
+```text
+test/output/seedance-mock-e2e-{task_id}.json
+```
+
+## Real Run
 
 The script checks:
 
@@ -13,7 +43,7 @@ The script checks:
 - Athena `pricing_engine.recalc_from_raw`
 - postpaid customer detail collapse via `collapse_postpaid_detail_rows`
 
-## Run
+## Run Real Upstream
 
 The script can create a real paid video generation. It will not submit unless
 you explicitly confirm:

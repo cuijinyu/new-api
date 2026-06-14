@@ -176,15 +176,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 		}
 
 		// 如果返回了实际消耗数据，则进行精确核销
-		if taskResult.Duration > 0 || taskResult.TotalTokens > 0 {
-			// 优先使用 Duration，如果没有则回退到 TotalTokens
-			actualUsage := taskResult.Duration
-			if channel.Type == constant.ChannelTypeServiceInferenceVideo && taskResult.TotalTokens > 0 {
-				actualUsage = float64(taskResult.TotalTokens)
-			} else if actualUsage <= 0 {
-				actualUsage = float64(taskResult.TotalTokens)
-			}
-
+		actualUsage, usageSource := resolveVideoActualUsage(channel.Type, taskResult, task.Data)
+		if actualUsage > 0 {
+			// ServiceInference is token-priced; other video channels are duration-priced.
 			// 获取模型名称：优先使用任务创建时保存的 OriginModelName，避免受 task.Data 被响应覆盖影响
 			modelName := task.Properties.OriginModelName
 			if modelName == "" {
@@ -262,6 +256,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 					preConsumedQuota := task.Quota
 					quotaDelta := actualQuota - preConsumedQuota
 					settlementOther := videoTaskSettlementOther(channel.Type, task, taskResult, modelName, actualUsage, dynamicScale, finalGroupRatio, value, preConsumedQuota, actualQuota, quotaDelta, requestId)
+					settlementOther["usage_source"] = usageSource
 
 					calcProcess := ""
 					adjustmentHint := "预扣和实际一致，无需调整"
@@ -358,7 +353,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 						})
 					}
 				}
+			} else {
+				logger.LogWarn(ctx, fmt.Sprintf("video task settlement skipped: task_id=%s model=%s reason=price_not_found usage_source=%s actual_usage=%.2f", task.TaskID, modelName, usageSource, actualUsage))
 			}
+		} else {
+			logger.LogWarn(ctx, fmt.Sprintf("video task settlement skipped: task_id=%s reason=no_billable_usage status=%s duration=%.2f total_tokens=%d", task.TaskID, taskResult.Status, taskResult.Duration, taskResult.TotalTokens))
 		}
 	case model.TaskStatusFailure:
 		task.Status = model.TaskStatusFailure
@@ -476,6 +475,63 @@ func adjustVideoTaskTokenQuota(tokenId int, quotaDelta int) error {
 		return model.DecreaseTokenQuota(token.Id, token.Key, quotaDelta)
 	}
 	return model.IncreaseTokenQuota(token.Id, token.Key, -quotaDelta)
+}
+
+func resolveVideoActualUsage(channelType int, taskResult *relaycommon.TaskInfo, taskData []byte) (float64, string) {
+	if taskResult == nil {
+		return 0, "missing_task_result"
+	}
+	if channelType == constant.ChannelTypeServiceInferenceVideo {
+		if taskResult.TotalTokens > 0 {
+			return float64(taskResult.TotalTokens), "upstream_total_tokens"
+		}
+		if estimatedTokens := serviceInferenceEstimatedTokens(taskData); estimatedTokens > 0 {
+			return estimatedTokens, "estimated_tokens"
+		}
+		return 0, "missing_service_inference_total_tokens"
+	}
+	if taskResult.Duration > 0 {
+		return taskResult.Duration, "duration_seconds"
+	}
+	if taskResult.TotalTokens > 0 {
+		return float64(taskResult.TotalTokens), "total_tokens"
+	}
+	return 0, "missing_usage"
+}
+
+func serviceInferenceEstimatedTokens(taskData []byte) float64 {
+	const serviceInferenceBillingKey = "_newapi_service_inference_billing"
+	var m map[string]any
+	if err := json.Unmarshal(taskData, &m); err != nil {
+		return 0
+	}
+	raw, ok := m[serviceInferenceBillingKey]
+	if !ok {
+		return 0
+	}
+	billing, ok := raw.(map[string]any)
+	if !ok {
+		return 0
+	}
+	return numericJSONValue(billing["estimated_tokens"])
+}
+
+func numericJSONValue(v any) float64 {
+	switch value := v.(type) {
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case json.Number:
+		n, _ := value.Float64()
+		return n
+	default:
+		return 0
+	}
 }
 
 func mergeVideoLocalMetadata(existing, updated []byte) []byte {
