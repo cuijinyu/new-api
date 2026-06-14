@@ -35,8 +35,8 @@ Content-Type: application/json
 |------|------|------|------|
 | `model` | string | 是 | 模型名称 |
 | `prompt` | string | 是 | 视频生成提示词 |
-| `image` | string | 否 | 单张参考图 URL 或 Base64 |
-| `images` | string[] | 否 | 多张参考图 URL 或 Base64 |
+| `image` | string | 否 | 单张参考图 URL、Base64 或上游资产引用 |
+| `images` | string[] | 否 | 多张参考图 URL、Base64 或上游资产引用 |
 | `size` | string | 否 | 分辨率，支持 `480p`、`720p`、`1080p`；默认按 `720p` 计费 |
 | `duration` | integer | 否 | 视频时长，单位秒 |
 | `seconds` | string | 否 | 视频时长字符串；存在时会覆盖 `duration` |
@@ -51,7 +51,7 @@ Content-Type: application/json
 ## 文生视频示例
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations \
+curl https://api.ezmodel.cloud/v1/video/generations \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -79,7 +79,7 @@ curl https://www.ezmodel.cloud/v1/video/generations \
 ## 图生视频示例
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations \
+curl https://api.ezmodel.cloud/v1/video/generations \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -126,7 +126,7 @@ curl https://www.ezmodel.cloud/v1/video/generations \
 ## 查询任务状态
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256 \
+curl https://api.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256 \
   -H "Authorization: Bearer $YOUR_API_KEY"
 ```
 
@@ -137,12 +137,25 @@ curl https://www.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256 \
 任务完成后可以直接使用状态响应里的视频 URL，也可以通过内容代理接口下载：
 
 ```bash
-curl -L https://www.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256/content \
+curl -L https://api.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256/content \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   --output seedance.mp4
 ```
 
 响应通常为 `video/mp4`，并支持分片下载。
+
+## 价格档选择
+
+Seedance 会根据请求内容自动选择价格档：
+
+| 判断项 | 规则 |
+|--------|------|
+| 分辨率 | 优先使用 `metadata.resolution`，没有时使用 `size`，都没有时按 `720p` |
+| `with_ref` | 只有使用上游资产引用（例如 `asset://asset-xxx`）的图片、音频、视频素材时进入 `with_ref` |
+| `no_ref` | 只有文本提示词，或使用普通 HTTPS/Base64 图片直链时按 `no_ref` |
+| Fast 模型 | 只支持 `480p` 和 `720p`，不要传 `1080p` |
+
+普通 HTTPS 图片 URL 会透传给上游，但现网供应商账单验证显示这类直链按 `no_ref` 结算。参考素材 URL 必须能被上游服务直接下载，建议使用公开可访问、无需 Cookie、不会强制防盗链的 HTTPS 直链；如果上游返回 `resource download failed`，请更换图片地址或改用可访问的对象存储地址。
 
 ## 计费说明
 
@@ -164,6 +177,8 @@ Seedance 2.0 使用上游返回的 `usage.total_tokens` 做最终结算，单位
 内部额度消耗 = 最终美元费用 * 500000 * 分组倍率
 ```
 
+后台日志会出现两类账务记录：创建任务时的预扣记录，以及任务完成后的补扣或退款记录。对账时应把同一个任务的预扣和补差合并，合并后的净额才是最终费用。
+
 示例：一次 480p 文生视频任务实际返回 `total_tokens = 40594`，价格为 `$7.00 / 1M tok`：
 
 ```text
@@ -173,7 +188,7 @@ Seedance 2.0 使用上游返回的 `usage.total_tokens` 做最终结算，单位
 ## 注意事项
 
 - Fast 模型当前只配置 `480p` 和 `720p`，不要请求 `1080p`。
-- 只要包含图片、音频或视频参考素材，就会进入 `with_ref` 价格档。
+- 普通 HTTPS/Base64 参考图会透传给上游，但按供应商实扣的 `no_ref` 档结算；`asset://` 上游资产引用才进入 `with_ref` 档。
 - `metadata.resolution` 优先级高于顶层 `size`。
 - 视频任务是异步执行，请不要在创建接口等待最终视频。
 - 最终扣费以任务完成后的上游 usage 为准，任务失败会退回预扣费用。

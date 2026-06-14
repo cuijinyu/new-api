@@ -409,11 +409,18 @@ func hasReferenceContent(content []contentItem) bool {
 		if item.Type == "text" {
 			continue
 		}
-		if item.ImageURL != nil || item.AudioURL != nil || item.VideoURL != nil {
+		if isAssetReference(item.ImageURL) || isAssetReference(item.AudioURL) || isAssetReference(item.VideoURL) {
 			return true
 		}
 	}
 	return false
+}
+
+func isAssetReference(ref *mediaURL) bool {
+	if ref == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref.URL)), "asset://")
 }
 
 func priceTier(resolution string, hasReference bool) string {

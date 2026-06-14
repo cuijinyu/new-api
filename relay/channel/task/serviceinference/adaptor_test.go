@@ -166,6 +166,27 @@ func TestGetPriceScaleUsesTokenPriceTier(t *testing.T) {
 	}
 }
 
+func TestGetPriceScaleTreatsDirectImageURLAsNoRefBilling(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("task_request", relaycommon.TaskSubmitReq{
+		Model:   "dreamina-seedance-2-0-fast-260128",
+		Seconds: "4",
+		Size:    "720p",
+		Images:  []string{"https://example.com/ref.jpg"},
+	})
+
+	got, err := (&TaskAdaptor{}).GetPriceScale(c, &relaycommon.RelayInfo{})
+	if err != nil {
+		t.Fatalf("GetPriceScale returned error: %v", err)
+	}
+
+	want := float32(48000.0 / 1_000_000)
+	if math.Abs(float64(got-want)) > 0.000001 {
+		t.Fatalf("price scale = %f, want %f", got, want)
+	}
+}
+
 func TestGetUnitPriceScaleUsesPersistedBillingMetadata(t *testing.T) {
 	meta := billingMetadata{
 		Model:                      "dreamina-seedance-2-0-260128",

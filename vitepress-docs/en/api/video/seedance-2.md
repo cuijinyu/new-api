@@ -35,8 +35,8 @@ If your deployment uses model mapping, you may call the public model name shown 
 |-----------|------|----------|-------------|
 | `model` | string | Yes | Model name |
 | `prompt` | string | Yes | Video generation prompt |
-| `image` | string | No | Single reference image URL or Base64 |
-| `images` | string[] | No | Multiple reference image URLs or Base64 strings |
+| `image` | string | No | Single reference image URL, Base64 string, or upstream asset reference |
+| `images` | string[] | No | Multiple reference image URLs, Base64 strings, or upstream asset references |
 | `size` | string | No | Resolution: `480p`, `720p`, or `1080p`; billing defaults to `720p` |
 | `duration` | integer | No | Video duration in seconds |
 | `seconds` | string | No | Duration as a string; overrides `duration` when present |
@@ -51,7 +51,7 @@ The top-level `prompt` is converted to a text content item. `image` and `images`
 ## Text-to-Video Example
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations \
+curl https://api.ezmodel.cloud/v1/video/generations \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -79,7 +79,7 @@ Response:
 ## Image-to-Video Example
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations \
+curl https://api.ezmodel.cloud/v1/video/generations \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -126,7 +126,7 @@ Use `metadata.content` when you need to pass audio or additional reference asset
 ## Query Task Status
 
 ```bash
-curl https://www.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256 \
+curl https://api.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256 \
   -H "Authorization: Bearer $YOUR_API_KEY"
 ```
 
@@ -137,12 +137,25 @@ When the task is finished, the status becomes `SUCCESS` or `completed`, and the 
 After the task is completed, use the returned video URL directly or download through the content proxy:
 
 ```bash
-curl -L https://www.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256/content \
+curl -L https://api.ezmodel.cloud/v1/video/generations/mvt-512d4ffd9ce54256/content \
   -H "Authorization: Bearer $YOUR_API_KEY" \
   --output seedance.mp4
 ```
 
 The response is usually `video/mp4` and supports range downloads.
+
+## Price Tier Selection
+
+Seedance selects the price tier from the request payload:
+
+| Item | Rule |
+|------|------|
+| Resolution | `metadata.resolution` takes priority, then `size`; if neither is set, billing defaults to `720p` |
+| `with_ref` | Only upstream asset references, for example `asset://asset-xxx`, select the `with_ref` tier |
+| `no_ref` | Text-only prompts, ordinary HTTPS image URLs, and Base64 image references use `no_ref` |
+| Fast model | Only `480p` and `720p` are supported; do not request `1080p` |
+
+Ordinary HTTPS image URLs are forwarded to the upstream service, but production supplier billing has verified that these direct URLs are settled as `no_ref`. Reference asset URLs must be directly downloadable by the upstream service. Use public HTTPS URLs that do not require cookies or anti-hotlinking headers. If the upstream returns `resource download failed`, use another image URL or a reachable object-storage URL.
 
 ## Billing
 
@@ -164,6 +177,8 @@ final USD = usage.total_tokens / 1,000,000 * tier price
 internal quota = final USD * 500000 * group ratio
 ```
 
+Billing logs contain two kinds of rows: the task precharge row and the completion adjustment row. Reconciliation should merge the precharge and the adjustment for the same task; the merged net amount is the final cost.
+
 Example: a 480p text-to-video task returns `total_tokens = 40594` at `$7.00 / 1M tok`:
 
 ```text
@@ -173,7 +188,7 @@ Example: a 480p text-to-video task returns `total_tokens = 40594` at `$7.00 / 1M
 ## Notes
 
 - The Fast model is configured for `480p` and `720p`; do not request `1080p`.
-- Any image, audio, or video reference asset selects the `with_ref` price tier.
+- Ordinary HTTPS/Base64 image references are forwarded upstream but are settled with the supplier-matched `no_ref` tier; upstream `asset://` references select `with_ref`.
 - `metadata.resolution` takes priority over the top-level `size`.
 - Video generation is asynchronous; do not wait for the final video in the create request.
 - Final billing follows the completed task usage. Failed tasks refund the precharged quota.
