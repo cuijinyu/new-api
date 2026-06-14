@@ -208,8 +208,11 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 			clientIP := task.Properties.ClientIP
 
 			// 获取模型价格和倍率（同时支持 ModelPrice 和 ModelRatio 两种计费模式）
-			value, isPrice, found := ratio_setting.GetModelRatioOrPrice(modelName)
+			value, isPrice, found, priceSource := resolveVideoModelPriceOrRatio(modelName)
 			if found && value > 0 {
+				if priceSource == "default_model_price" {
+					logger.LogWarn(ctx, fmt.Sprintf("video task settlement using default model price fallback: task_id=%s model=%s price=%.4f usage_source=%s actual_usage=%.2f", task.TaskID, modelName, value, usageSource, actualUsage))
+				}
 				group := task.Group
 				if group == "" {
 					if user, err := model.GetUserById(task.UserId, false); err == nil {
@@ -257,6 +260,7 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 					quotaDelta := actualQuota - preConsumedQuota
 					settlementOther := videoTaskSettlementOther(channel.Type, task, taskResult, modelName, actualUsage, dynamicScale, finalGroupRatio, value, preConsumedQuota, actualQuota, quotaDelta, requestId)
 					settlementOther["usage_source"] = usageSource
+					settlementOther["price_source"] = priceSource
 
 					calcProcess := ""
 					adjustmentHint := "预扣和实际一致，无需调整"
@@ -497,6 +501,17 @@ func resolveVideoActualUsage(channelType int, taskResult *relaycommon.TaskInfo, 
 		return float64(taskResult.TotalTokens), "total_tokens"
 	}
 	return 0, "missing_usage"
+}
+
+func resolveVideoModelPriceOrRatio(modelName string) (float64, bool, bool, string) {
+	value, isPrice, found := ratio_setting.GetModelRatioOrPrice(modelName)
+	if found && value > 0 {
+		return value, isPrice, true, "configured"
+	}
+	if price, ok := ratio_setting.GetDefaultModelPriceMap()[modelName]; ok && price > 0 {
+		return price, true, true, "default_model_price"
+	}
+	return value, isPrice, false, "missing"
 }
 
 func serviceInferenceEstimatedTokens(taskData []byte) float64 {

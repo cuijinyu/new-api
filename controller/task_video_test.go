@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 func TestResolveVideoActualUsageServiceInferenceUsesTotalTokens(t *testing.T) {
@@ -55,5 +56,31 @@ func TestResolveVideoActualUsageOtherVideoUsesDuration(t *testing.T) {
 	}
 	if source != "duration_seconds" {
 		t.Fatalf("source = %q, want duration_seconds", source)
+	}
+}
+
+func TestResolveVideoModelPriceOrRatioFallsBackToDefaultModelPrice(t *testing.T) {
+	originalModelPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		if err := ratio_setting.UpdateModelPriceByJSONString(originalModelPrice); err != nil {
+			t.Fatalf("restore model price: %v", err)
+		}
+	})
+	if err := ratio_setting.UpdateModelPriceByJSONString(`{}`); err != nil {
+		t.Fatalf("clear model price: %v", err)
+	}
+
+	value, isPrice, found, source := resolveVideoModelPriceOrRatio("dreamina-seedance-2-0-fast-260128")
+	if !found {
+		t.Fatal("found = false, want default model price fallback")
+	}
+	if !isPrice {
+		t.Fatal("isPrice = false, want price mode")
+	}
+	if value != 5.6 {
+		t.Fatalf("value = %v, want 5.6", value)
+	}
+	if source != "default_model_price" {
+		t.Fatalf("source = %q, want default_model_price", source)
 	}
 }
