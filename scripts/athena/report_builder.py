@@ -959,6 +959,7 @@ def _export_detail_csv(year_month: str, output_dir: str,
         all_chunks = [pd.DataFrame()]
 
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
+    df_all = pricing_engine.dedupe_usage_log_rows(df_all)
 
     if customer_view:
         df_all = pricing_engine.collapse_postpaid_detail_rows(df_all)
@@ -2185,6 +2186,7 @@ def _export_detail_csv_tz(year_month: str, output_dir: str,
         all_chunks = [pd.DataFrame()]
 
     df_all = pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
+    df_all = pricing_engine.dedupe_usage_log_rows(df_all)
 
     if customer_view:
         df_all = pricing_engine.collapse_postpaid_detail_rows(df_all)

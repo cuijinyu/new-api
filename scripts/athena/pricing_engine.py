@@ -31,6 +31,44 @@ _pricing_cache = None
 _pricing_mtime = 0
 
 
+USAGE_LOG_DEDUPE_KEYS = [
+    "request_id", "created_at", "user_id", "username", "channel_id",
+    "model_name", "token_name", "prompt_tokens", "completion_tokens",
+    "quota", "use_time_seconds", "is_stream", "ip", "other",
+    "billing_event", "upstream_task_id", "actual_quota",
+    "preconsumed_quota", "quota_delta",
+    "cache_hit_tokens", "cache_write_tokens", "cw_5m", "cw_1h",
+    "cw_remaining", "tiered_ip", "tiered_op", "image_output_tokens",
+    "image_output_ratio", "image_input_tokens", "image_input_ratio",
+]
+
+
+def dedupe_usage_log_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop exact duplicate usage log accounting rows.
+
+    Usage logs can occasionally be written to more than one S3 object. These
+    rows are byte-for-byte the same accounting event and must not be billed
+    twice. This does not collapse legitimate multi-row task billing because
+    preconsume and settlement rows differ in quota and billing metadata.
+    """
+    if df.empty:
+        return df
+
+    keys = [c for c in USAGE_LOG_DEDUPE_KEYS if c in df.columns]
+    if not keys:
+        return df
+
+    before = len(df)
+    result = df.drop_duplicates(subset=keys, keep="first").copy()
+    removed = before - len(result)
+    if removed > 0:
+        logger.warning(
+            "Dropped duplicate usage log rows before billing",
+            extra={"event": "usage_log_dedup", "removed_rows": removed, "input_rows": before},
+        )
+    return result
+
+
 def _load_discounts() -> dict:
     """Load discounts.json with file-mtime caching (auto-reload on edit)."""
     global _discounts_cache, _discounts_mtime
@@ -718,7 +756,7 @@ def recalc_from_raw(df: pd.DataFrame,
     if df.empty:
         return df
 
-    df = df.copy()
+    df = dedupe_usage_log_rows(df).copy()
 
     # Normalize column name for pricing logic
     if "model_name" in df.columns and "model" not in df.columns:
@@ -1114,7 +1152,7 @@ def collapse_postpaid_detail_rows(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     original_cols = list(df.columns)
-    working = df.copy()
+    working = dedupe_usage_log_rows(df).copy()
 
     if "model_name" in working.columns:
         seedance_mask = working["model_name"].astype(str).str.contains("seedance", case=False, na=False)

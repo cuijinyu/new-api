@@ -29,6 +29,38 @@ def _channel_where(channel_id: int = None, channel_ids: list[int] = None) -> str
     return ""
 
 
+def _usage_logs_dedup_cte(where: str) -> str:
+    """CTE that removes exact duplicate usage log rows before billing.
+
+    Cloud/S3 delivery can occasionally leave the same accounting event in more
+    than one object. Billing queries must treat those rows as one event while
+    preserving legitimate multi-row task flows such as preconsume + settlement.
+    """
+    return f"""
+WITH usage_logs_dedup AS (
+    SELECT DISTINCT
+        request_id,
+        created_at,
+        user_id,
+        username,
+        channel_id,
+        model_name,
+        token_name,
+        prompt_tokens,
+        completion_tokens,
+        quota,
+        use_time_seconds,
+        is_stream,
+        ip,
+        other,
+        day,
+        hour
+    FROM ezmodel_logs.usage_logs
+    WHERE {where}
+)
+"""
+
+
 def _logical_call_count(alias: str = "call_count") -> str:
     """Count logical billable calls, collapsing two-stage task billing rows.
 
@@ -229,6 +261,7 @@ def monthly_bill_by_user(year_month: str, user_id: int = None,
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     user_id,
     username,
@@ -238,8 +271,7 @@ SELECT
     SUM(prompt_tokens + completion_tokens)  AS total_tokens,
     SUM({_postpaid_quota_expr()})           AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY user_id, username
 ORDER BY total_usd DESC
 """
@@ -261,6 +293,7 @@ def monthly_bill_by_user_model(year_month: str, user_id: int = None,
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     user_id,
     username,
@@ -270,8 +303,7 @@ SELECT
     SUM(completion_tokens)                  AS total_output_tokens,
     SUM({_postpaid_quota_expr()})           AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY user_id, username, model_name
 ORDER BY user_id, total_usd DESC
 """
@@ -303,6 +335,7 @@ def monthly_bill_full(year_month: str, user_id: int = None,
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     user_id,
     username,
@@ -329,8 +362,7 @@ SELECT
         AS total_image_output_tokens,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0))
         AS total_image_input_tokens
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY user_id, username, channel_id, model_name
 ORDER BY user_id, total_usd DESC
 """
@@ -352,6 +384,7 @@ def daily_trend(year_month: str, user_id: int = None,
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     day,
     {_logical_call_count()},
@@ -370,8 +403,7 @@ SELECT
         AS total_cw_remaining,
     SUM({_postpaid_quota_expr()})       AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY day
 ORDER BY day
 """
@@ -393,6 +425,7 @@ def daily_trend_by_model(year_month: str, user_id: int = None,
         where += f" AND user_id = {int(user_id)}"
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     day,
     token_name,
@@ -415,8 +448,7 @@ SELECT
         AS total_cw_remaining,
     SUM({_postpaid_quota_expr()})           AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY day, token_name, model_name
 ORDER BY day, token_name, total_usd DESC
 """
@@ -432,6 +464,7 @@ def model_ranking(year_month: str,
                               start_time=start_time, end_time=end_time,
                               time_zone_offset_hours=time_zone_offset_hours)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     model_name,
     {_logical_call_count()},
@@ -439,8 +472,7 @@ SELECT
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd,
     ROUND(AVG(use_time_seconds), 1)             AS avg_latency_sec,
     ROUND(SUM(CASE WHEN is_stream THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS stream_pct
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY model_name
 ORDER BY total_usd DESC
 """
@@ -456,14 +488,14 @@ def channel_summary(year_month: str,
                               start_time=start_time, end_time=end_time,
                               time_zone_offset_hours=time_zone_offset_hours)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     channel_id,
     {_logical_call_count()},
     COUNT(DISTINCT model_name)          AS model_count,
     COUNT(DISTINCT user_id)             AS user_count,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY channel_id
 ORDER BY total_usd DESC
 """
@@ -473,6 +505,7 @@ def top_users(year_month: str, limit: int = 20) -> str:
     year, month = _year_month(year_month)
     where = _partition_filter(year, month)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     user_id,
     username,
@@ -480,8 +513,7 @@ SELECT
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd,
     MIN(from_unixtime(created_at))      AS first_call,
     MAX(from_unixtime(created_at))      AS last_call
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY user_id, username
 ORDER BY total_usd DESC
 LIMIT {int(limit)}
@@ -492,13 +524,13 @@ def hourly_distribution(year_month: str, day: str) -> str:
     year, month = _year_month(year_month)
     where = _partition_filter(year, month, day=day)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     hour,
     {_logical_call_count()},
     SUM(prompt_tokens + completion_tokens)  AS total_tokens,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY hour
 ORDER BY hour
 """
@@ -542,7 +574,7 @@ def raw_usage_detail(start_date: str, end_date: str,
         where += f" AND model_name = {_q(model)}"
 
     return f"""
-SELECT
+SELECT DISTINCT
     request_id,
     created_at,
     user_id,
@@ -604,7 +636,7 @@ def usage_by_created_at_range(ts_min: int, ts_max: int,
         where += f" AND user_id = {int(user_id)}"
 
     return f"""
-SELECT
+SELECT DISTINCT
     request_id,
     created_at,
     user_id,
@@ -660,6 +692,7 @@ def usage_summary_by_created_at_range(ts_min: int, ts_max: int,
         where += f" AND user_id = {int(user_id)}"
 
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     model_name,
     {_logical_call_count()},
@@ -667,8 +700,7 @@ SELECT
     SUM(completion_tokens)                  AS total_output_tokens,
     SUM({_postpaid_quota_expr()})           AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY model_name
 ORDER BY total_usd DESC
 """
@@ -697,7 +729,7 @@ def raw_usage_detail_daily(year_month: str, day: str,
         where += f" AND model_name = {_q(model)}"
 
     return f"""
-SELECT
+SELECT DISTINCT
     request_id,
     created_at,
     user_id,
@@ -798,7 +830,7 @@ def anomaly_zero_tokens(year_month: str, day: str = None,
     if day:
         where = _partition_filter(year, month, day=day)
     return f"""
-SELECT
+SELECT DISTINCT
     request_id,
     from_unixtime(created_at)   AS created_time,
     user_id, username, model_name, channel_id,
@@ -857,6 +889,7 @@ def kpi_summary(year_month: str,
                               start_time=start_time, end_time=end_time,
                               time_zone_offset_hours=time_zone_offset_hours)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     COUNT(*)                            AS total_calls,
     COUNT(DISTINCT user_id)             AS unique_users,
@@ -865,8 +898,7 @@ SELECT
     SUM(completion_tokens)              AS total_output_tokens,
     SUM({_postpaid_quota_expr()})       AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 2) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 """
 
 
@@ -989,6 +1021,7 @@ def monthly_bill_full_tz(year_month: str,
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     interval = _tz_offset_interval(tz_offset_hours)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d') AS local_date,
     user_id,
@@ -1016,8 +1049,7 @@ SELECT
         AS total_image_output_tokens,
     SUM(COALESCE(CAST(json_extract_scalar(other, '$.image_output') AS BIGINT), 0))
         AS total_image_input_tokens
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d'),
          user_id, username, channel_id, model_name
 ORDER BY local_date, user_id, total_usd DESC
@@ -1075,6 +1107,7 @@ def daily_trend_tz(year_month: str,
     where += _channel_where(channel_id=channel_id, channel_ids=channel_ids)
     interval = _tz_offset_interval(tz_offset_hours)
     return f"""
+{_usage_logs_dedup_cte(where)}
 SELECT
     DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d') AS local_date,
     {_logical_call_count()},
@@ -1093,8 +1126,7 @@ SELECT
         AS total_cw_remaining,
     SUM({_postpaid_quota_expr()})       AS total_quota,
     ROUND(SUM({_postpaid_quota_expr()}) / 500000.0, 4) AS total_usd
-FROM ezmodel_logs.usage_logs
-WHERE {where}
+FROM usage_logs_dedup
 GROUP BY DATE_FORMAT(from_unixtime(created_at) + {interval}, '%Y-%m-%d')
 ORDER BY local_date
 """
@@ -1144,7 +1176,7 @@ def raw_usage_detail_daily_tz(year_month: str, local_date: str,
         where += f" AND model_name = {_q(model)}"
 
     return f"""
-SELECT
+SELECT DISTINCT
     request_id,
     created_at,
     user_id,
