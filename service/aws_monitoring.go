@@ -49,6 +49,11 @@ type AWSMonitoringPoint struct {
 	ProviderTPM         float64 `json:"provider_tpm"`
 	SuccessRate         float64 `json:"success_rate"`
 	LatencyMs           float64 `json:"latency_ms"`
+	LatencyP99Ms        float64 `json:"latency_p99_ms"`
+	UpstreamLatencyMs   float64 `json:"upstream_latency_ms"`
+	UpstreamP99Ms       float64 `json:"upstream_p99_ms"`
+	TTFTMs              float64 `json:"ttft_ms"`
+	TTFTP99Ms           float64 `json:"ttft_p99_ms"`
 }
 
 type AWSMonitoringSummary struct {
@@ -67,6 +72,11 @@ type AWSMonitoringSummary struct {
 	AverageProviderTPM  float64 `json:"avg_provider_tpm"`
 	PeakProviderTPM     float64 `json:"peak_provider_tpm"`
 	AverageLatencyMs    float64 `json:"avg_latency_ms"`
+	LatencyP99Ms        float64 `json:"latency_p99_ms"`
+	AverageTTFTMs       float64 `json:"avg_ttft_ms"`
+	TTFTP99Ms           float64 `json:"ttft_p99_ms"`
+	UpstreamLatencyMs   float64 `json:"upstream_latency_ms"`
+	UpstreamP99Ms       float64 `json:"upstream_p99_ms"`
 }
 
 type AWSMonitoringChannel struct {
@@ -85,7 +95,11 @@ type AWSMonitoringChannel struct {
 	ProviderTokens      float64                     `json:"provider_tokens"`
 	SuccessRate         float64                     `json:"success_rate"`
 	AverageLatencyMs    float64                     `json:"avg_latency_ms"`
+	LatencyP99Ms        float64                     `json:"latency_p99_ms"`
+	AverageTTFTMs       float64                     `json:"avg_ttft_ms"`
+	TTFTP99Ms           float64                     `json:"ttft_p99_ms"`
 	UpstreamLatencyMs   float64                     `json:"upstream_latency_ms"`
+	UpstreamP99Ms       float64                     `json:"upstream_p99_ms"`
 	UpstreamErrors      float64                     `json:"upstream_errors"`
 	Timeouts            float64                     `json:"timeouts"`
 	Fallbacks           float64                     `json:"fallbacks"`
@@ -108,7 +122,11 @@ type AWSMonitoringChannelPoint struct {
 	ProviderTPM         float64 `json:"provider_tpm"`
 	SuccessRate         float64 `json:"success_rate"`
 	AverageLatencyMs    float64 `json:"avg_latency_ms"`
+	LatencyP99Ms        float64 `json:"latency_p99_ms"`
+	AverageTTFTMs       float64 `json:"avg_ttft_ms"`
+	TTFTP99Ms           float64 `json:"ttft_p99_ms"`
 	UpstreamLatencyMs   float64 `json:"upstream_latency_ms"`
+	UpstreamP99Ms       float64 `json:"upstream_p99_ms"`
 	UpstreamErrors      float64 `json:"upstream_errors"`
 	Timeouts            float64 `json:"timeouts"`
 	Fallbacks           float64 `json:"fallbacks"`
@@ -272,6 +290,14 @@ func fetchSiteMetrics(ctx context.Context, cfg aws.Config, namespace string, sta
 		expressionQuery("site_cache_create", searchSumExpression(namespace, "CacheCreationTokens", "Sum", period), "CacheCreationTokens"),
 		expressionQuery("site_reasoning", searchSumExpression(namespace, "ReasoningTokens", "Sum", period), "ReasoningTokens"),
 		expressionQuery("site_lat", searchAvgExpression(namespace, "RequestLatencyMs", "Average", period), "Latency"),
+		expressionQuery("site_lat_p99", searchAvgExpression(namespace, "RequestLatencyMs", "p99", period), "LatencyP99"),
+		expressionQuery("site_lat_max", searchAvgExpression(namespace, "RequestLatencyMs", "Maximum", period), "LatencyMax"),
+		expressionQuery("site_ttft", searchAvgExpression(namespace, "TTFTMs", "Average", period), "TTFT"),
+		expressionQuery("site_ttft_p99", searchAvgExpression(namespace, "TTFTMs", "p99", period), "TTFTP99"),
+		expressionQuery("site_ttft_max", searchAvgExpression(namespace, "TTFTMs", "Maximum", period), "TTFTMax"),
+		expressionQuery("site_uplat", searchAvgExpression(namespace, "UpstreamLatencyMs", "Average", period), "UpstreamLatency"),
+		expressionQuery("site_uplat_p99", searchAvgExpression(namespace, "UpstreamLatencyMs", "p99", period), "UpstreamLatencyP99"),
+		expressionQuery("site_uplat_max", searchAvgExpression(namespace, "UpstreamLatencyMs", "Maximum", period), "UpstreamLatencyMax"),
 	}
 	results, err := getMetricData(ctx, cfg, start, end, queries)
 	if err != nil {
@@ -282,7 +308,7 @@ func fetchSiteMetrics(ctx context.Context, cfg aws.Config, namespace string, sta
 
 func fetchChannelMetrics(ctx context.Context, cfg aws.Config, namespace string, start, end time.Time, period int, channels []*model.Channel) (map[int]map[string]cwSeries, error) {
 	results := make(map[int]map[string]cwSeries)
-	const metricsPerChannel = 12
+	const metricsPerChannel = 19
 	chunkSize := 500 / metricsPerChannel
 	if chunkSize < 1 {
 		chunkSize = 1
@@ -317,7 +343,14 @@ func fetchChannelMetrics(ctx context.Context, cfg aws.Config, namespace string, 
 			add("cache_create", "CacheCreationTokens", "Sum")
 			add("reasoning", "ReasoningTokens", "Sum")
 			add("lat", "RequestLatencyMs", "Average")
+			add("lat_p99", "RequestLatencyMs", "p99")
+			add("lat_max", "RequestLatencyMs", "Maximum")
+			add("ttft", "TTFTMs", "Average")
+			add("ttft_p99", "TTFTMs", "p99")
+			add("ttft_max", "TTFTMs", "Maximum")
 			add("uplat", "UpstreamLatencyMs", "Average")
+			add("uplat_p99", "UpstreamLatencyMs", "p99")
+			add("uplat_max", "UpstreamLatencyMs", "Maximum")
 			add("uperr", "UpstreamErrorCount", "Sum")
 			add("timeout", "UpstreamTimeoutCount", "Sum")
 			add("fallback", "ChannelFallbackCount", "Sum")
@@ -474,14 +507,26 @@ func finalizeSeries(series cwSeries) cwSeries {
 
 func aggregateChannelMetrics(metrics map[int]map[string]cwSeries, period int) map[string]cwSeries {
 	site := map[string]cwSeries{
-		"site_req": {},
-		"site_err": {},
-		"site_in":  {},
-		"site_out": {},
-		"site_lat": {},
+		"site_req":       {},
+		"site_err":       {},
+		"site_in":        {},
+		"site_out":       {},
+		"site_lat":       {},
+		"site_ttft":      {},
+		"site_uplat":     {},
+		"site_lat_p99":   {},
+		"site_lat_max":   {},
+		"site_ttft_p99":  {},
+		"site_ttft_max":  {},
+		"site_uplat_p99": {},
+		"site_uplat_max": {},
 	}
 	latencyWeightByBucket := make(map[int64]float64)
 	latencyCountByBucket := make(map[int64]float64)
+	ttftWeightByBucket := make(map[int64]float64)
+	ttftCountByBucket := make(map[int64]float64)
+	upstreamLatencyWeightByBucket := make(map[int64]float64)
+	upstreamLatencyCountByBucket := make(map[int64]float64)
 	for _, channelMetrics := range metrics {
 		reqSeries := channelMetrics["req"]
 		addMetricSeries(site, "site_req", channelMetrics["req"], period)
@@ -504,6 +549,38 @@ func aggregateChannelMetrics(metrics map[int]map[string]cwSeries, period int) ma
 			latencyWeightByBucket[ts] += latency * weight
 			latencyCountByBucket[ts] += weight
 		}
+		for rawTS, latency := range channelMetrics["uplat"].Values {
+			if latency <= 0 || math.IsNaN(latency) || math.IsInf(latency, 0) {
+				continue
+			}
+			ts := alignMetricTimestamp(rawTS, period)
+			weight := reqSeries.Values[rawTS]
+			if weight <= 0 {
+				weight = 1
+			}
+			addWeightedMetricValue(site, "site_uplat", ts, latency, weight)
+			upstreamLatencyWeightByBucket[ts] += latency * weight
+			upstreamLatencyCountByBucket[ts] += weight
+		}
+		for rawTS, ttft := range channelMetrics["ttft"].Values {
+			if ttft <= 0 || math.IsNaN(ttft) || math.IsInf(ttft, 0) {
+				continue
+			}
+			ts := alignMetricTimestamp(rawTS, period)
+			weight := reqSeries.Values[rawTS]
+			if weight <= 0 {
+				weight = 1
+			}
+			addWeightedMetricValue(site, "site_ttft", ts, ttft, weight)
+			ttftWeightByBucket[ts] += ttft * weight
+			ttftCountByBucket[ts] += weight
+		}
+		addMaxMetricSeries(site, "site_lat_p99", channelMetrics["lat_p99"], period)
+		addMaxMetricSeries(site, "site_lat_max", channelMetrics["lat_max"], period)
+		addMaxMetricSeries(site, "site_ttft_p99", channelMetrics["ttft_p99"], period)
+		addMaxMetricSeries(site, "site_ttft_max", channelMetrics["ttft_max"], period)
+		addMaxMetricSeries(site, "site_uplat_p99", channelMetrics["uplat_p99"], period)
+		addMaxMetricSeries(site, "site_uplat_max", channelMetrics["uplat_max"], period)
 	}
 	if latSeries := site["site_lat"]; latSeries.Values != nil {
 		for ts, weightedLatency := range latencyWeightByBucket {
@@ -512,6 +589,22 @@ func aggregateChannelMetrics(metrics map[int]map[string]cwSeries, period int) ma
 			}
 		}
 		site["site_lat"] = latSeries
+	}
+	if latencySeries := site["site_uplat"]; latencySeries.Values != nil {
+		for ts, weightedLatency := range upstreamLatencyWeightByBucket {
+			if upstreamLatencyCountByBucket[ts] > 0 {
+				latencySeries.Values[ts] = weightedLatency / upstreamLatencyCountByBucket[ts]
+			}
+		}
+		site["site_uplat"] = latencySeries
+	}
+	if ttftSeries := site["site_ttft"]; ttftSeries.Values != nil {
+		for ts, weightedTTFT := range ttftWeightByBucket {
+			if ttftCountByBucket[ts] > 0 {
+				ttftSeries.Values[ts] = weightedTTFT / ttftCountByBucket[ts]
+			}
+		}
+		site["site_ttft"] = ttftSeries
 	}
 	for id, series := range site {
 		site[id] = finalizeSeries(series)
@@ -528,12 +621,32 @@ func addMetricSeries(target map[string]cwSeries, id string, source cwSeries, per
 	}
 }
 
+func addMaxMetricSeries(target map[string]cwSeries, id string, source cwSeries, period int) {
+	for rawTS, value := range source.Values {
+		if value == 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			continue
+		}
+		addMaxMetricValue(target, id, alignMetricTimestamp(rawTS, period), value)
+	}
+}
+
 func addMetricValue(target map[string]cwSeries, id string, ts int64, value float64) {
 	series := target[id]
 	if series.Values == nil {
 		series.Values = make(map[int64]float64)
 	}
 	series.Values[ts] += value
+	target[id] = series
+}
+
+func addMaxMetricValue(target map[string]cwSeries, id string, ts int64, value float64) {
+	series := target[id]
+	if series.Values == nil {
+		series.Values = make(map[int64]float64)
+	}
+	if value > series.Values[ts] {
+		series.Values[ts] = value
+	}
 	target[id] = series
 }
 
@@ -609,6 +722,9 @@ func buildMonitoringSeries(buckets []int64, site map[string]cwSeries, period int
 		cacheCreationTokens := valueAt(site, "site_cache_create", ts)
 		reasoningTokens := valueAt(site, "site_reasoning", ts)
 		providerTokens := tokens + cachedTokens + cacheCreationTokens + reasoningTokens
+		latencyP99 := firstNonZero(valueAt(site, "site_lat_p99", ts), valueAt(site, "site_lat_max", ts))
+		ttftP99 := firstNonZero(valueAt(site, "site_ttft_p99", ts), valueAt(site, "site_ttft_max", ts))
+		upstreamP99 := firstNonZero(valueAt(site, "site_uplat_p99", ts), valueAt(site, "site_uplat_max", ts))
 		point := AWSMonitoringPoint{
 			Time:                ts,
 			Requests:            roundMetric(requests),
@@ -623,6 +739,11 @@ func buildMonitoringSeries(buckets []int64, site map[string]cwSeries, period int
 			ProviderTPM:         roundMetric(providerTokens / minutes),
 			SuccessRate:         successRate(requests, errors),
 			LatencyMs:           roundMetric(valueAt(site, "site_lat", ts)),
+			LatencyP99Ms:        roundMetric(latencyP99),
+			UpstreamLatencyMs:   roundMetric(valueAt(site, "site_uplat", ts)),
+			UpstreamP99Ms:       roundMetric(upstreamP99),
+			TTFTMs:              roundMetric(valueAt(site, "site_ttft", ts)),
+			TTFTP99Ms:           roundMetric(ttftP99),
 		}
 		points = append(points, point)
 	}
@@ -653,6 +774,10 @@ func buildMonitoringSummary(series []AWSMonitoringPoint) AWSMonitoringSummary {
 	var summary AWSMonitoringSummary
 	var latencySum float64
 	var latencyCount float64
+	var ttftSum float64
+	var ttftCount float64
+	var upstreamLatencySum float64
+	var upstreamLatencyCount float64
 	var rpmSum float64
 	var tpmSum float64
 	var providerTpmSum float64
@@ -680,6 +805,23 @@ func buildMonitoringSummary(series []AWSMonitoringPoint) AWSMonitoringSummary {
 			latencySum += point.LatencyMs
 			latencyCount++
 		}
+		if point.LatencyP99Ms > summary.LatencyP99Ms {
+			summary.LatencyP99Ms = point.LatencyP99Ms
+		}
+		if point.TTFTMs > 0 {
+			ttftSum += point.TTFTMs
+			ttftCount++
+		}
+		if point.TTFTP99Ms > summary.TTFTP99Ms {
+			summary.TTFTP99Ms = point.TTFTP99Ms
+		}
+		if point.UpstreamLatencyMs > 0 {
+			upstreamLatencySum += point.UpstreamLatencyMs
+			upstreamLatencyCount++
+		}
+		if point.UpstreamP99Ms > summary.UpstreamP99Ms {
+			summary.UpstreamP99Ms = point.UpstreamP99Ms
+		}
 	}
 	if len(series) > 0 {
 		summary.AverageRPM = roundMetric(rpmSum / float64(len(series)))
@@ -688,6 +830,12 @@ func buildMonitoringSummary(series []AWSMonitoringPoint) AWSMonitoringSummary {
 	}
 	if latencyCount > 0 {
 		summary.AverageLatencyMs = roundMetric(latencySum / latencyCount)
+	}
+	if ttftCount > 0 {
+		summary.AverageTTFTMs = roundMetric(ttftSum / ttftCount)
+	}
+	if upstreamLatencyCount > 0 {
+		summary.UpstreamLatencyMs = roundMetric(upstreamLatencySum / upstreamLatencyCount)
 	}
 	summary.Requests = roundMetric(summary.Requests)
 	summary.Errors = roundMetric(summary.Errors)
@@ -704,6 +852,10 @@ func buildMonitoringSummaryFromChannels(channels []AWSMonitoringChannel, hours i
 	var summary AWSMonitoringSummary
 	var latencyWeightedSum float64
 	var latencyWeight float64
+	var ttftWeightedSum float64
+	var ttftWeight float64
+	var upstreamLatencyWeightedSum float64
+	var upstreamLatencyWeight float64
 	for _, channel := range channels {
 		summary.Requests += channel.Requests
 		summary.Errors += channel.Errors
@@ -720,6 +872,31 @@ func buildMonitoringSummaryFromChannels(channels []AWSMonitoringChannel, hours i
 			latencyWeightedSum += channel.AverageLatencyMs * weight
 			latencyWeight += weight
 		}
+		if channel.LatencyP99Ms > summary.LatencyP99Ms {
+			summary.LatencyP99Ms = channel.LatencyP99Ms
+		}
+		if channel.AverageTTFTMs > 0 {
+			weight := channel.Requests
+			if weight <= 0 {
+				weight = 1
+			}
+			ttftWeightedSum += channel.AverageTTFTMs * weight
+			ttftWeight += weight
+		}
+		if channel.TTFTP99Ms > summary.TTFTP99Ms {
+			summary.TTFTP99Ms = channel.TTFTP99Ms
+		}
+		if channel.UpstreamLatencyMs > 0 {
+			weight := channel.Requests
+			if weight <= 0 {
+				weight = 1
+			}
+			upstreamLatencyWeightedSum += channel.UpstreamLatencyMs * weight
+			upstreamLatencyWeight += weight
+		}
+		if channel.UpstreamP99Ms > summary.UpstreamP99Ms {
+			summary.UpstreamP99Ms = channel.UpstreamP99Ms
+		}
 	}
 	if hours > 0 {
 		minutes := float64(hours * 60)
@@ -729,6 +906,12 @@ func buildMonitoringSummaryFromChannels(channels []AWSMonitoringChannel, hours i
 	}
 	if latencyWeight > 0 {
 		summary.AverageLatencyMs = roundMetric(latencyWeightedSum / latencyWeight)
+	}
+	if ttftWeight > 0 {
+		summary.AverageTTFTMs = roundMetric(ttftWeightedSum / ttftWeight)
+	}
+	if upstreamLatencyWeight > 0 {
+		summary.UpstreamLatencyMs = roundMetric(upstreamLatencyWeightedSum / upstreamLatencyWeight)
 	}
 	summary.Requests = roundMetric(summary.Requests)
 	summary.Errors = roundMetric(summary.Errors)
@@ -770,7 +953,11 @@ func buildMonitoringChannels(channels []*model.Channel, metrics map[int]map[stri
 			ProviderTokens:      roundMetric(providerTokens),
 			SuccessRate:         successRate(requests, errors),
 			AverageLatencyMs:    roundMetric(seriesAvg(rowMetrics, "lat")),
+			LatencyP99Ms:        roundMetric(firstNonZero(seriesPeak(rowMetrics, "lat_p99"), seriesPeak(rowMetrics, "lat_max"))),
+			AverageTTFTMs:       roundMetric(seriesAvg(rowMetrics, "ttft")),
+			TTFTP99Ms:           roundMetric(firstNonZero(seriesPeak(rowMetrics, "ttft_p99"), seriesPeak(rowMetrics, "ttft_max"))),
 			UpstreamLatencyMs:   roundMetric(seriesAvg(rowMetrics, "uplat")),
+			UpstreamP99Ms:       roundMetric(firstNonZero(seriesPeak(rowMetrics, "uplat_p99"), seriesPeak(rowMetrics, "uplat_max"))),
 			UpstreamErrors:      roundMetric(seriesSum(rowMetrics, "uperr")),
 			Timeouts:            roundMetric(seriesSum(rowMetrics, "timeout")),
 			Fallbacks:           roundMetric(seriesSum(rowMetrics, "fallback")),
@@ -804,6 +991,9 @@ func buildMonitoringChannelSeries(metrics map[string]cwSeries, buckets []int64, 
 		cacheCreationTokens := valueAt(metrics, "cache_create", ts)
 		reasoningTokens := valueAt(metrics, "reasoning", ts)
 		providerTokens := tokens + cachedTokens + cacheCreationTokens + reasoningTokens
+		latencyP99 := firstNonZero(valueAt(metrics, "lat_p99", ts), valueAt(metrics, "lat_max", ts))
+		ttftP99 := firstNonZero(valueAt(metrics, "ttft_p99", ts), valueAt(metrics, "ttft_max", ts))
+		upstreamP99 := firstNonZero(valueAt(metrics, "uplat_p99", ts), valueAt(metrics, "uplat_max", ts))
 		point := AWSMonitoringChannelPoint{
 			Time:                ts,
 			Requests:            roundMetric(requests),
@@ -818,7 +1008,11 @@ func buildMonitoringChannelSeries(metrics map[string]cwSeries, buckets []int64, 
 			ProviderTPM:         roundMetric(providerTokens / minutes),
 			SuccessRate:         successRate(requests, errors),
 			AverageLatencyMs:    roundMetric(valueAt(metrics, "lat", ts)),
+			LatencyP99Ms:        roundMetric(latencyP99),
+			AverageTTFTMs:       roundMetric(valueAt(metrics, "ttft", ts)),
+			TTFTP99Ms:           roundMetric(ttftP99),
 			UpstreamLatencyMs:   roundMetric(valueAt(metrics, "uplat", ts)),
+			UpstreamP99Ms:       roundMetric(upstreamP99),
 			UpstreamErrors:      roundMetric(valueAt(metrics, "uperr", ts)),
 			Timeouts:            roundMetric(valueAt(metrics, "timeout", ts)),
 			Fallbacks:           roundMetric(valueAt(metrics, "fallback", ts)),
@@ -851,6 +1045,22 @@ func seriesAvg(metrics map[string]cwSeries, key string) float64 {
 		return 0
 	}
 	return metrics[key].Avg
+}
+
+func seriesPeak(metrics map[string]cwSeries, key string) float64 {
+	if metrics == nil {
+		return 0
+	}
+	return metrics[key].Peak
+}
+
+func firstNonZero(values ...float64) float64 {
+	for _, value := range values {
+		if value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0) {
+			return value
+		}
+	}
+	return 0
 }
 
 func successRate(requests, errors float64) float64 {

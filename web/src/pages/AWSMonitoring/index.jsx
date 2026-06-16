@@ -55,8 +55,6 @@ const channelLimitOptions = [
 const channelMetricOptions = [
   { value: 'requests', label: '请求数', field: 'requests', digits: 0 },
   { value: 'rpm', label: 'RPM', field: 'rpm', digits: 2 },
-  { value: 'tokens', label: '业务 Token', field: 'tokens', digits: 0 },
-  { value: 'tpm', label: '业务 TPM', field: 'tpm', digits: 2 },
   {
     value: 'provider_tokens',
     label: '官方口径 Token',
@@ -69,6 +67,8 @@ const channelMetricOptions = [
     field: 'provider_tpm',
     digits: 2,
   },
+  { value: 'tokens', label: '业务 Token', field: 'tokens', digits: 0 },
+  { value: 'tpm', label: '业务 TPM', field: 'tpm', digits: 2 },
   {
     value: 'cached_tokens',
     label: 'Cache Read',
@@ -102,9 +102,37 @@ const channelMetricOptions = [
     suffix: ' ms',
   },
   {
+    value: 'latency_p99_ms',
+    label: '请求 P99',
+    field: 'latency_p99_ms',
+    digits: 0,
+    suffix: ' ms',
+  },
+  {
+    value: 'avg_ttft_ms',
+    label: '首 Token',
+    field: 'avg_ttft_ms',
+    digits: 0,
+    suffix: ' ms',
+  },
+  {
+    value: 'ttft_p99_ms',
+    label: '首 Token P99',
+    field: 'ttft_p99_ms',
+    digits: 0,
+    suffix: ' ms',
+  },
+  {
     value: 'upstream_latency_ms',
     label: '上游延迟',
     field: 'upstream_latency_ms',
+    digits: 0,
+    suffix: ' ms',
+  },
+  {
+    value: 'upstream_p99_ms',
+    label: '上游 P99',
+    field: 'upstream_p99_ms',
     digits: 0,
     suffix: ' ms',
   },
@@ -197,7 +225,7 @@ export default function AWSMonitoringPage() {
   const [period, setPeriod] = useState(0);
   const [channelLimit, setChannelLimit] = useState(120);
   const [selectedChannelIds, setSelectedChannelIds] = useState([]);
-  const [channelMetric, setChannelMetric] = useState('requests');
+  const [channelMetric, setChannelMetric] = useState('provider_tpm');
   const [logHours, setLogHours] = useState(1);
   const [logLimit, setLogLimit] = useState(100);
   const [logQuery, setLogQuery] = useState(defaultLogQuery);
@@ -298,11 +326,6 @@ export default function AWSMonitoringPage() {
       { time: formatTime(point.time), metric: 'RPM', value: point.rpm || 0 },
       {
         time: formatTime(point.time),
-        metric: '业务 TPM',
-        value: point.tpm || 0,
-      },
-      {
-        time: formatTime(point.time),
         metric: '官方口径 TPM',
         value: point.provider_tpm || 0,
       },
@@ -320,6 +343,21 @@ export default function AWSMonitoringPage() {
         time: formatTime(point.time),
         metric: '延迟 ms',
         value: point.latency_ms || 0,
+      },
+      {
+        time: formatTime(point.time),
+        metric: 'P99 ms',
+        value: point.latency_p99_ms || 0,
+      },
+      {
+        time: formatTime(point.time),
+        metric: '首 Token ms',
+        value: point.ttft_ms || 0,
+      },
+      {
+        time: formatTime(point.time),
+        metric: '首 Token P99 ms',
+        value: point.ttft_p99_ms || 0,
       },
     ]);
   }, [data]);
@@ -354,7 +392,7 @@ export default function AWSMonitoringPage() {
       yField: 'value',
       seriesField: 'metric',
       legends: { visible: true, orient: 'bottom' },
-      title: { visible: true, text: '全站 RPM / TPM' },
+      title: { visible: true, text: '全站 RPM / 官方口径 TPM' },
       tooltip: { dimension: { visible: true } },
     }),
     [trafficValues],
@@ -368,7 +406,7 @@ export default function AWSMonitoringPage() {
       yField: 'value',
       seriesField: 'metric',
       legends: { visible: true, orient: 'bottom' },
-      title: { visible: true, text: '成功率 / 延迟' },
+      title: { visible: true, text: '成功率 / 延迟 / 首 Token' },
       tooltip: { dimension: { visible: true } },
     }),
     [healthValues],
@@ -424,17 +462,17 @@ export default function AWSMonitoringPage() {
       render: (v) => formatNumber(v),
     },
     {
-      title: 'Token',
-      dataIndex: 'tokens',
+      title: '官方口径 Token',
+      dataIndex: 'provider_tokens',
       width: 120,
-      sorter: (a, b) => a.tokens - b.tokens,
+      sorter: (a, b) => a.provider_tokens - b.provider_tokens,
       render: (v) => formatNumber(v),
     },
     {
-      title: '含缓存 Token',
-      dataIndex: 'provider_tokens',
+      title: '业务 Token',
+      dataIndex: 'tokens',
       width: 130,
-      sorter: (a, b) => a.provider_tokens - b.provider_tokens,
+      sorter: (a, b) => a.tokens - b.tokens,
       render: (v) => formatNumber(v),
     },
     {
@@ -485,10 +523,38 @@ export default function AWSMonitoringPage() {
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
+      title: '请求 P99',
+      dataIndex: 'latency_p99_ms',
+      width: 110,
+      sorter: (a, b) => a.latency_p99_ms - b.latency_p99_ms,
+      render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
+    },
+    {
+      title: '首 Token',
+      dataIndex: 'avg_ttft_ms',
+      width: 110,
+      sorter: (a, b) => a.avg_ttft_ms - b.avg_ttft_ms,
+      render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
+    },
+    {
+      title: '首 Token P99',
+      dataIndex: 'ttft_p99_ms',
+      width: 130,
+      sorter: (a, b) => a.ttft_p99_ms - b.ttft_p99_ms,
+      render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
+    },
+    {
       title: '上游延迟',
       dataIndex: 'upstream_latency_ms',
       width: 110,
       sorter: (a, b) => a.upstream_latency_ms - b.upstream_latency_ms,
+      render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
+    },
+    {
+      title: '上游 P99',
+      dataIndex: 'upstream_p99_ms',
+      width: 110,
+      sorter: (a, b) => a.upstream_p99_ms - b.upstream_p99_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
@@ -635,18 +701,28 @@ export default function AWSMonitoringPage() {
             <StatCard
               icon={<TrendingUp size={18} />}
               title='平均 / 峰值 TPM'
-              value={`${formatNumber(summary.avg_tpm, 2)} / ${formatNumber(summary.peak_tpm, 2)}`}
-              sub={`${formatNumber(summary.tokens)} tokens`}
+              value={`${formatNumber(summary.avg_provider_tpm, 2)} / ${formatNumber(summary.peak_provider_tpm, 2)}`}
+              sub={`${formatNumber(summary.provider_tokens)} tokens，官方口径`}
             />
             <StatCard
               icon={<Timer size={18} />}
-              title='平均延迟'
+              title='平均 / P99 延迟'
               value={
                 summary.avg_latency_ms
-                  ? `${formatNumber(summary.avg_latency_ms, 0)} ms`
+                  ? `${formatNumber(summary.avg_latency_ms, 0)} / ${formatNumber(summary.latency_p99_ms, 0)} ms`
                   : '-'
               }
               sub='RequestLatencyMs'
+            />
+            <StatCard
+              icon={<Timer size={18} />}
+              title='首 Token 平均 / P99'
+              value={
+                summary.avg_ttft_ms
+                  ? `${formatNumber(summary.avg_ttft_ms, 0)} / ${formatNumber(summary.ttft_p99_ms, 0)} ms`
+                  : '-'
+              }
+              sub='TTFTMs，仅流式首包'
             />
           </div>
 
@@ -727,7 +803,7 @@ export default function AWSMonitoringPage() {
               loading={loading}
               size='small'
               pagination={{ pageSize: 20 }}
-              scroll={{ x: 1420 }}
+              scroll={{ x: 1900 }}
             />
           </Card>
         </Tabs.TabPane>
