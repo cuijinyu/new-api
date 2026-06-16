@@ -33,6 +33,13 @@ func MetricsEnabled() bool {
 	return metricsEnabled
 }
 
+func MetricsNamespace() string {
+	if metricsNamespace == "" {
+		return "EZModel/API"
+	}
+	return metricsNamespace
+}
+
 type MetricUnit string
 
 const (
@@ -51,8 +58,8 @@ type MetricDef struct {
 }
 
 type cwMetricDirective struct {
-	Namespace  string     `json:"Namespace"`
-	Dimensions [][]string `json:"Dimensions"`
+	Namespace  string      `json:"Namespace"`
+	Dimensions [][]string  `json:"Dimensions"`
 	Metrics    []MetricDef `json:"Metrics"`
 }
 

@@ -50,6 +50,7 @@ const routerMap = {
   invoice: '/console/invoice',
   diagnostic: '/console/diagnostic',
   billing_probe: '/console/billing-probe',
+  aws_monitoring: '/console/aws-monitoring',
   reconciliation: '/console/reconciliation',
   price_inspection: '/console/price-inspection',
 };
@@ -190,6 +191,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('计费校验'),
         itemKey: 'billing_probe',
         to: '/console/billing-probe',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('AWS 监控'),
+        itemKey: 'aws_monitoring',
+        to: '/console/aws-monitoring',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

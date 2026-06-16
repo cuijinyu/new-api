@@ -46,7 +46,7 @@ type cwSink struct {
 var cloudWatchSink *cwSink
 
 // resolveCloudWatchRegion 与 S3 原始日志同区（如新加坡 ap-southeast-1）：优先专用变量，其次 RAW_LOG_S3_REGION，再 AWS_REGION。
-func resolveCloudWatchRegion() string {
+func ResolveCloudWatchRegion() string {
 	for _, key := range []string{"CLOUDWATCH_LOG_REGION", "RAW_LOG_S3_REGION", "AWS_REGION"} {
 		if r := strings.TrimSpace(os.Getenv(key)); r != "" {
 			return r
@@ -55,9 +55,9 @@ func resolveCloudWatchRegion() string {
 	return ""
 }
 
-func loadAWSConfigForCloudWatch(ctx context.Context) (aws.Config, error) {
+func LoadAWSConfigForCloudWatch(ctx context.Context) (aws.Config, error) {
 	opts := []func(*config.LoadOptions) error{}
-	if r := resolveCloudWatchRegion(); r != "" {
+	if r := ResolveCloudWatchRegion(); r != "" {
 		opts = append(opts, config.WithRegion(r))
 	}
 
@@ -71,7 +71,7 @@ func loadAWSConfigForCloudWatch(ctx context.Context) (aws.Config, error) {
 	rawAK := strings.TrimSpace(os.Getenv("RAW_LOG_S3_ACCESS_KEY_ID"))
 	rawSK := strings.TrimSpace(os.Getenv("RAW_LOG_S3_SECRET_ACCESS_KEY"))
 	if rawAK != "" && rawSK != "" {
-		region := resolveCloudWatchRegion()
+		region := ResolveCloudWatchRegion()
 		if region == "" {
 			return aws.Config{}, fmt.Errorf("cloudwatch logs: set CLOUDWATCH_LOG_REGION, RAW_LOG_S3_REGION, or AWS_REGION when using RAW_LOG_S3_* credentials")
 		}
@@ -116,7 +116,7 @@ func InitCloudWatch() error {
 	stripANSI := os.Getenv("CLOUDWATCH_STRIP_ANSI") != "false"
 
 	ctx := context.Background()
-	cfg, err := loadAWSConfigForCloudWatch(ctx)
+	cfg, err := LoadAWSConfigForCloudWatch(ctx)
 	if err != nil {
 		return err
 	}

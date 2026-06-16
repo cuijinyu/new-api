@@ -45,6 +45,7 @@ import ModelPage from './pages/Model';
 import InvoicePage from './pages/Invoice';
 import DiagnosticPage from './pages/Diagnostic';
 import BillingProbePage from './pages/BillingProbe';
+import AWSMonitoringPage from './pages/AWSMonitoring';
 import ReconciliationPage from './pages/Reconciliation';
 import PriceInspectionPage from './pages/PriceInspection';
 import Playground from './pages/Playground';
@@ -127,6 +128,14 @@ function App() {
           element={
             <AdminRoute>
               <BillingProbePage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/aws-monitoring'
+          element={
+            <AdminRoute>
+              <AWSMonitoringPage />
             </AdminRoute>
           }
         />

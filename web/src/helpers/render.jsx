@@ -78,6 +78,7 @@ import {
   Scale,
   ReceiptText,
   SearchCheck,
+  CloudCog,
 } from 'lucide-react';
 
 // 获取侧边栏Lucide图标组件
@@ -127,6 +128,8 @@ export function getLucideIcon(key, selected = false) {
       return <Stethoscope {...commonProps} color={iconColor} />;
     case 'billing_probe':
       return <ReceiptText {...commonProps} color={iconColor} />;
+    case 'aws_monitoring':
+      return <CloudCog {...commonProps} color={iconColor} />;
     case 'reconciliation':
       return <Scale {...commonProps} color={iconColor} />;
     case 'price_inspection':

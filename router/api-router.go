@@ -177,6 +177,12 @@ func SetApiRouter(router *gin.Engine) {
 			billingProbeRoute.GET("/channels", controller.BillingProbeGetChannels)
 			billingProbeRoute.GET("/tokens", controller.BillingProbeGetTokens)
 		}
+		awsMonitoringRoute := apiRouter.Group("/aws_monitoring")
+		awsMonitoringRoute.Use(middleware.AdminAuth())
+		{
+			awsMonitoringRoute.GET("/overview", controller.GetAWSMonitoringOverview)
+			awsMonitoringRoute.POST("/logs/query", controller.QueryAWSMonitoringLogs)
+		}
 		openRouterInspectionRoute := apiRouter.Group("/openrouter_billing_inspection")
 		openRouterInspectionRoute.Use(middleware.AdminAuth())
 		{

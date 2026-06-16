@@ -66,6 +66,7 @@ export const useSidebar = () => {
       invoice: true,
       diagnostic: true,
       billing_probe: true,
+      aws_monitoring: true,
       reconciliation: true,
       price_inspection: true,
       setting: true,
