@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultMonitoringHours = 6
+	defaultMonitoringHours = 24
 	defaultChannelLimit    = 120
 	maxChannelLimit        = 500
 )
