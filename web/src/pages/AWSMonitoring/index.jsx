@@ -28,47 +28,47 @@ const CHART_CONFIG = { mode: 'desktop-browser' };
 const MAX_SELECTED_CHANNELS = 8;
 
 const hoursOptions = [
-  { value: 1, label: '?? 1 ??' },
-  { value: 3, label: '?? 3 ??' },
-  { value: 6, label: '?? 6 ??' },
-  { value: 12, label: '?? 12 ??' },
-  { value: 24, label: '?? 24 ??' },
-  { value: 72, label: '?? 3 ?' },
-  { value: 168, label: '?? 7 ?' },
+  { value: 1, label: '最近 1 小时' },
+  { value: 3, label: '最近 3 小时' },
+  { value: 6, label: '最近 6 小时' },
+  { value: 12, label: '最近 12 小时' },
+  { value: 24, label: '最近 24 小时' },
+  { value: 72, label: '最近 3 天' },
+  { value: 168, label: '最近 7 天' },
 ];
 
 const periodOptions = [
-  { value: 0, label: '????' },
-  { value: 60, label: '1 ??' },
-  { value: 300, label: '5 ??' },
-  { value: 900, label: '15 ??' },
-  { value: 3600, label: '1 ??' },
+  { value: 0, label: '自动粒度' },
+  { value: 60, label: '1 分钟' },
+  { value: 300, label: '5 分钟' },
+  { value: 900, label: '15 分钟' },
+  { value: 3600, label: '1 小时' },
 ];
 
 const channelLimitOptions = [
-  { value: 50, label: '50 ???' },
-  { value: 120, label: '120 ???' },
-  { value: 300, label: '300 ???' },
-  { value: 500, label: '500 ???' },
+  { value: 50, label: '50 个渠道' },
+  { value: 120, label: '120 个渠道' },
+  { value: 300, label: '300 个渠道' },
+  { value: 500, label: '500 个渠道' },
 ];
 
 const channelMetricOptions = [
-  { value: 'requests', label: '???', field: 'requests', digits: 0 },
+  { value: 'requests', label: '请求数', field: 'requests', digits: 0 },
   { value: 'rpm', label: 'RPM', field: 'rpm', digits: 2 },
   {
     value: 'provider_tokens',
-    label: '???? Token',
+    label: '官方口径 Token',
     field: 'provider_tokens',
     digits: 0,
   },
   {
     value: 'provider_tpm',
-    label: '???? TPM',
+    label: '官方口径 TPM',
     field: 'provider_tpm',
     digits: 2,
   },
-  { value: 'tokens', label: '?? Token', field: 'tokens', digits: 0 },
-  { value: 'tpm', label: '?? TPM', field: 'tpm', digits: 2 },
+  { value: 'tokens', label: '业务 Token', field: 'tokens', digits: 0 },
+  { value: 'tpm', label: '业务 TPM', field: 'tpm', digits: 2 },
   {
     value: 'cached_tokens',
     label: 'Cache Read',
@@ -89,69 +89,69 @@ const channelMetricOptions = [
   },
   {
     value: 'success_rate',
-    label: '???',
+    label: '成功率',
     field: 'success_rate',
     digits: 2,
     suffix: '%',
   },
   {
     value: 'avg_latency_ms',
-    label: '????',
+    label: '请求延迟',
     field: 'avg_latency_ms',
     digits: 0,
     suffix: ' ms',
   },
   {
     value: 'latency_p99_ms',
-    label: '?? P99',
+    label: '请求 P99',
     field: 'latency_p99_ms',
     digits: 0,
     suffix: ' ms',
   },
   {
     value: 'avg_ttft_ms',
-    label: '? Token',
+    label: '首 Token',
     field: 'avg_ttft_ms',
     digits: 0,
     suffix: ' ms',
   },
   {
     value: 'ttft_p99_ms',
-    label: '? Token P99',
+    label: '首 Token P99',
     field: 'ttft_p99_ms',
     digits: 0,
     suffix: ' ms',
   },
   {
     value: 'upstream_latency_ms',
-    label: '????',
+    label: '上游延迟',
     field: 'upstream_latency_ms',
     digits: 0,
     suffix: ' ms',
   },
   {
     value: 'upstream_p99_ms',
-    label: '?? P99',
+    label: '上游 P99',
     field: 'upstream_p99_ms',
     digits: 0,
     suffix: ' ms',
   },
-  { value: 'errors', label: '???', field: 'errors', digits: 0 },
+  { value: 'errors', label: '错误数', field: 'errors', digits: 0 },
   {
     value: 'upstream_errors',
-    label: '????',
+    label: '上游错误',
     field: 'upstream_errors',
     digits: 0,
   },
-  { value: 'timeouts', label: '???', field: 'timeouts', digits: 0 },
+  { value: 'timeouts', label: '超时数', field: 'timeouts', digits: 0 },
   { value: 'fallbacks', label: 'Fallback', field: 'fallbacks', digits: 0 },
 ];
 
 const logLimitOptions = [
-  { value: 50, label: '50 ?' },
-  { value: 100, label: '100 ?' },
-  { value: 200, label: '200 ?' },
-  { value: 500, label: '500 ?' },
+  { value: 50, label: '50 条' },
+  { value: 100, label: '100 条' },
+  { value: 200, label: '200 条' },
+  { value: 500, label: '500 条' },
 ];
 
 const defaultLogQuery =
@@ -177,13 +177,13 @@ function channelLabel(channel) {
 
 function statusTag(status, statusText) {
   if (status === 1) {
-    return <Tag color='green'>??</Tag>;
+    return <Tag color='green'>启用</Tag>;
   }
   if (status === 2) {
-    return <Tag color='grey'>????</Tag>;
+    return <Tag color='grey'>手动禁用</Tag>;
   }
   if (status === 3) {
-    return <Tag color='red'>????</Tag>;
+    return <Tag color='red'>自动禁用</Tag>;
   }
   return <Tag>{statusText || 'unknown'}</Tag>;
 }
@@ -326,7 +326,7 @@ export default function AWSMonitoringPage() {
       { time: formatTime(point.time), metric: 'RPM', value: point.rpm || 0 },
       {
         time: formatTime(point.time),
-        metric: '???? TPM',
+        metric: '官方口径 TPM',
         value: point.provider_tpm || 0,
       },
     ]);
@@ -336,12 +336,12 @@ export default function AWSMonitoringPage() {
     return (data?.series || []).flatMap((point) => [
       {
         time: formatTime(point.time),
-        metric: '???',
+        metric: '成功率',
         value: point.success_rate || 0,
       },
       {
         time: formatTime(point.time),
-        metric: '?? ms',
+        metric: '延迟 ms',
         value: point.latency_ms || 0,
       },
       {
@@ -351,12 +351,12 @@ export default function AWSMonitoringPage() {
       },
       {
         time: formatTime(point.time),
-        metric: '? Token ms',
+        metric: '首 Token ms',
         value: point.ttft_ms || 0,
       },
       {
         time: formatTime(point.time),
-        metric: '? Token P99 ms',
+        metric: '首 Token P99 ms',
         value: point.ttft_p99_ms || 0,
       },
     ]);
@@ -392,7 +392,7 @@ export default function AWSMonitoringPage() {
       yField: 'value',
       seriesField: 'metric',
       legends: { visible: true, orient: 'bottom' },
-      title: { visible: true, text: '?? RPM / ???? TPM' },
+      title: { visible: true, text: '全站 RPM / 官方口径 TPM' },
       tooltip: { dimension: { visible: true } },
     }),
     [trafficValues],
@@ -406,7 +406,7 @@ export default function AWSMonitoringPage() {
       yField: 'value',
       seriesField: 'metric',
       legends: { visible: true, orient: 'bottom' },
-      title: { visible: true, text: '??? / ?? / ? Token' },
+      title: { visible: true, text: '成功率 / 延迟 / 首 Token' },
       tooltip: { dimension: { visible: true } },
     }),
     [healthValues],
@@ -422,7 +422,7 @@ export default function AWSMonitoringPage() {
       legends: { visible: true, orient: 'bottom', maxRow: 2 },
       title: {
         visible: true,
-        text: `?? ${selectedMetricOption.label}`,
+        text: `渠道 ${selectedMetricOption.label}`,
       },
       tooltip: {
         dimension: { visible: true },
@@ -434,7 +434,7 @@ export default function AWSMonitoringPage() {
 
   const channelColumns = [
     {
-      title: '??',
+      title: '渠道',
       dataIndex: 'name',
       width: 220,
       fixed: 'left',
@@ -449,34 +449,34 @@ export default function AWSMonitoringPage() {
       ),
     },
     {
-      title: '????',
+      title: '配置状态',
       dataIndex: 'status',
       width: 110,
       render: (status, record) => statusTag(status, record.status_text),
     },
     {
-      title: '??',
+      title: '请求',
       dataIndex: 'requests',
       width: 100,
       sorter: (a, b) => a.requests - b.requests,
       render: (v) => formatNumber(v),
     },
     {
-      title: '???? Token',
+      title: '官方口径 Token',
       dataIndex: 'provider_tokens',
       width: 120,
       sorter: (a, b) => a.provider_tokens - b.provider_tokens,
       render: (v) => formatNumber(v),
     },
     {
-      title: '?? Token',
+      title: '业务 Token',
       dataIndex: 'tokens',
       width: 130,
       sorter: (a, b) => a.tokens - b.tokens,
       render: (v) => formatNumber(v),
     },
     {
-      title: 'Cache ?/?',
+      title: 'Cache 读/写',
       width: 130,
       render: (_, record) => (
         <Text type='tertiary'>
@@ -486,7 +486,7 @@ export default function AWSMonitoringPage() {
       ),
     },
     {
-      title: '???',
+      title: '成功率',
       dataIndex: 'success_rate',
       width: 110,
       sorter: (a, b) => a.success_rate - b.success_rate,
@@ -501,13 +501,13 @@ export default function AWSMonitoringPage() {
               : 'red';
         return (
           <Tag color={color}>
-            {hasTraffic ? `${formatNumber(v, 2)}%` : '???'}
+            {hasTraffic ? `${formatNumber(v, 2)}%` : '无流量'}
           </Tag>
         );
       },
     },
     {
-      title: '??',
+      title: '错误',
       dataIndex: 'errors',
       width: 90,
       sorter: (a, b) => a.errors - b.errors,
@@ -516,49 +516,49 @@ export default function AWSMonitoringPage() {
       ),
     },
     {
-      title: '????',
+      title: '请求延迟',
       dataIndex: 'avg_latency_ms',
       width: 110,
       sorter: (a, b) => a.avg_latency_ms - b.avg_latency_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '?? P99',
+      title: '请求 P99',
       dataIndex: 'latency_p99_ms',
       width: 110,
       sorter: (a, b) => a.latency_p99_ms - b.latency_p99_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '? Token',
+      title: '首 Token',
       dataIndex: 'avg_ttft_ms',
       width: 110,
       sorter: (a, b) => a.avg_ttft_ms - b.avg_ttft_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '? Token P99',
+      title: '首 Token P99',
       dataIndex: 'ttft_p99_ms',
       width: 130,
       sorter: (a, b) => a.ttft_p99_ms - b.ttft_p99_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '????',
+      title: '上游延迟',
       dataIndex: 'upstream_latency_ms',
       width: 110,
       sorter: (a, b) => a.upstream_latency_ms - b.upstream_latency_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '?? P99',
+      title: '上游 P99',
       dataIndex: 'upstream_p99_ms',
       width: 110,
       sorter: (a, b) => a.upstream_p99_ms - b.upstream_p99_ms,
       render: (v) => (v ? `${formatNumber(v, 0)} ms` : '-'),
     },
     {
-      title: '????/??',
+      title: '上游错误/超时',
       width: 130,
       render: (_, record) => (
         <Text
@@ -579,7 +579,7 @@ export default function AWSMonitoringPage() {
       render: (v) => formatNumber(v),
     },
     {
-      title: '????',
+      title: '最后测试',
       dataIndex: 'last_test_time',
       width: 180,
       render: (v, record) =>
@@ -627,7 +627,7 @@ export default function AWSMonitoringPage() {
           <div className='flex items-center gap-2'>
             <ServerCog size={18} />
             <Title heading={5} style={{ margin: 0 }}>
-              AWS ????
+              AWS 监控面板
             </Title>
           </div>
         }
@@ -659,12 +659,12 @@ export default function AWSMonitoringPage() {
               loading={loading}
               onClick={loadData}
             >
-              ??
+              刷新
             </Button>
           </Space>
           <Text type='tertiary'>
-            ??? CloudWatch / {data?.region || '-'} / {data?.namespace || '-'}{' '}
-            / ?? {data?.period || '-'}s
+            数据源 CloudWatch / {data?.region || '-'} / {data?.namespace || '-'}{' '}
+            / 粒度 {data?.period || '-'}s
           </Text>
         </div>
       </Card>
@@ -674,7 +674,7 @@ export default function AWSMonitoringPage() {
           {data ? (
             <Banner
               type='info'
-              description={`?????${formatTime(data.start_time)} - ${formatTime(data.end_time)}?????????? CloudWatch ?????? Channel ???????????? ${data.channel_limit} ????`}
+              description={`查询窗口：${formatTime(data.start_time)} - ${formatTime(data.end_time)}。全站和渠道指标来自 CloudWatch 自定义指标按 Channel 维度聚合，渠道表最多展示 ${data.channel_limit} 个渠道。`}
               style={{ marginTop: 12 }}
             />
           ) : null}
@@ -682,31 +682,31 @@ export default function AWSMonitoringPage() {
           <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 mt-3'>
             <StatCard
               icon={<Activity size={18} />}
-              title='???'
+              title='总请求'
               value={formatNumber(summary.requests)}
-              sub={`?? ${formatNumber(summary.errors)}`}
+              sub={`错误 ${formatNumber(summary.errors)}`}
             />
             <StatCard
               icon={<TrendingUp size={18} />}
-              title='???'
+              title='成功率'
               value={`${formatNumber(summary.success_rate, 2)}%`}
-              sub='CloudWatch ErrorCount ??'
+              sub='CloudWatch ErrorCount 口径'
             />
             <StatCard
               icon={<Timer size={18} />}
-              title='?? / ?? RPM'
+              title='平均 / 峰值 RPM'
               value={`${formatNumber(summary.avg_rpm, 2)} / ${formatNumber(summary.peak_rpm, 2)}`}
-              sub='???????'
+              sub='按图表粒度换算'
             />
             <StatCard
               icon={<TrendingUp size={18} />}
-              title='?? / ?? TPM'
+              title='平均 / 峰值 TPM'
               value={`${formatNumber(summary.avg_provider_tpm, 2)} / ${formatNumber(summary.peak_provider_tpm, 2)}`}
-              sub={`${formatNumber(summary.provider_tokens)} tokens?????`}
+              sub={`${formatNumber(summary.provider_tokens)} tokens，官方口径`}
             />
             <StatCard
               icon={<Timer size={18} />}
-              title='?? / P99 ??'
+              title='平均 / P99 延迟'
               value={
                 summary.avg_latency_ms
                   ? `${formatNumber(summary.avg_latency_ms, 0)} / ${formatNumber(summary.latency_p99_ms, 0)} ms`
@@ -716,13 +716,13 @@ export default function AWSMonitoringPage() {
             />
             <StatCard
               icon={<Timer size={18} />}
-              title='? Token ?? / P99'
+              title='首 Token 平均 / P99'
               value={
                 summary.avg_ttft_ms
                   ? `${formatNumber(summary.avg_ttft_ms, 0)} / ${formatNumber(summary.ttft_p99_ms, 0)} ms`
                   : '-'
               }
-              sub='TTFTMs??????'
+              sub='TTFTMs，仅流式首包'
             />
           </div>
 
@@ -739,7 +739,7 @@ export default function AWSMonitoringPage() {
             title={
               <div className='flex items-center gap-2'>
                 <Title heading={5} style={{ margin: 0 }}>
-                  ??????
+                  渠道指标曲线
                 </Title>
                 <Tag>{selectedChannels.length}</Tag>
               </div>
@@ -752,7 +752,7 @@ export default function AWSMonitoringPage() {
                 multiple
                 filter
                 style={{ width: '100%' }}
-                placeholder='???????????????? 5 ?'
+                placeholder='选择渠道，默认展示请求数最高的前 5 个'
                 value={selectedChannelIds}
                 onChange={(ids) =>
                   setSelectedChannelIds(
@@ -773,11 +773,11 @@ export default function AWSMonitoringPage() {
               />
             </div>
             <Text type='tertiary' size='small'>
-              ?????{selectedMetricOption.label}
+              当前指标：{selectedMetricOption.label}
               {selectedMetricOption.suffix
                 ? ` (${selectedMetricOption.suffix.trim()})`
                 : ''}
-              ??????? {MAX_SELECTED_CHANNELS} ???????????
+              。最多同时展示 {MAX_SELECTED_CHANNELS} 个渠道，避免曲线过密。
             </Text>
             <div style={{ height: 380, marginTop: 8 }}>
               <VChart spec={channelMetricSpec} option={CHART_CONFIG} />
@@ -788,7 +788,7 @@ export default function AWSMonitoringPage() {
             title={
               <div className='flex items-center gap-2'>
                 <Title heading={5} style={{ margin: 0 }}>
-                  ??????
+                  渠道状态监控
                 </Title>
                 <Tag>{data?.channels?.length || 0}</Tag>
               </div>
@@ -836,12 +836,12 @@ export default function AWSMonitoringPage() {
                 loading={logLoading}
                 onClick={loadLogs}
               >
-                ????
+                查询日志
               </Button>
             </div>
             <Banner
               type='info'
-              description='?? CloudWatch Logs Insights ?? CLOUDWATCH_LOG_GROUP????? query???? request id?channel?error?latency ??????'
+              description='使用 CloudWatch Logs Insights 查询 CLOUDWATCH_LOG_GROUP。支持修改 query，例如按 request id、channel、error、latency 等字段过滤。'
             />
           </Card>
 
@@ -853,7 +853,7 @@ export default function AWSMonitoringPage() {
                 <div className='flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2'>
                   <div className='flex items-center gap-2'>
                     <Title heading={5} style={{ margin: 0 }}>
-                      CloudWatch ????
+                      CloudWatch 日志结果
                     </Title>
                     <Tag>{logRows.length}</Tag>
                     {logData.partial ? <Tag color='orange'>Partial</Tag> : null}
@@ -867,7 +867,7 @@ export default function AWSMonitoringPage() {
               <div className='px-4 py-3'>
                 <Space wrap>
                   <Text type='tertiary' size='small'>
-                    ???{formatTime(logData.start_time)} -{' '}
+                    窗口：{formatTime(logData.start_time)} -{' '}
                     {formatTime(logData.end_time)}
                   </Text>
                   <Text type='tertiary' size='small'>
