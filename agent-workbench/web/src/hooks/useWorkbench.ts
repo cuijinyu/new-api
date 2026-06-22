@@ -1424,6 +1424,45 @@ export function useWorkbench() {
     [submitAction, refreshAutomation],
   );
 
+  // ---- 账单重跑 ----------------------------------------------------------
+  const rerunBillDocument = useCallback(
+    async (documentId: string) => {
+      if (!documentId) return;
+      const result = await submitAction("重新生成账单", "run", () =>
+        apiRequest<JsonObject>(endpoints.rerunBillDocument(documentId), {
+          method: "POST",
+          bodyJson: {
+            actor: "ops",
+            run_immediately: true,
+            no_cache: true,
+            comment: "Rerun from bill library with latest active pricing, discounts, costs, and billing logic.",
+          },
+        }),
+      );
+      if (!result.ok || typeof result.data.job_id !== "string") return;
+      const jobId = String(result.data.job_id);
+      setRunJobId(jobId);
+      setLookupJobId(jobId);
+      setJobDetail(null);
+      setJobArtifacts(null);
+      const runData = result.data.run;
+      const runStatus = String(
+        runData && typeof runData === "object" && "status" in runData
+          ? (runData as JsonObject).status
+          : result.data.status || "",
+      ).toUpperCase();
+      if (runStatus === "RUNNING" || runStatus === "QUEUED") {
+        await pollJob(jobId);
+      } else {
+        await loadJobInternal(jobId);
+        await refreshWorkCenter();
+        await refreshFiles();
+      }
+      await refreshAutomation();
+    },
+    [submitAction, pollJob, refreshAutomation, refreshFiles, refreshWorkCenter],
+  );
+
   // ---- 建议处理（去审批化）----------------------------------------------
   const applyChangeRequest = useCallback(
     async (changeRequestId: string) => {
@@ -1603,6 +1642,7 @@ export function useWorkbench() {
     runSchedule,
     retryScheduleRun,
     publishBillDocument,
+    rerunBillDocument,
     applyChangeRequest,
     ignoreChangeRequest,
     saveChangeRequestExperience,

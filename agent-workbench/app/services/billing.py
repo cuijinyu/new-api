@@ -29,6 +29,7 @@ from .core import (
     env_int,
     fetch_one,
     filename_from_uri,
+    int_or_none,
     json_safe,
     new_id,
     safe_filename,
@@ -100,6 +101,125 @@ def structured_billing_prefix(bill_type: str, month: str, target_type: str | Non
     tid = (str(target_id).strip() if target_id not in (None, "", "all") else "")
     target = f"{tt}-{tid}" if tid else (tt if tt != "all" else "all")
     return f"bills/{bt}/{year}/{mm}/{slug(target) or 'all'}/{run_id}"
+
+
+_RERUN_METADATA_DROP_KEYS = {
+    "batch_id",
+    "billing_run_id",
+    "command_hash",
+    "fact_manifest_id",
+    "generated_at",
+    "generated_files",
+    "job_id",
+    "output_dir",
+    "parent_document_id",
+    "real_execution",
+    "schedule_id",
+    "schedule_run_id",
+    "split_document_ids",
+    "split_from_document_id",
+}
+
+
+def _clean_rerun_metadata(metadata: Any) -> dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    cleaned = json_safe(metadata)
+    if not isinstance(cleaned, dict):
+        return {}
+    for key in _RERUN_METADATA_DROP_KEYS:
+        cleaned.pop(key, None)
+    return cleaned
+
+
+def build_bill_document_rerun_payload(
+    document: dict[str, Any],
+    *,
+    source_job: dict[str, Any] | None = None,
+    source_run: dict[str, Any] | None = None,
+    actor: str = "ops",
+    comment: str | None = None,
+    no_cache: bool = True,
+    config_version_id: str | None = None,
+) -> dict[str, Any]:
+    """Build a fresh billing_run request from an existing bill document.
+
+    The new run intentionally uses the current active pricing/discount config
+    unless a config_version_id is explicitly provided. Old output paths and
+    scheduler ids are dropped so reruns remain separate, auditable artifacts.
+    """
+    summary = document.get("summary") if isinstance(document.get("summary"), dict) else {}
+    source_payload = source_job.get("request_payload") if source_job and isinstance(source_job.get("request_payload"), dict) else {}
+    source_metadata = source_payload.get("metadata") if isinstance(source_payload.get("metadata"), dict) else {}
+
+    raw_bill_type = document.get("bill_type") or (source_run or {}).get("bill_type") or (source_job or {}).get("bill_type")
+    bill_type = normalize_bill_type(
+        str(raw_bill_type) if raw_bill_type else None,
+        source_metadata,
+        int_or_none((source_run or {}).get("channel_id") or (source_job or {}).get("channel_id")),
+    )
+    target_type = str(
+        document.get("target_type")
+        or (source_run or {}).get("target_type")
+        or (source_job or {}).get("target_type")
+        or source_payload.get("target_type")
+        or "all"
+    )
+    target_id_raw = (
+        document.get("target_id")
+        if document.get("target_id") not in (None, "")
+        else (source_run or {}).get("target_id")
+        or (source_job or {}).get("target_id")
+        or source_payload.get("target_id")
+    )
+    target_id = str(target_id_raw) if target_id_raw not in (None, "", "all") else None
+
+    month = str(document.get("month") or (source_run or {}).get("month") or (source_job or {}).get("month") or "")
+    if bill_type == "daily_channel_cost_snapshot":
+        month = str(summary.get("snapshot_date") or summary.get("period") or month)
+
+    channel_id = int_or_none((source_run or {}).get("channel_id") or (source_job or {}).get("channel_id") or source_payload.get("channel_id"))
+    metadata = _clean_rerun_metadata(source_metadata)
+    metadata.update(
+        {
+            "source": "bill_document_rerun",
+            "rerun_from_document_id": document.get("id"),
+            "rerun_from_job_id": document.get("job_id") or (source_job or {}).get("id"),
+            "rerun_from_billing_run_id": document.get("billing_run_id") or (source_run or {}).get("id"),
+            "rerun_requested_by": actor,
+            "rerun_requested_at": utc_now_iso(),
+            "detail": True,
+            "no_cache": bool(no_cache),
+        }
+    )
+    if comment:
+        metadata["rerun_comment"] = comment
+
+    if target_type == "customer" and target_id:
+        user_id = int_or_none(target_id)
+        metadata["user_id"] = user_id if user_id is not None else target_id
+    if target_type == "channel" and target_id:
+        channel_id = int_or_none(target_id) or channel_id
+
+    if bill_type == "customer_invoice":
+        metadata["customer_view"] = True
+    if bill_type == "daily_channel_cost_snapshot" and month:
+        metadata["period"] = month
+        metadata["snapshot_date"] = month
+
+    payload: dict[str, Any] = {
+        "month": month,
+        "channel_id": channel_id,
+        "vendor": (source_run or {}).get("vendor") or (source_job or {}).get("vendor") or source_payload.get("vendor"),
+        "bill_type": bill_type,
+        "target_type": target_type,
+        "target_id": target_id,
+        "created_by": actor,
+        "metadata": metadata,
+    }
+    if config_version_id:
+        payload["config_version_id"] = config_version_id
+    return payload
 
 
 def build_athena_bill_command(job: dict[str, Any], run: dict[str, Any], config: dict[str, Any], billing_prefix: str) -> dict[str, Any]:

@@ -260,6 +260,7 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
   const readyCount = visibleDocs.filter((doc) => String(doc.status).toLowerCase() === "generated").length;
 
   const isBusy = wb.pending === "automation";
+  const isRerunBusy = wb.pending === "run" || wb.pending === "billing";
   const isAgentBusy = wb.pending === "agent" || wb.pending === "agentMessage" || wb.pending === "agentStream";
 
   const selectedSummary = selected ? billSummary(selected) : {};
@@ -312,6 +313,14 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
     if (!sessionId) return;
     switchPage("agent");
     await wb.sendAndStream(billAgentPrompt(doc), sessionId);
+  }
+
+  async function rerunBill(doc: BillDocument) {
+    const confirmed = window.confirm(
+      "确认重新生成这份账单？\n\n系统会使用当前生效的刊例价、折扣、成本和出账逻辑创建一份新账单，旧账单会保留。",
+    );
+    if (!confirmed) return;
+    await wb.rerunBillDocument(doc.id);
   }
 
   return (
@@ -518,6 +527,11 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
               {execLabel ? <div className={`billing-banner billing-banner-${execLabel.tone}`}>{execLabel.text}</div> : null}
 
               <div className="bills-agent-actions">
+                <Button variant="outline" onClick={() => void rerunBill(selected)} disabled={isRerunBusy}>
+                  {isRerunBusy ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+                  重新出这份账单
+                </Button>
+                <span>使用当前生效的刊例价、折扣、成本和出账逻辑重新生成，旧账单保留。</span>
                 <Button onClick={() => void askAgentAboutBill(selected)} disabled={isAgentBusy || !selectedHasReferenceableFiles}>
                   {isAgentBusy ? <Loader2 size={15} className="spin" /> : <Bot size={15} />}
                   引用账单并开始对账

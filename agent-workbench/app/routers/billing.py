@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from ..services.artifacts import artifacts, billing_artifacts, content_disposition, stream_download_response
 from ..services.billing import (
     build_athena_bill_command,
+    build_bill_document_rerun_payload,
     collect_bill_document_reference_artifacts,
     infer_target,
     insert_file_index,
@@ -309,6 +310,14 @@ class BillDocumentAction(BaseModel):
 class BillDocumentReferenceRequest(BaseModel):
     referenced_by: str = "ops"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BillDocumentRerunRequest(BaseModel):
+    actor: str = "ops"
+    comment: str | None = None
+    no_cache: bool = True
+    run_immediately: bool = True
+    config_version_id: str | None = None
 
 
 def build_schedule_run_period(schedule: dict[str, Any], req: ScheduleRunRequest) -> str:
@@ -675,6 +684,52 @@ def prepare_bill_document_reference_files(document_id: str, req: BillDocumentRef
                 for entry in artifact_entries
             ]
     return {"status": "ready", "bill_document": document, "files": files}
+
+
+@router.post("/api/bill-documents/{document_id}/rerun")
+def rerun_bill_document(document_id: str, req: BillDocumentRerunRequest | None = None) -> dict[str, Any]:
+    from .jobs import BillingRunRequest, _create_billing_run
+    from ..services.jobs import guarded_run_job
+
+    req = req or BillDocumentRerunRequest()
+    with db_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            document = fetch_one(cur, "SELECT * FROM bill_documents WHERE id = %s", (document_id,))
+            if not document:
+                raise HTTPException(status_code=404, detail="bill document not found")
+            source_job = (
+                fetch_one(cur, "SELECT * FROM jobs WHERE id = %s", (document["job_id"],))
+                if document.get("job_id")
+                else None
+            )
+            source_run = (
+                fetch_one(cur, "SELECT * FROM billing_runs WHERE id = %s", (document["billing_run_id"],))
+                if document.get("billing_run_id")
+                else None
+            )
+            payload = build_bill_document_rerun_payload(
+                document,
+                source_job=source_job,
+                source_run=source_run,
+                actor=req.actor,
+                comment=req.comment,
+                no_cache=req.no_cache,
+                config_version_id=req.config_version_id,
+            )
+
+    created = _create_billing_run(BillingRunRequest(**payload))
+    response: dict[str, Any] = {
+        "status": "rerun_created",
+        "source_bill_document": document,
+        **created,
+    }
+    if req.run_immediately:
+        with db_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                run_result = guarded_run_job(cur, str(created["job_id"]))
+        response["status"] = "rerun_started"
+        response["run"] = run_result
+    return response
 
 
 @router.post("/api/bill-documents/{document_id}/approve")

@@ -121,6 +121,83 @@ def test_build_daily_bill_command_requests_detail():
     assert command["argv"][command["argv"].index("--date") + 1] == "2026-06-20"
 
 
+def test_build_bill_document_rerun_payload_targets_customer_and_drops_old_run_metadata():
+    from app.services.billing import build_bill_document_rerun_payload
+
+    payload = build_bill_document_rerun_payload(
+        {
+            "id": "billdoc-child",
+            "job_id": "job-old",
+            "billing_run_id": "run-old",
+            "bill_type": "internal_customer_bill",
+            "target_type": "customer",
+            "target_id": "42",
+            "month": "2026-05",
+            "summary": {"split_from_document_id": "billdoc-parent"},
+        },
+        source_job={
+            "id": "job-old",
+            "month": "2026-05",
+            "vendor": "1001AI",
+            "request_payload": {
+                "metadata": {
+                    "output_dir": "/tmp/old-run",
+                    "schedule_run_id": "schrun-old",
+                    "currency": "USD",
+                    "exchange_rate": 7.3,
+                }
+            },
+        },
+        source_run={"id": "run-old", "vendor": "1001AI", "bill_type": "internal_customer_bill"},
+        actor="ops",
+        comment="discount changed",
+    )
+
+    assert payload["month"] == "2026-05"
+    assert payload["bill_type"] == "internal_customer_bill"
+    assert payload["target_type"] == "customer"
+    assert payload["target_id"] == "42"
+    assert payload["vendor"] == "1001AI"
+    assert payload["metadata"]["user_id"] == 42
+    assert payload["metadata"]["no_cache"] is True
+    assert payload["metadata"]["detail"] is True
+    assert payload["metadata"]["rerun_from_document_id"] == "billdoc-child"
+    assert payload["metadata"]["rerun_comment"] == "discount changed"
+    assert "output_dir" not in payload["metadata"]
+    assert "schedule_run_id" not in payload["metadata"]
+    assert "config_version_id" not in payload
+
+
+def test_build_bill_document_rerun_payload_targets_daily_channel_snapshot():
+    from app.services.billing import build_bill_document_rerun_payload
+
+    payload = build_bill_document_rerun_payload(
+        {
+            "id": "billdoc-channel",
+            "bill_type": "daily_channel_cost_snapshot",
+            "target_type": "channel",
+            "target_id": "65",
+            "month": "2026-06",
+            "summary": {"snapshot_date": "2026-06-20"},
+        },
+        source_job={"id": "job-old", "vendor": "1001AI-Claude", "request_payload": {"metadata": {"split_channels": True}}},
+        source_run={"id": "run-old", "bill_type": "daily_channel_cost_snapshot"},
+        actor="ops",
+        no_cache=False,
+        config_version_id="cfg-latest",
+    )
+
+    assert payload["month"] == "2026-06-20"
+    assert payload["channel_id"] == 65
+    assert payload["bill_type"] == "daily_channel_cost_snapshot"
+    assert payload["target_type"] == "channel"
+    assert payload["target_id"] == "65"
+    assert payload["config_version_id"] == "cfg-latest"
+    assert payload["metadata"]["period"] == "2026-06-20"
+    assert payload["metadata"]["snapshot_date"] == "2026-06-20"
+    assert payload["metadata"]["no_cache"] is False
+
+
 def test_split_bill_summary_uses_target_metrics_not_parent_totals():
     from app.services.billing import _build_split_bill_document_summary
 

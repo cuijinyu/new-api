@@ -123,6 +123,7 @@ export const endpoints = {
   configBootstrap: () => "/api/config/bootstrap",
   // 单一状态流：/publish 直接生效，无 approve 前置。
   publishBillDocument: (id: string) => `/api/bill-documents/${id}/publish`,
+  rerunBillDocument: (id: string) => `/api/bill-documents/${id}/rerun`,
   billDocumentReferenceFiles: (id: string) => `/api/bill-documents/${id}/reference-files`,
   files: () => "/api/files",
   fileUpload: () => "/api/files/upload",
