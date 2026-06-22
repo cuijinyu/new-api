@@ -212,8 +212,8 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
   const latestRunEndSeq = Math.max(0, ...wb.agentEvents.filter((event) => event.event_type === "run.completed" || event.event_type === "run.error").map((event) => Number(event.seq || 0)));
   const waitingForInfo = latestWaitingSeq > latestReplySeq && latestWaitingSeq > latestRunEndSeq;
   const sessionStatus = wb.currentSession?.status?.toUpperCase() || "";
-  const currentStatus = wb.currentSession?.status ? statusText(wb.currentSession.status) : wb.streamStatus;
   const isStreaming = wb.agentStreamActive || wb.pending === "agentStream";
+  const currentStatus = isStreaming ? wb.streamStatus : wb.currentSession?.status ? statusText(wb.currentSession.status) : wb.streamStatus;
   const isSendingMessage = wb.pending === "agentMessage";
   const isUploadingContext = wb.pending === "upload";
   const isAgentContextBusy = wb.pending === "agent";

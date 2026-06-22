@@ -69,7 +69,11 @@ const rawLogDefaultDate = (() => {
 
 const streamEventTypes = [
   "session.created",
+  "sandbox.ready",
+  "skills.injected",
   "message",
+  "file.reference",
+  "context.injected",
   "assistant.delta",
   "operator.message.received",
   "human.input.waiting",
@@ -78,13 +82,60 @@ const streamEventTypes = [
   "run.started",
   "run.completed",
   "run.error",
+  "run.warning",
 ];
 
 const resultPendingStatuses = new Set(["CREATED", "RUNNING", "SANDBOX_READY", "HUMAN_REPLIED", "PAUSED"]);
+const activeAgentStatuses = new Set(["CREATED", "RUNNING", "SANDBOX_READY", "HUMAN_REPLIED", "PAUSED"]);
 
 function canLoadAgentResult(status?: string) {
   const normalized = String(status || "").toUpperCase();
   return !normalized || !resultPendingStatuses.has(normalized);
+}
+
+function statusFromAgentEvent(event: AgentEvent) {
+  if (event.event_type === "session.created") return "CREATED";
+  if (event.event_type === "sandbox.ready") return "SANDBOX_READY";
+  if (event.event_type === "run.started") return "RUNNING";
+  if (event.event_type === "run.completed") return "COMPLETED";
+  if (event.event_type === "run.error") return "FAILED";
+  if (event.event_type === "message" && event.payload?.["continuation"]) return "HUMAN_REPLIED";
+  return null;
+}
+
+function resultFromAgentEvent(event: AgentEvent): AgentResult | null {
+  const result = event.payload?.["result"];
+  return result && typeof result === "object" && !Array.isArray(result) ? (result as AgentResult) : null;
+}
+
+function mergeUploadedFiles(current: UploadedFile[], incoming: UploadedFile[]) {
+  const seen = new Set(current.map((file) => file.id).filter(Boolean));
+  const next = [...current];
+  incoming.forEach((file) => {
+    if (file.id && seen.has(file.id)) return;
+    if (file.id) seen.add(file.id);
+    next.push(file);
+  });
+  return next;
+}
+
+function sessionTimestamp(session?: AgentSession | null) {
+  const time = Date.parse(session?.updated_at || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function mergeAgentSessionSnapshot(local: AgentSession | undefined, remote: AgentSession) {
+  const metadata = remote.metadata ? { ...(local?.metadata || {}), ...remote.metadata } : local?.metadata;
+  const merged: AgentSession = { ...(local || {}), ...remote, metadata };
+  if (local && sessionTimestamp(local) > sessionTimestamp(remote)) {
+    return {
+      ...merged,
+      status: local.status || merged.status,
+      updated_at: local.updated_at || merged.updated_at,
+      metadata: { ...(remote.metadata || {}), ...(local.metadata || {}) },
+    };
+  }
+  return merged;
 }
 
 const toastTitle: Partial<Record<ActionName, string>> = {
@@ -212,6 +263,59 @@ export function useWorkbench() {
   }, [agentSessionId]);
 
   const currentSession = sessions.find((session) => session.id === agentSessionId);
+  const hasActiveAgentSession = useMemo(
+    () => sessions.some((session) => activeAgentStatuses.has(String(session.status || "").toUpperCase())),
+    [sessions],
+  );
+
+  const patchAgentSession = useCallback((id: string, patch: Partial<AgentSession>) => {
+    if (!id) return;
+    const nextPatch = patch.status && !patch.updated_at ? { ...patch, updated_at: new Date().toISOString() } : patch;
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== id) return session;
+        const metadata = nextPatch.metadata ? { ...(session.metadata || {}), ...nextPatch.metadata } : session.metadata;
+        return { ...session, ...nextPatch, metadata };
+      }),
+    );
+  }, []);
+
+  const upsertAgentSession = useCallback((session?: AgentSession | null) => {
+    if (!session?.id) return;
+    setSessions((prev) => {
+      if (prev.some((item) => item.id === session.id)) {
+        return prev.map((item) => (item.id === session.id ? mergeAgentSessionSnapshot(item, session) : item));
+      }
+      return [session, ...prev];
+    });
+  }, []);
+
+  const appendAgentEvents = useCallback((events: AgentEvent[]) => {
+    const cleanEvents = events.filter(Boolean);
+    if (!cleanEvents.length) return;
+    setAgentEvents((prev) => {
+      const seen = new Set(prev.map((item) => item.id).filter(Boolean));
+      const next = cleanEvents.filter((item) => !item.id || !seen.has(item.id));
+      return next.length ? [...prev, ...next] : prev;
+    });
+  }, []);
+
+  const applyAgentEvent = useCallback(
+    (sessionId: string, event: AgentEvent) => {
+      if (!sessionId) return;
+      const status = statusFromAgentEvent(event);
+      const embeddedResult = resultFromAgentEvent(event);
+      const patch: Partial<AgentSession> = {};
+      if (status) patch.status = status;
+      if (event.created_at) patch.updated_at = event.created_at;
+      if (embeddedResult) {
+        patch.metadata = { result: embeddedResult };
+        if (agentSessionIdRef.current === sessionId) setAgentResult(embeddedResult);
+      }
+      if (Object.keys(patch).length) patchAgentSession(sessionId, patch);
+    },
+    [patchAgentSession],
+  );
 
   const artifactRows = useMemo(() => {
     const resultArtifacts = Object.entries(jobArtifacts?.artifacts || {}).map(([name, uri]) => [name, uri]);
@@ -622,14 +726,22 @@ export function useWorkbench() {
     [refreshFiles, refreshWorkCenter],
   );
 
-  const loadAgentHistory = useCallback(async (id = agentSessionId) => {
-    if (!id) return;
-    const result = await apiRequest<{ events: AgentEvent[]; files: UploadedFile[] }>(endpoints.sessionHistory(id));
-    if (result.ok) {
-      setAgentEvents(result.data.events || []);
-      setAgentFiles(result.data.files || []);
-    }
-  }, [agentSessionId]);
+  const loadAgentHistory = useCallback(
+    async (id = agentSessionId) => {
+      if (!id) return;
+      const result = await apiRequest<{ session?: AgentSession; events: AgentEvent[]; files: UploadedFile[] }>(endpoints.sessionHistory(id));
+      if (result.ok) {
+        const events = result.data.events || [];
+        if (agentSessionIdRef.current === id) {
+          setAgentEvents(events);
+          setAgentFiles(result.data.files || []);
+        }
+        events.forEach((event) => applyAgentEvent(id, event));
+        upsertAgentSession(result.data.session);
+      }
+    },
+    [agentSessionId, applyAgentEvent, upsertAgentSession],
+  );
 
   // 读取真实 result.json：优先专用端点，回退 session.metadata.result。
   const loadAgentResult = useCallback(async (id = agentSessionId, status?: string) => {
@@ -646,6 +758,7 @@ export function useWorkbench() {
       ? ("session" in detail.data && detail.data.session ? detail.data.session : (detail.data as AgentSession))
       : null;
     if (detailSession) {
+      upsertAgentSession(detailSession);
       const metadata = detailSession.metadata as JsonObject | undefined;
       const embedded = (metadata?.result || metadata?.result_json) as AgentResult | undefined;
       if (embedded && typeof embedded === "object") {
@@ -663,7 +776,7 @@ export function useWorkbench() {
     }
     const result = await apiRequest<AgentResult>(endpoints.sessionResult(id));
     setAgentResult(result.ok && result.data && typeof result.data === "object" ? result.data : null);
-  }, [agentSessionId]);
+  }, [agentSessionId, upsertAgentSession]);
 
   const refreshSessions = useCallback(
     async (options: { selectLatest?: boolean; filter?: SessionFilter } = {}) => {
@@ -673,7 +786,10 @@ export function useWorkbench() {
       );
       if (!result.ok) return;
       const items = result.data.items || [];
-      setSessions(items);
+      setSessions((prev) => {
+        const localById = new Map(prev.map((item) => [item.id, item]));
+        return items.map((item) => mergeAgentSessionSnapshot(localById.get(item.id), item));
+      });
       if (options.selectLatest && items[0] && !agentSessionIdRef.current && !newAgentDraftRef.current) {
         agentSessionIdRef.current = items[0].id;
         setAgentSessionId(items[0].id);
@@ -713,6 +829,16 @@ export function useWorkbench() {
     // 仅初始化执行一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!agentStreamActive && !hasActiveAgentSession) return;
+    const timer = setInterval(() => {
+      void refreshSessions();
+      const id = agentSessionIdRef.current;
+      if (id) void loadAgentHistory(id);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [agentStreamActive, hasActiveAgentSession, refreshSessions, loadAgentHistory]);
 
   useEffect(() => {
     scheduleKpiPreview();
@@ -865,7 +991,7 @@ export function useWorkbench() {
         "开启 Agent 对话",
         "agent",
         () =>
-          apiRequest<{ session_id: string }>(endpoints.sessions(), {
+          apiRequest<{ session?: AgentSession; session_id?: string; id?: string; status?: string; metadata?: JsonObject }>(endpoints.sessions(), {
             method: "POST",
             bodyJson: compactPayload({
               prompt: promptOverride ?? agentForm.prompt,
@@ -881,17 +1007,31 @@ export function useWorkbench() {
         { silent: options.silent ?? true },
       );
       if (result.ok) {
+        const sessionId = result.data.session?.id || result.data.session_id || result.data.id || "";
+        if (!sessionId) return null;
+        const prompt = promptOverride ?? agentForm.prompt;
         newAgentDraftRef.current = false;
-        agentSessionIdRef.current = result.data.session_id;
-        setAgentSessionId(result.data.session_id);
-        setFileForm((prev) => ({ ...prev, session_id: result.data.session_id }));
+        agentSessionIdRef.current = sessionId;
+        setAgentSessionId(sessionId);
+        setFileForm((prev) => ({ ...prev, session_id: sessionId }));
+        upsertAgentSession(
+          result.data.session || {
+            id: sessionId,
+            provider: agentForm.provider,
+            runtime: agentForm.runtime,
+            status: result.data.status || "CREATED",
+            prompt,
+            title: prompt.trim().split(/\r?\n/)[0]?.slice(0, 80) || sessionId,
+            metadata: result.data.metadata || { source: "web-console", excluded_skill_ids: excludedSkillIdsArg },
+          },
+        );
         await refreshSessions();
-        await loadAgentHistory(result.data.session_id);
-        return result.data.session_id;
+        await loadAgentHistory(sessionId);
+        return sessionId;
       }
       return null;
     },
-    [agentForm, agentUploadForm.job_id, excludedSkillIds, submitAction, refreshSessions, loadAgentHistory],
+    [agentForm, agentUploadForm.job_id, excludedSkillIds, submitAction, upsertAgentSession, refreshSessions, loadAgentHistory],
   );
 
   const referenceFilesToAgent = useCallback(
@@ -901,20 +1041,34 @@ export function useWorkbench() {
       const sessionId = agentSessionId || (await createAgentSession());
       if (!sessionId) return null;
       const result = await submitAction("引用资料到对话", "agent", () =>
-        apiRequest<{ files: UploadedFile[] }>(endpoints.sessionFiles(sessionId), {
+        apiRequest<{ files: UploadedFile[]; event?: AgentEvent }>(endpoints.sessionFiles(sessionId), {
           method: "POST",
           bodyJson: { file_ids: selectedIds, referenced_by: "ops", metadata: { source: "web-console" } },
         }),
       );
       if (result.ok) {
         setAgentSessionId(sessionId);
+        const files = result.data.files || [];
+        if (files.length) {
+          setAgentFiles((prev) => mergeUploadedFiles(prev, files));
+          setUploadedFiles((prev) => mergeUploadedFiles(files, prev));
+        }
+        if (result.data.event) {
+          appendAgentEvents([result.data.event]);
+          applyAgentEvent(sessionId, result.data.event);
+        }
         await loadAgentHistory(sessionId);
+        if (files.length) setAgentFiles((prev) => mergeUploadedFiles(prev, files));
+        if (result.data.event) {
+          appendAgentEvents([result.data.event]);
+          applyAgentEvent(sessionId, result.data.event);
+        }
         await refreshSessions();
         return sessionId;
       }
       return null;
     },
-    [agentSessionId, createAgentSession, submitAction, loadAgentHistory, refreshSessions],
+    [agentSessionId, createAgentSession, submitAction, appendAgentEvents, applyAgentEvent, loadAgentHistory, refreshSessions],
   );
 
   const referenceBillDocumentToAgent = useCallback(
@@ -964,10 +1118,11 @@ export function useWorkbench() {
     }
     setAgentSelectedFiles([]);
     if (uploaded.length) {
-      setUploadedFiles((prev) => [...uploaded, ...prev]);
-      setAgentFiles((prev) => [...uploaded, ...prev]);
+      setUploadedFiles((prev) => mergeUploadedFiles(uploaded, prev));
+      setAgentFiles((prev) => mergeUploadedFiles(prev, uploaded));
     }
     await loadAgentHistory(sessionId);
+    if (uploaded.length) setAgentFiles((prev) => mergeUploadedFiles(prev, uploaded));
     await refreshSessions();
     return sessionId;
   }, [agentSelectedFiles, agentSessionId, agentUploadForm, createAgentSession, submitAction, loadAgentHistory, refreshSessions]);
@@ -978,6 +1133,7 @@ export function useWorkbench() {
       if (!sessionId) return;
       if (streamRef.current && streamSessionIdRef.current === sessionId) {
         setAgentStreamActive(true);
+        patchAgentSession(sessionId, { status: "RUNNING" });
         setStreamStatus((prev) => (prev && prev !== "待开始" ? prev : "运行中"));
         return;
       }
@@ -985,27 +1141,28 @@ export function useWorkbench() {
       streamSessionIdRef.current = sessionId;
       setAgentStreamActive(true);
       setPending("agentStream");
+      patchAgentSession(sessionId, { status: "RUNNING" });
       setStreamStatus("运行中");
       const source = new EventSource(`${API_BASE_URL}${endpoints.sessionStream(sessionId, agentForm.live)}`);
       streamRef.current = source;
       const appendEvent = (event: MessageEvent) => {
         try {
           const parsed = JSON.parse(event.data) as AgentEvent;
-          setAgentEvents((prev) => {
-            if (parsed.id && prev.some((item) => item.id === parsed.id)) return prev;
-            return [...prev, parsed];
-          });
-          if (parsed.event_type === "human.input.waiting") setStreamStatus("等待补充信息");
-          if (parsed.event_type === "operator.message.received") setStreamStatus("已收到补充信息");
+          const isCurrentSession = agentSessionIdRef.current === sessionId;
+          if (isCurrentSession) appendAgentEvents([parsed]);
+          applyAgentEvent(sessionId, parsed);
+          if (isCurrentSession && parsed.event_type === "human.input.waiting") setStreamStatus("等待补充信息");
+          if (isCurrentSession && parsed.event_type === "operator.message.received") setStreamStatus("已收到补充信息");
           if (parsed.event_type === "run.completed" || parsed.event_type === "run.error") {
-            setStreamStatus(parsed.event_type === "run.completed" ? "已完成" : "失败");
+            if (isCurrentSession) setStreamStatus(parsed.event_type === "run.completed" ? "已完成" : "失败");
             setAgentStreamActive(false);
             setPending(null);
             source.close();
             streamRef.current = null;
             streamSessionIdRef.current = "";
+            void loadAgentHistory(sessionId);
             void refreshSessions();
-            void loadAgentResult(sessionId);
+            void loadAgentResult(sessionId, statusFromAgentEvent(parsed) || undefined);
           }
         } catch {
           setStreamStatus("事件解析失败");
@@ -1020,9 +1177,10 @@ export function useWorkbench() {
         streamRef.current = null;
         streamSessionIdRef.current = "";
         void loadAgentHistory(sessionId);
+        void refreshSessions();
       };
     },
-    [agentForm.live, refreshSessions, loadAgentHistory, loadAgentResult],
+    [agentForm.live, patchAgentSession, appendAgentEvents, applyAgentEvent, loadAgentHistory, refreshSessions, loadAgentResult],
   );
 
   // 直接提问即自动建会话 + 发送 + 开流，一个动作完成完整对话。
@@ -1046,16 +1204,20 @@ export function useWorkbench() {
         setAgentMessage("");
         const immediateEvents = [result.data.event, result.data.ack_event].filter(Boolean) as AgentEvent[];
         if (immediateEvents.length) {
-          setAgentEvents((prev) => {
-            const seen = new Set(prev.map((item) => item.id).filter(Boolean));
-            return [...prev, ...immediateEvents.filter((item) => !item.id || !seen.has(item.id))];
-          });
+          appendAgentEvents(immediateEvents);
+          immediateEvents.forEach((event) => applyAgentEvent(sessionId, event));
+        } else {
+          patchAgentSession(sessionId, { status: "HUMAN_REPLIED" });
         }
         await loadAgentHistory(sessionId);
+        if (immediateEvents.length) {
+          appendAgentEvents(immediateEvents);
+          immediateEvents.forEach((event) => applyAgentEvent(sessionId, event));
+        }
         startAgentStream(sessionId);
       }
     },
-    [agentMessage, agentSessionId, createAgentSession, submitAction, loadAgentHistory, startAgentStream],
+    [agentMessage, agentSessionId, createAgentSession, submitAction, appendAgentEvents, applyAgentEvent, patchAgentSession, loadAgentHistory, startAgentStream],
   );
 
   const pauseAgentSession = useCallback(
@@ -1065,9 +1227,9 @@ export function useWorkbench() {
       await submitAction("暂停对话", "agent", () =>
         apiRequest<JsonObject>(endpoints.sessionPause(sessionId), { method: "POST" }),
       );
-      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, status: "PAUSED" } : s)));
+      patchAgentSession(sessionId, { status: "PAUSED" });
     },
-    [agentSessionId, submitAction],
+    [agentSessionId, submitAction, patchAgentSession],
   );
 
   const resumeAgentSession = useCallback(
@@ -1077,9 +1239,9 @@ export function useWorkbench() {
       await submitAction("恢复对话", "agent", () =>
         apiRequest<JsonObject>(endpoints.sessionResume(sessionId), { method: "POST" }),
       );
-      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, status: "RUNNING" } : s)));
+      patchAgentSession(sessionId, { status: "RUNNING" });
     },
-    [agentSessionId, submitAction],
+    [agentSessionId, submitAction, patchAgentSession],
   );
 
   const selectSession = useCallback(
@@ -1100,10 +1262,10 @@ export function useWorkbench() {
         apiRequest<JsonObject>(endpoints.sessionPause(id), { method: "POST" }),
       );
       if (result.ok) {
-        setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, status: "PAUSED" } : s)));
+        patchAgentSession(id, { status: "PAUSED" });
       }
     },
-    [submitAction],
+    [submitAction, patchAgentSession],
   );
 
   const resumeSession = useCallback(
@@ -1112,10 +1274,10 @@ export function useWorkbench() {
         apiRequest<JsonObject>(endpoints.sessionResume(id), { method: "POST" }),
       );
       if (result.ok) {
-        setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, status: "RUNNING" } : s)));
+        patchAgentSession(id, { status: "RUNNING" });
       }
     },
-    [submitAction],
+    [submitAction, patchAgentSession],
   );
 
   const favoriteSession = useCallback(
