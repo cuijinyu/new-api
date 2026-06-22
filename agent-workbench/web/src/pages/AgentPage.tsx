@@ -45,7 +45,7 @@ import {
   statusText,
   statusTone,
 } from "../lib/format";
-import type { AgentEvent, AgentSession, BillDocument, PageId, SkillPreviewItem, UploadedFile } from "../types";
+import type { AgentEvent, AgentSession, BillDocument, JsonObject, PageId, SkillPreviewItem, UploadedFile } from "../types";
 import type { WorkbenchState } from "../hooks/useWorkbench";
 
 type PanelTab = "resources" | "skills" | "suggestions";
@@ -97,8 +97,82 @@ function eventPayload(event?: AgentEvent) {
   return event?.payload && Object.keys(event.payload).length ? event.payload : null;
 }
 
-function stepPayload(item: Extract<AgentTimelineItem, { kind: "step" }>) {
-  return item.result?.payload || item.call?.payload || null;
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasDetailValue(value: unknown) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value as JsonObject).length > 0;
+  return true;
+}
+
+function payloadValue(payload: JsonObject | null, keys: string[]) {
+  if (!payload) return undefined;
+  for (const key of keys) {
+    if (hasDetailValue(payload[key])) return payload[key];
+  }
+  const result = payload.result;
+  if (isJsonObject(result)) {
+    for (const key of keys) {
+      if (hasDetailValue(result[key])) return result[key];
+    }
+  }
+  return undefined;
+}
+
+function omitToolLogFields(value: unknown) {
+  if (!isJsonObject(value)) return value;
+  const logKeys = new Set(["stdout", "stderr", "stdout_tail", "stderr_tail"]);
+  const compact = Object.fromEntries(Object.entries(value).filter(([key, item]) => !logKeys.has(key) && hasDetailValue(item)));
+  return Object.keys(compact).length ? compact : undefined;
+}
+
+function toolArguments(callPayload: JsonObject | null, resultPayload: JsonObject | null) {
+  return payloadValue(callPayload, ["arguments", "args", "input", "rawInput", "raw_input", "command", "argv"]) || payloadValue(resultPayload, ["arguments", "args", "input"]);
+}
+
+function toolResult(resultPayload: JsonObject | null) {
+  const value = payloadValue(resultPayload, ["result", "output", "outputs", "text", "message", "error"]);
+  return omitToolLogFields(value);
+}
+
+function toolLogValue(payload: JsonObject | null, keys: string[]) {
+  const value = payloadValue(payload, keys);
+  if (Array.isArray(value)) return value.map((item) => String(item)).join("");
+  return value;
+}
+
+function commandPreview(value: unknown) {
+  if (typeof value === "string") return value;
+  if (!isJsonObject(value)) return "";
+  if (Array.isArray(value.argv)) return value.argv.map((item) => String(item)).join(" ");
+  const direct = value.command || value.cmd || value.script;
+  return typeof direct === "string" ? direct : "";
+}
+
+function toolMetaChips(item: Extract<AgentTimelineItem, { kind: "step" }>) {
+  const callPayload = eventPayload(item.call);
+  const resultPayload = eventPayload(item.result);
+  const payload = resultPayload || callPayload || {};
+  const result = isJsonObject(payload.result) ? payload.result : {};
+  const toolName = payload.tool_name || payload.name || payload.title;
+  const status = payload.status || item.status;
+  const returncode = payload.returncode ?? result.returncode;
+  const durationMs = payload.duration_ms;
+  const runtime = payload.runtime || payload.agent;
+  const attempt = payload.attempt && payload.max_attempts ? `${payload.attempt}/${payload.max_attempts}` : payload.attempt;
+  return [
+    toolName ? `工具 ${toolName}` : "",
+    runtime ? `运行时 ${runtime}` : "",
+    status ? `状态 ${status}` : "",
+    returncode !== undefined && returncode !== null ? `退出码 ${returncode}` : "",
+    durationMs ? `耗时 ${durationMs} ms` : "",
+    attempt ? `重试 ${attempt}` : "",
+    payload.tool_call_id ? `ID ${shortId(String(payload.tool_call_id))}` : "",
+  ].filter(Boolean);
 }
 
 function suggestedActionsFromResult(result: WorkbenchState["agentResult"], waitingForInfo: boolean) {
@@ -851,9 +925,73 @@ function BillPickerPopover({
   );
 }
 
+function ToolValueBlock({ value, empty }: { value: unknown; empty: string }) {
+  if (!hasDetailValue(value)) return <pre className="json-block agent-tool-text-block">{empty}</pre>;
+  if (typeof value === "string") return <pre className="json-block agent-tool-text-block">{value}</pre>;
+  return <JsonBlock value={value} empty={empty} />;
+}
+
+function ToolDetailSection({ label, value, empty }: { label: string; value: unknown; empty: string }) {
+  if (!hasDetailValue(value)) return null;
+  return (
+    <section className="agent-tool-detail-section">
+      <strong>{label}</strong>
+      <ToolValueBlock value={value} empty={empty} />
+    </section>
+  );
+}
+
+function ToolCallDetails({ item, showRaw }: { item: Extract<AgentTimelineItem, { kind: "step" }>; showRaw: boolean }) {
+  const callPayload = eventPayload(item.call);
+  const resultPayload = eventPayload(item.result);
+  const args = toolArguments(callPayload, resultPayload);
+  const result = toolResult(resultPayload);
+  const stdout = toolLogValue(resultPayload, ["stdout_tail", "stdout"]);
+  const stderr = toolLogValue(resultPayload, ["stderr_tail", "stderr"]);
+  const error = !hasDetailValue(stderr) ? toolLogValue(resultPayload, ["error", "error_message", "message"]) : undefined;
+  const raw = { call: callPayload, result: resultPayload };
+  const command = commandPreview(args);
+  const chips = toolMetaChips(item);
+  const hasVisibleDetail = chips.length || hasDetailValue(args) || hasDetailValue(result) || hasDetailValue(stdout) || hasDetailValue(stderr) || hasDetailValue(error) || showRaw;
+
+  if (!hasVisibleDetail) return null;
+
+  return (
+    <details className="agent-tool-details">
+      <summary>
+        <span>查看 tool call 详情</span>
+        <small>{item.result ? "参数、结果和日志" : "参数和运行状态"}</small>
+      </summary>
+      <div className="agent-tool-detail-body">
+        {chips.length ? (
+          <div className="agent-tool-detail-meta">
+            {chips.map((chip) => (
+              <span key={chip}>{chip}</span>
+            ))}
+          </div>
+        ) : null}
+        {command ? (
+          <div className="agent-tool-command">
+            <TerminalSquare size={14} />
+            <code>{command}</code>
+          </div>
+        ) : null}
+        <ToolDetailSection label="调用参数" value={args} empty="暂无调用参数" />
+        <ToolDetailSection label="执行结果" value={result} empty="暂无执行结果" />
+        <ToolDetailSection label="stdout" value={stdout} empty="暂无 stdout" />
+        <ToolDetailSection label="stderr" value={stderr || error} empty="暂无 stderr" />
+        {showRaw ? <ToolDetailSection label="原始事件" value={raw} empty="暂无原始事件" /> : null}
+      </div>
+    </details>
+  );
+}
+
 function TimelineItem({ item, showDebug }: { item: AgentTimelineItem; showDebug: boolean }) {
   if (item.kind === "step") {
-    const payload = stepPayload(item);
+    const description = displayText(
+      item.result?.content || item.call?.content,
+      item.status === "completed" ? "Agent 已完成这一步检查。" : "Agent 正在核对相关资料。",
+    );
     return (
       <article className={`agent-timeline-item agent-step ${item.status}`}>
         <div className="agent-timeline-marker">
@@ -864,13 +1002,8 @@ function TimelineItem({ item, showDebug }: { item: AgentTimelineItem; showDebug:
             <strong>{item.title}</strong>
             <span>{item.status === "completed" ? "已完成" : "运行中"} {item.time ? `· ${item.time}` : ""}</span>
           </div>
-          <p>{item.status === "completed" ? "Agent 已完成这一步检查。" : "Agent 正在核对相关资料。"}</p>
-          {showDebug && payload ? (
-            <details>
-              <summary>查看步骤详情</summary>
-              <JsonBlock value={payload} empty="暂无步骤详情" />
-            </details>
-          ) : null}
+          <p>{description}</p>
+          <ToolCallDetails item={item} showRaw={showDebug} />
         </div>
       </article>
     );
