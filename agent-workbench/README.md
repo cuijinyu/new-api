@@ -55,5 +55,6 @@ S3
 - [Pricing/Discounts DB 管理](docs/pricing-config-management.md)
 - [本地 Docker 端到端验证](docs/local-docker-e2e.md)
 - [AWS 部署文档](docs/aws-deployment.md)
+- [现网部署方案（最新架构）](docs/production-deployment-plan.md)
 - [Workbench UX 实施方案](docs/ux-implementation-plan.md)
 > Billing Automation v2 final plan: [账单自动化最终综合方案](docs/billing-automation-final-plan.md)
