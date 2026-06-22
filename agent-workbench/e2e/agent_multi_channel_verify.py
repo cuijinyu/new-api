@@ -32,6 +32,7 @@ PROFIT_TERMS = ("利润", "毛利", "profit", "margin")
 COST_TERMS = ("成本", "cost")
 REVENUE_TERMS = ("收入", "revenue")
 AGENT_ERROR_STATUSES = {"error", "failed", "failure", "cancelled", "canceled"}
+AGENT_OK_STATUSES = {"completed", "needs_info"}
 
 
 class E2EError(RuntimeError):
@@ -103,7 +104,7 @@ def settings_from_args() -> Settings:
     parser.add_argument("--channels", default=os.environ.get("WORKBENCH_E2E_CHANNELS", ",".join(DEFAULT_CHANNELS)))
     parser.add_argument("--agents", type=int, default=int(os.environ.get("WORKBENCH_E2E_AGENT_COUNT", "3")))
     parser.add_argument("--month", default=os.environ.get("WORKBENCH_E2E_MONTH") or None)
-    parser.add_argument("--stream-timeout", type=int, default=int(os.environ.get("WORKBENCH_E2E_STREAM_TIMEOUT", "2700")))
+    parser.add_argument("--stream-timeout", type=int, default=int(os.environ.get("WORKBENCH_E2E_STREAM_TIMEOUT", "5100")))
     parser.add_argument("--request-timeout", type=int, default=int(os.environ.get("WORKBENCH_E2E_REQUEST_TIMEOUT", "60")))
     parser.add_argument("--followup-delay", type=float, default=float(os.environ.get("WORKBENCH_E2E_FOLLOWUP_DELAY", "2.0")))
     args = parser.parse_args()
@@ -471,7 +472,13 @@ def assert_history(client: WorkbenchClient, bill: SelectedBill, run: StreamRun) 
     if not ack_payload.get("live_input"):
         raise E2EError(f"session {bill.session_id} ack_event did not mark live_input=true: {ack_event}")
 
-    for result in result_payloads_from(history, session, run.events):
+    results = result_payloads_from(history, session, run.events)
+    if not results:
+        raise E2EError(f"session {bill.session_id} did not expose a structured agent result")
+    result_statuses = {str(result.get("status") or "").strip().lower() for result in results}
+    if not any(status in AGENT_OK_STATUSES for status in result_statuses):
+        raise E2EError(f"session {bill.session_id} has no successful structured result status; got {sorted(result_statuses)}")
+    for result in results:
         status = str(result.get("status") or "").strip().lower()
         if status in AGENT_ERROR_STATUSES:
             summary = str(result.get("summary") or result.get("reason") or "")[:500]

@@ -712,6 +712,8 @@ def run_sandbox_agent_session_worker(
 
 def agent_result_failed(result: Any, result_json: dict[str, Any]) -> bool:
     status = str(result_json.get("status") or "").strip().lower()
+    if not status:
+        return True
     if status in {"error", "failed", "failure", "cancelled", "canceled"}:
         return True
     return not bool(getattr(result, "succeeded", False))

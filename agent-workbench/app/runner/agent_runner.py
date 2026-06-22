@@ -369,7 +369,7 @@ def send_message(
     output_files = workspace.collect_output(session.dirs["output"])
     result_json = _load_result_json(session.dirs["output"])
     result_status = str(result_json.get("status") or "").strip().lower()
-    exec_failed = returncode != 0 or result_status in {"error", "failed", "failure", "cancelled", "canceled"}
+    exec_failed = returncode != 0 or not result_status or result_status in {"error", "failed", "failure", "cancelled", "canceled"}
     _emit(
         event_sink,
         "tool.result",

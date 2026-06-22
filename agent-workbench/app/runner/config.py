@@ -80,11 +80,11 @@ def sandbox_timeout_seconds() -> int:
 
 
 def agent_exec_timeout_seconds() -> int:
-    raw = os.getenv("RUNNER_AGENT_TIMEOUT_SECONDS", "1200")
+    raw = os.getenv("RUNNER_AGENT_TIMEOUT_SECONDS", "4800")
     try:
         value = int(raw)
     except ValueError:
-        value = 1200
+        value = 4800
     return max(10, min(value, 7200))
 
 
