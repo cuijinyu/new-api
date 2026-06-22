@@ -141,6 +141,8 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
   }
 
   async function save() {
+    const confirmed = window.confirm("确认保存刊例价并立即生效？这会影响后续出账、KPI 预览与 Agent 对账。");
+    if (!confirmed) return;
     await wb.savePricing({ rows: draftRows });
   }
 
