@@ -1,4 +1,4 @@
-import { DownloadCloud, Layers3, Loader2, Plus, Save, Search, Trash2 } from "lucide-react";
+import { DownloadCloud, Layers3, Loader2, Plus, RotateCcw, Save, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState } from "../components/ui";
 import type { PricingRow } from "../types";
@@ -38,41 +38,55 @@ function checkedValue(value: unknown) {
   return Boolean(value);
 }
 
+function clonePricingRows(rows: PricingRow[]) {
+  return rows.map((row) => ({ ...row }));
+}
+
+function pricingRowsChanged(draftRows: PricingRow[], savedRows: PricingRow[]) {
+  return JSON.stringify(draftRows) !== JSON.stringify(savedRows);
+}
+
 export function PricingPage({ wb }: { wb: WorkbenchState }) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [draftRows, setDraftRows] = useState<PricingRow[]>([]);
 
   useEffect(() => {
     void wb.loadPricing();
   }, [wb.loadPricing]);
 
+  useEffect(() => {
+    setDraftRows(clonePricingRows(wb.pricingRows));
+  }, [wb.pricingRows]);
+
   const saving = wb.pending === "pricing";
+  const hasUnsavedChanges = pricingRowsChanged(draftRows, wb.pricingRows);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleRows = useMemo(() => {
-    return wb.pricingRows
+    return draftRows
       .map((row, index) => ({ row, index }))
       .filter(({ row }) => {
         if (typeFilter !== "all" && row.type !== typeFilter) return false;
         if (!normalizedQuery) return true;
         return [row.model, row.type, row.note].some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
       });
-  }, [wb.pricingRows, normalizedQuery, typeFilter]);
+  }, [draftRows, normalizedQuery, typeFilter]);
 
-  const modelCount = useMemo(() => new Set(wb.pricingRows.map((row) => row.model).filter(Boolean)).size, [wb.pricingRows]);
+  const modelCount = useMemo(() => new Set(draftRows.map((row) => row.model).filter(Boolean)).size, [draftRows]);
 
   function updateRow(index: number, patch: Partial<PricingRow>) {
-    wb.setPricingRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+    setDraftRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function addFlatModel() {
-    wb.setPricingRows((rows) => [
+    setDraftRows((rows) => [
       ...rows,
       { model: nextModelName(rows, "flat-model"), type: "flat", flat_tier: false, ip: 0, op: 0, chp: 0, cwp: 0, cwp_1h: 0 },
     ]);
   }
 
   function addTieredModel() {
-    wb.setPricingRows((rows) => [
+    setDraftRows((rows) => [
       ...rows,
       {
         model: nextModelName(rows, "tiered-model"),
@@ -91,14 +105,14 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
   }
 
   function addMultimodalModel() {
-    wb.setPricingRows((rows) => [
+    setDraftRows((rows) => [
       ...rows,
       { model: nextModelName(rows, "multimodal-model"), type: "multimodal", ip: 0, op_text: 0, op_image: 0, note: "" },
     ]);
   }
 
   function addTier(model: string) {
-    wb.setPricingRows((rows) => {
+    setDraftRows((rows) => {
       const tiers = rows.filter((row) => row.model === model && row.type === "tiered");
       const lastTier = tiers[tiers.length - 1];
       const lastMax = Number(lastTier?.max_k);
@@ -122,11 +136,21 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
     });
   }
 
+  function resetDraft() {
+    setDraftRows(clonePricingRows(wb.pricingRows));
+  }
+
   async function save() {
-    await wb.savePricing({ rows: wb.pricingRows });
+    await wb.savePricing({ rows: draftRows });
   }
 
   async function reseed() {
+    const confirmed = window.confirm(
+      hasUnsavedChanges
+        ? "从 scripts/athena 导入会覆盖当前生效刊例价，并丢弃未保存改动。确定继续？"
+        : "从 scripts/athena 导入会覆盖当前生效刊例价。确定继续？",
+    );
+    if (!confirmed) return;
     await wb.reseedPricing();
   }
 
@@ -137,6 +161,7 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
           <CardTitle>刊例价管理</CardTitle>
           <div className="inline-form">
             <Badge tone="green">全局生效</Badge>
+            <Badge tone={hasUnsavedChanges ? "amber" : "green"}>{hasUnsavedChanges ? "未保存" : "已保存"}</Badge>
             <Badge tone="blue">{modelCount} 个模型</Badge>
             <Button variant="outline" size="sm" onClick={() => void reseed()} disabled={saving}>
               {saving ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
@@ -156,11 +181,28 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
             </div>
             <div>
               <span>行数</span>
-              <strong>{wb.pricingRows.length}</strong>
+              <strong>{draftRows.length}</strong>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      <div className={`explicit-save-bar ${hasUnsavedChanges ? "dirty" : "clean"}`}>
+        <div>
+          <strong>{hasUnsavedChanges ? "有未保存改动" : "当前刊例价已保存"}</strong>
+          <span>保存后才会影响后续出账、KPI 预览与 Agent 对账。</span>
+        </div>
+        <div className="explicit-save-actions">
+          <Button variant="ghost" size="sm" onClick={resetDraft} disabled={!hasUnsavedChanges || saving}>
+            <RotateCcw size={14} />
+            放弃改动
+          </Button>
+          <Button size="sm" onClick={() => void save()} disabled={!hasUnsavedChanges || saving}>
+            {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+            保存并生效
+          </Button>
+        </div>
+      </div>
 
       <Card>
         <CardHeader>
@@ -331,7 +373,7 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
                               <Plus size={14} />
                             </button>
                           ) : null}
-                          <button type="button" className="icon-btn" onClick={() => wb.setPricingRows((rows) => rows.filter((_, i) => i !== index))} title="删除">
+                          <button type="button" className="icon-btn" onClick={() => setDraftRows((rows) => rows.filter((_, i) => i !== index))} title="删除">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -348,9 +390,13 @@ export function PricingPage({ wb }: { wb: WorkbenchState }) {
       </Card>
 
       <div className="discounts-actions">
-        <Button onClick={() => void save()} disabled={saving}>
+        <Button variant="ghost" onClick={resetDraft} disabled={!hasUnsavedChanges || saving}>
+          <RotateCcw size={15} />
+          放弃改动
+        </Button>
+        <Button onClick={() => void save()} disabled={!hasUnsavedChanges || saving}>
           {saving ? <Loader2 size={15} className="spin" /> : <Save size={15} />}
-          保存刊例价（立即生效）
+          保存刊例价并生效
         </Button>
       </div>
     </div>

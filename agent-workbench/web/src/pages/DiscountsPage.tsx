@@ -1,55 +1,95 @@
-import { DownloadCloud, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { DownloadCloud, Loader2, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Field } from "../components/ui";
 import type { CostDiscountRow, RevenueDiscountRow } from "../types";
 import type { WorkbenchState } from "../hooks/useWorkbench";
 
+function cloneCostRows(rows: CostDiscountRow[]) {
+  return rows.map((row) => ({ ...row }));
+}
+
+function cloneRevenueRows(rows: RevenueDiscountRow[]) {
+  return rows.map((row) => ({ ...row }));
+}
+
+function discountRowsChanged(
+  draftCostRows: CostDiscountRow[],
+  savedCostRows: CostDiscountRow[],
+  draftRevenueRows: RevenueDiscountRow[],
+  savedRevenueRows: RevenueDiscountRow[],
+) {
+  return JSON.stringify(draftCostRows) !== JSON.stringify(savedCostRows) || JSON.stringify(draftRevenueRows) !== JSON.stringify(savedRevenueRows);
+}
+
 export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
   const [batchCost, setBatchCost] = useState("");
   const [batchRevenue, setBatchRevenue] = useState("");
+  const [draftCostRows, setDraftCostRows] = useState<CostDiscountRow[]>([]);
+  const [draftRevenueRows, setDraftRevenueRows] = useState<RevenueDiscountRow[]>([]);
 
   useEffect(() => {
     void wb.loadDiscounts();
   }, [wb.loadDiscounts]);
 
+  useEffect(() => {
+    setDraftCostRows(cloneCostRows(wb.costDiscountRows));
+  }, [wb.costDiscountRows]);
+
+  useEffect(() => {
+    setDraftRevenueRows(cloneRevenueRows(wb.revenueDiscountRows));
+  }, [wb.revenueDiscountRows]);
+
+  const hasUnsavedChanges = discountRowsChanged(draftCostRows, wb.costDiscountRows, draftRevenueRows, wb.revenueDiscountRows);
+
   function updateCostRow(index: number, patch: Partial<CostDiscountRow>) {
-    wb.setCostDiscountRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+    setDraftCostRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function updateRevenueRow(index: number, patch: Partial<RevenueDiscountRow>) {
-    wb.setRevenueDiscountRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+    setDraftRevenueRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function addCostRow() {
-    wb.setCostDiscountRows((rows) => [...rows, { channel_id: "", channel_name: "", model: "*", discount: 1 }]);
+    setDraftCostRows((rows) => [...rows, { channel_id: "", channel_name: "", model: "*", discount: 1 }]);
   }
 
   function addRevenueRow() {
-    wb.setRevenueDiscountRows((rows) => [...rows, { user_id: "", user_name: "", model: "*", discount: 1 }]);
+    setDraftRevenueRows((rows) => [...rows, { user_id: "", user_name: "", model: "*", discount: 1 }]);
   }
 
   function applyBatchCost() {
     const value = Number(batchCost);
     if (!Number.isFinite(value)) return;
-    wb.setCostDiscountRows((rows) => rows.map((row) => ({ ...row, discount: value })));
+    setDraftCostRows((rows) => rows.map((row) => ({ ...row, discount: value })));
   }
 
   function applyBatchRevenue() {
     const value = Number(batchRevenue);
     if (!Number.isFinite(value)) return;
-    wb.setRevenueDiscountRows((rows) => rows.map((row) => ({ ...row, discount: value })));
+    setDraftRevenueRows((rows) => rows.map((row) => ({ ...row, discount: value })));
+  }
+
+  function resetDraft() {
+    setDraftCostRows(cloneCostRows(wb.costDiscountRows));
+    setDraftRevenueRows(cloneRevenueRows(wb.revenueDiscountRows));
   }
 
   async function save() {
-    await wb.saveDiscounts({ cost_rows: wb.costDiscountRows, revenue_rows: wb.revenueDiscountRows });
+    await wb.saveDiscounts({ cost_rows: draftCostRows, revenue_rows: draftRevenueRows });
   }
 
   async function reseed() {
+    const confirmed = window.confirm(
+      hasUnsavedChanges
+        ? "从 scripts/athena 导入会覆盖当前生效折扣，并丢弃未保存改动。确定继续？"
+        : "从 scripts/athena 导入会覆盖当前生效折扣。确定继续？",
+    );
+    if (!confirmed) return;
     await wb.reseedDiscounts();
   }
 
   const saving = wb.pending === "discounts";
-  const isEmpty = !wb.costDiscountRows.length && !wb.revenueDiscountRows.length;
+  const isEmpty = !draftCostRows.length && !draftRevenueRows.length;
 
   return (
     <div className="discounts-page">
@@ -58,6 +98,7 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
           <CardTitle>折扣管理</CardTitle>
           <div className="inline-form">
             <Badge tone="green">全局生效</Badge>
+            <Badge tone={hasUnsavedChanges ? "amber" : "green"}>{hasUnsavedChanges ? "未保存" : "已保存"}</Badge>
             <Button variant="outline" size="sm" onClick={() => void reseed()} disabled={saving}>
               {saving ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
               从 scripts/athena 导入
@@ -73,6 +114,23 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
           ) : null}
         </CardContent>
       </Card>
+
+      <div className={`explicit-save-bar ${hasUnsavedChanges ? "dirty" : "clean"}`}>
+        <div>
+          <strong>{hasUnsavedChanges ? "有未保存改动" : "当前折扣已保存"}</strong>
+          <span>保存后才会影响后续出账、KPI 预览与 Agent 对账。</span>
+        </div>
+        <div className="explicit-save-actions">
+          <Button variant="ghost" size="sm" onClick={resetDraft} disabled={!hasUnsavedChanges || saving}>
+            <RotateCcw size={14} />
+            放弃改动
+          </Button>
+          <Button size="sm" onClick={() => void save()} disabled={!hasUnsavedChanges || saving}>
+            {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+            保存并生效
+          </Button>
+        </div>
+      </div>
 
       <div className="discounts-grid">
         <Card>
@@ -99,7 +157,7 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
             </div>
           </CardHeader>
           <CardContent>
-            {wb.costDiscountRows.length ? (
+            {draftCostRows.length ? (
               <div className="discount-table-wrap">
                 <table className="discount-table">
                   <thead>
@@ -112,14 +170,14 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {wb.costDiscountRows.map((row, index) => (
+                    {draftCostRows.map((row, index) => (
                       <tr key={`cost-${index}`}>
                         <td><input value={row.channel_id} onChange={(e) => updateCostRow(index, { channel_id: e.target.value })} placeholder="65" /></td>
                         <td><span className="discount-name">{row.channel_name || "-"}</span></td>
                         <td><input value={row.model} onChange={(e) => updateCostRow(index, { model: e.target.value })} placeholder="*" /></td>
                         <td><input type="number" step="0.01" value={row.discount} onChange={(e) => updateCostRow(index, { discount: Number(e.target.value) })} /></td>
                         <td>
-                          <button type="button" className="icon-btn" onClick={() => wb.setCostDiscountRows((rows) => rows.filter((_, i) => i !== index))}>
+                          <button type="button" className="icon-btn" onClick={() => setDraftCostRows((rows) => rows.filter((_, i) => i !== index))}>
                             <Trash2 size={14} />
                           </button>
                         </td>
@@ -158,7 +216,7 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
             </div>
           </CardHeader>
           <CardContent>
-            {wb.revenueDiscountRows.length ? (
+            {draftRevenueRows.length ? (
               <div className="discount-table-wrap">
                 <table className="discount-table">
                   <thead>
@@ -171,14 +229,14 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {wb.revenueDiscountRows.map((row, index) => (
+                    {draftRevenueRows.map((row, index) => (
                       <tr key={`rev-${index}`}>
                         <td><input value={row.user_id} onChange={(e) => updateRevenueRow(index, { user_id: e.target.value })} placeholder="89" /></td>
                         <td><span className="discount-name">{row.user_name || "-"}</span></td>
                         <td><input value={row.model} onChange={(e) => updateRevenueRow(index, { model: e.target.value })} placeholder="*" /></td>
                         <td><input type="number" step="0.01" value={row.discount} onChange={(e) => updateRevenueRow(index, { discount: Number(e.target.value) })} /></td>
                         <td>
-                          <button type="button" className="icon-btn" onClick={() => wb.setRevenueDiscountRows((rows) => rows.filter((_, i) => i !== index))}>
+                          <button type="button" className="icon-btn" onClick={() => setDraftRevenueRows((rows) => rows.filter((_, i) => i !== index))}>
                             <Trash2 size={14} />
                           </button>
                         </td>
@@ -195,9 +253,13 @@ export function DiscountsPage({ wb }: { wb: WorkbenchState }) {
       </div>
 
       <div className="discounts-actions">
-        <Button onClick={() => void save()} disabled={saving}>
+        <Button variant="ghost" onClick={resetDraft} disabled={!hasUnsavedChanges || saving}>
+          <RotateCcw size={15} />
+          放弃改动
+        </Button>
+        <Button onClick={() => void save()} disabled={!hasUnsavedChanges || saving}>
           {saving ? <Loader2 size={15} className="spin" /> : <Save size={15} />}
-          保存折扣（立即生效）
+          保存折扣并生效
         </Button>
       </div>
     </div>
