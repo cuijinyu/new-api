@@ -20,7 +20,9 @@ import { Badge, Button } from "../components/ui";
 import {
   BILL_SIDEBAR_GROUPS,
   BILL_TYPE_GROUPS,
+  buildBillBusinessRows,
   billDocumentAmount,
+  billDocumentBusinessMetrics,
   billDocumentMoneyBreakdown,
   billObjectAxis,
   billObjectAxisLabel,
@@ -38,7 +40,7 @@ import {
 } from "../lib/billLibrary";
 import { billingExecutionLabel } from "../lib/billing";
 import { asJsonObject, billTypeText, formatDate, formatMoney, shortId, statusText, statusTone, textOf } from "../lib/format";
-import type { BillDownloadItem, BillFileSection } from "../lib/billLibrary";
+import type { BillBusinessRow, BillDownloadItem, BillFileSection } from "../lib/billLibrary";
 import type { BillDocument, JsonObject, PageId } from "../types";
 import type { WorkbenchState } from "../hooks/useWorkbench";
 
@@ -68,6 +70,109 @@ function ObjectAxisBadge({ axis }: { axis: "customer" | "channel" }) {
       {axis === "customer" ? <UserRound size={11} /> : <Building2 size={11} />}
       {billObjectAxisLabel(axis)}
     </span>
+  );
+}
+
+function formatBusinessMoney(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? formatMoney(value) : "—";
+}
+
+function businessMargin(row: BillBusinessRow) {
+  const base = row.payableUsd ?? row.revenueUsd ?? row.listPriceUsd;
+  if (typeof base !== "number" || !Number.isFinite(base) || base === 0) return null;
+  if (typeof row.profitUsd !== "number" || !Number.isFinite(row.profitUsd)) return null;
+  return row.profitUsd / base;
+}
+
+function formatBusinessMargin(row: BillBusinessRow) {
+  const margin = businessMargin(row);
+  return margin === null ? "—" : `${(margin * 100).toFixed(1)}%`;
+}
+
+function sumBusinessMetric(rows: BillBusinessRow[], key: keyof Pick<BillBusinessRow, "listPriceUsd" | "payableUsd" | "revenueUsd" | "costUsd" | "profitUsd">) {
+  const values = rows.map((row) => row[key]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+}
+
+function businessPeriodLabel(value: string) {
+  if (!value) return "—";
+  return value.length === 7 ? formatBillMonth(value) : value;
+}
+
+function BusinessOverviewCard({ axis, rows }: { axis: "customer" | "channel"; rows: BillBusinessRow[] }) {
+  const title = axis === "channel" ? "渠道经营概览" : "客户经营概览";
+  const subtitle = axis === "channel" ? "按渠道汇总刊例价、成本和利润" : "按客户汇总刊例价、应付、成本和利润";
+  const primaryLabel = axis === "channel" ? "渠道数" : "客户数";
+  const revenueLabel = axis === "channel" ? "收入/应付" : "应付";
+  const primaryAmount = axis === "channel" ? sumBusinessMetric(rows, "costUsd") : sumBusinessMetric(rows, "payableUsd");
+  const primaryAmountLabel = axis === "channel" ? "成本" : "应付";
+
+  return (
+    <section className="bills-business-card">
+      <div className="bills-business-head">
+        <div>
+          <span>{subtitle}</span>
+          <strong>{title}</strong>
+        </div>
+        <ObjectAxisBadge axis={axis} />
+      </div>
+      <div className="bills-business-totals">
+        <div>
+          <span>{primaryLabel}</span>
+          <strong>{rows.length}</strong>
+        </div>
+        <div>
+          <span>刊例价</span>
+          <strong>{formatBusinessMoney(sumBusinessMetric(rows, "listPriceUsd"))}</strong>
+        </div>
+        <div>
+          <span>{primaryAmountLabel}</span>
+          <strong>{formatBusinessMoney(primaryAmount)}</strong>
+        </div>
+        <div>
+          <span>利润</span>
+          <strong className={(sumBusinessMetric(rows, "profitUsd") ?? 0) < 0 ? "is-negative" : ""}>{formatBusinessMoney(sumBusinessMetric(rows, "profitUsd"))}</strong>
+        </div>
+      </div>
+      {rows.length ? (
+        <div className="bills-business-table-wrap">
+          <table className="bills-business-table">
+            <thead>
+              <tr>
+                <th>{axis === "channel" ? "渠道" : "客户"}</th>
+                <th>刊例价</th>
+                <th>{revenueLabel}</th>
+                <th>成本</th>
+                <th>利润</th>
+                <th>利润率</th>
+                <th>单据</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.axis}-${row.targetId}`}>
+                  <td>
+                    <strong>{row.displayName || row.targetLabel}</strong>
+                    <small>{row.displayName ? row.targetLabel : businessPeriodLabel(row.latestPeriod)}</small>
+                  </td>
+                  <td>{formatBusinessMoney(row.listPriceUsd)}</td>
+                  <td>{formatBusinessMoney(row.payableUsd ?? row.revenueUsd)}</td>
+                  <td>{formatBusinessMoney(row.costUsd)}</td>
+                  <td className={(row.profitUsd ?? 0) < 0 ? "is-negative" : ""}>{formatBusinessMoney(row.profitUsd)}</td>
+                  <td>{formatBusinessMargin(row)}</td>
+                  <td>
+                    <span>{row.documentCount}</span>
+                    <small>{row.sourceTypes.map((type) => billTypeShort(type)).join(" / ")}</small>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="bills-business-empty">当前筛选下暂无可汇总金额</div>
+      )}
+    </section>
   );
 }
 
@@ -142,6 +247,9 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
   const selected = visibleDocs.find((doc) => doc.id === selectedId) || visibleDocs[0];
   const currentType = BILL_TYPE_GROUPS.find((type) => type.id === activeType) || BILL_TYPE_GROUPS[0];
   const showDayColumn = activeType === "daily_channel_cost_snapshot" || activeType === "all";
+  const businessRows = useMemo(() => buildBillBusinessRows(visibleDocs), [visibleDocs]);
+  const channelBusinessRows = useMemo(() => businessRows.filter((row) => row.axis === "channel"), [businessRows]);
+  const customerBusinessRows = useMemo(() => businessRows.filter((row) => row.axis === "customer"), [businessRows]);
 
   const docsForTotal = visibleDocs.some(isAggregateBillDocument) ? visibleDocs.filter(isAggregateBillDocument) : visibleDocs;
   const totalAmount = docsForTotal.reduce((sum, doc) => {
@@ -233,6 +341,11 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
         </div>
       </section>
 
+      <div className="bills-business-overview">
+        <BusinessOverviewCard axis="channel" rows={channelBusinessRows} />
+        <BusinessOverviewCard axis="customer" rows={customerBusinessRows} />
+      </div>
+
       <div className="file-explorer bills-explorer">
         <div className="explorer-toolbar">
           <div className="explorer-nav">
@@ -310,15 +423,18 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
           <div className={`bill-list-head ${showDayColumn ? "bill-list-head-with-day" : ""}`}>
             <span>账期</span>
             {showDayColumn ? <span>具体日期</span> : null}
-            <span>对象</span>
             <span>具体对象</span>
             <span>类型</span>
-            <span>金额</span>
+            <span>刊例价</span>
+            <span>应付/收入</span>
+            <span>成本</span>
+            <span>利润</span>
             <span>状态</span>
           </div>
           <div className="file-list-body">
             {visibleDocs.map((doc) => {
               const amount = billDocumentAmount(doc);
+              const business = billDocumentBusinessMetrics(doc);
               const date = resolveBillDate(doc);
               const object = billObjectCell(doc);
               const axis = billObjectAxis(doc);
@@ -338,16 +454,22 @@ export function BillsPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
                       <strong>{date.dayLabel || "—"}</strong>
                     </span>
                   ) : null}
-                  <span>
-                    <ObjectAxisBadge axis={object.axis} />
-                  </span>
                   <span className="bill-target-cell">{object.target}</span>
                   <span className="bill-name-cell">
                     <strong>{billTypeShort(doc.bill_type)}</strong>
                     {splits.total > 0 ? <small>{splits.total} 份拆分</small> : null}
                   </span>
+                  <span className="bill-amount" title="刊例价">
+                    {formatBusinessMoney(business.listPriceUsd)}
+                  </span>
                   <span className="bill-amount" title={amount.label}>
-                    {formatMoney(amount.amount)}
+                    {formatBusinessMoney(business.payableUsd ?? business.revenueUsd)}
+                  </span>
+                  <span className="bill-amount" title="成本">
+                    {formatBusinessMoney(business.costUsd)}
+                  </span>
+                  <span className={`bill-amount ${(business.profitUsd ?? 0) < 0 ? "is-negative" : ""}`} title="利润">
+                    {formatBusinessMoney(business.profitUsd)}
                   </span>
                   <span>
                     <Badge tone={statusTone(doc.status)}>{statusText(doc.status)}</Badge>

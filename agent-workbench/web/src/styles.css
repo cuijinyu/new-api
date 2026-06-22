@@ -6441,6 +6441,162 @@ tr:last-child td {
   margin-bottom: 0;
 }
 
+.bills-business-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.bills-business-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.bills-business-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.bills-business-head div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bills-business-head span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bills-business-head strong {
+  font-size: 15px;
+}
+
+.bills-business-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bills-business-totals > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: #fbfcff;
+}
+
+.bills-business-totals span,
+.bills-business-table small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bills-business-totals strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bills-business-table-wrap {
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.bills-business-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  font-size: 10.5px;
+}
+
+.bills-business-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.bills-business-table td {
+  padding: 7px 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bills-business-table td:first-child {
+  white-space: normal;
+}
+
+.bills-business-table th:nth-child(1),
+.bills-business-table td:nth-child(1) {
+  width: 22%;
+}
+
+.bills-business-table th:nth-child(2),
+.bills-business-table td:nth-child(2),
+.bills-business-table th:nth-child(3),
+.bills-business-table td:nth-child(3),
+.bills-business-table th:nth-child(4),
+.bills-business-table td:nth-child(4),
+.bills-business-table th:nth-child(5),
+.bills-business-table td:nth-child(5) {
+  width: 14%;
+}
+
+.bills-business-table th:nth-child(6),
+.bills-business-table td:nth-child(6) {
+  width: 10%;
+}
+
+.bills-business-table th:nth-child(7),
+.bills-business-table td:nth-child(7) {
+  width: 12%;
+}
+
+.bills-business-table td strong,
+.bills-business-table td small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bills-business-table td small {
+  white-space: nowrap;
+}
+
+.bills-business-empty {
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bills-business-table .is-negative,
+.bills-business-totals .is-negative,
+.bill-amount.is-negative {
+  color: var(--red);
+}
+
 .bills-explorer {
   grid-template-rows: auto minmax(480px, calc(100vh - 300px));
   min-height: auto;
@@ -6459,14 +6615,14 @@ tr:last-child td {
 .bill-list-head,
 .bill-row {
   display: grid;
-  grid-template-columns: minmax(96px, 0.8fr) minmax(72px, 0.65fr) minmax(110px, 0.75fr) minmax(100px, 0.9fr) minmax(72px, 0.65fr) minmax(88px, 0.75fr) minmax(72px, 0.6fr);
+  grid-template-columns: minmax(92px, 0.75fr) minmax(120px, 1fr) minmax(92px, 0.75fr) repeat(4, minmax(82px, 0.72fr)) minmax(72px, 0.58fr);
   gap: 8px;
   align-items: center;
 }
 
 .bill-list-head.bill-list-head-with-day,
 .bill-row.bill-row-with-day {
-  grid-template-columns: minmax(88px, 0.75fr) minmax(108px, 0.95fr) minmax(68px, 0.55fr) minmax(100px, 0.85fr) minmax(72px, 0.65fr) minmax(88px, 0.75fr) minmax(72px, 0.6fr);
+  grid-template-columns: minmax(86px, 0.68fr) minmax(96px, 0.8fr) minmax(110px, 0.9fr) minmax(88px, 0.68fr) repeat(4, minmax(78px, 0.68fr)) minmax(72px, 0.55fr);
 }
 
 .bill-list-head {
@@ -7002,4 +7158,16 @@ tr:last-child td {
 .bill-file-card-icon-channel {
   background: #f4f3ff;
   color: #5925dc;
+}
+
+@media (max-width: 960px) {
+  .bills-business-overview {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .bills-business-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

@@ -153,9 +153,27 @@ export function billObjectCell(document: BillDocument): { axis: BillObjectAxis; 
 }
 
 export type BillMoneyMetric = {
-  id: "total" | "revenue" | "cost" | "list_price" | "parent_total";
+  id: "total" | "revenue" | "cost" | "list_price" | "profit" | "parent_total";
   label: string;
   amount: number;
+};
+
+export type BillBusinessMetrics = {
+  listPriceUsd: number | null;
+  payableUsd: number | null;
+  revenueUsd: number | null;
+  costUsd: number | null;
+  profitUsd: number | null;
+};
+
+export type BillBusinessRow = BillBusinessMetrics & {
+  axis: BillObjectAxis;
+  targetId: string;
+  targetLabel: string;
+  displayName: string;
+  documentCount: number;
+  latestPeriod: string;
+  sourceTypes: string[];
 };
 
 function moneyNumber(value: unknown): number | null {
@@ -169,6 +187,14 @@ function firstMoney(summary: JsonObject, keys: string[]): number {
     if (amount !== null) return amount;
   }
   return Number.NaN;
+}
+
+function firstNullableMoney(summary: JsonObject, keys: string[]): number | null {
+  for (const key of keys) {
+    const amount = moneyNumber(summary[key]);
+    if (amount !== null) return amount;
+  }
+  return null;
 }
 
 export function billDocumentAmount(document: BillDocument): BillMoneyMetric {
@@ -197,8 +223,254 @@ export function billDocumentMoneyBreakdown(document: BillDocument): BillMoneyMet
   add("revenue", "收入金额", summary.revenue_usd);
   add("cost", "成本金额", summary.cost_usd);
   add("list_price", "刊例价", summary.list_price_usd);
+  add("profit", "利润", summary.profit_usd);
   add("parent_total", "母单合计", summary.parent_total_usd);
   return metrics;
+}
+
+export function billBusinessMetricsFromSummary(summary: JsonObject, billType?: unknown): BillBusinessMetrics {
+  const type = String(billType || summary.bill_type || "");
+  const listPriceUsd = firstNullableMoney(summary, ["list_price_usd", "list_price", "gross_usd", "pre_discount_usd"]);
+  const revenueUsd = firstNullableMoney(summary, ["revenue_usd", "receivable_usd", "income_usd"]);
+  const totalUsd = firstNullableMoney(summary, ["total_usd"]);
+  let payableUsd = firstNullableMoney(summary, ["payable_usd", "amount_due_usd", "revenue_usd", "receivable_usd"]);
+  let costUsd = firstNullableMoney(summary, ["cost_usd", "our_cost_usd", "upstream_cost_usd"]);
+
+  if (payableUsd === null && (type === "customer_invoice" || type === "internal_customer_bill")) {
+    payableUsd = totalUsd;
+  }
+  if (costUsd === null && (type === "channel_cost_bill" || type === "daily_channel_cost_snapshot")) {
+    costUsd = totalUsd;
+  }
+
+  let profitUsd = firstNullableMoney(summary, ["profit_usd", "gross_profit_usd", "margin_usd"]);
+  const profitBase = payableUsd ?? revenueUsd;
+  if (profitUsd === null && profitBase !== null && costUsd !== null) {
+    profitUsd = profitBase - costUsd;
+  }
+
+  return { listPriceUsd, payableUsd, revenueUsd, costUsd, profitUsd };
+}
+
+export function billDocumentBusinessMetrics(document: BillDocument): BillBusinessMetrics {
+  return billBusinessMetricsFromSummary(asJsonObject(document.summary) || {}, document.bill_type);
+}
+
+function hasBusinessMetric(metrics: BillBusinessMetrics): boolean {
+  return Object.values(metrics).some((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function addNullable(current: number | null, value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return current;
+  return (current ?? 0) + value;
+}
+
+function entityIdForDocument(document: BillDocument, axis: BillObjectAxis): string {
+  const summary = asJsonObject(document.summary) || {};
+  const targetType = String(document.target_type || summary.target_type || "").trim();
+  const targetId = String(document.target_id || summary.target_id || "").trim();
+  if (axis === "customer") {
+    return String(summary.user_id || (targetType === "customer" || targetType === "user" ? targetId : "") || "").trim();
+  }
+  return String(summary.channel_id || (targetType === "channel" ? targetId : "") || "").trim();
+}
+
+function entityNameFromSummary(summary: JsonObject, axis: BillObjectAxis): string {
+  const keys = axis === "customer" ? ["username", "user_name", "customer_name", "name"] : ["channel_name", "vendor", "name"];
+  for (const key of keys) {
+    const value = String(summary[key] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function businessDateKey(document: BillDocument): string {
+  const date = resolveBillDate(document);
+  return date.raw || date.monthKey || String(document.month || "");
+}
+
+function sourceKey(document: BillDocument, axis: BillObjectAxis, targetId: string, monthOnly = false): string {
+  const date = resolveBillDate(document);
+  return [monthOnly ? date.monthKey : businessDateKey(document), axis, targetId].join("|");
+}
+
+function perEntitySummaryMap(summary: JsonObject, axis: BillObjectAxis): JsonObject {
+  const billSummary = asJsonObject(summary.bill_summary) || {};
+  const key = axis === "channel" ? "per_channel_summary" : "per_customer_summary";
+  return asJsonObject(billSummary[key]) || asJsonObject(summary[key]) || {};
+}
+
+function documentUpdatedMs(document: BillDocument): number {
+  const raw = String(document.updated_at || document.created_at || "");
+  const value = Date.parse(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function businessDocumentKey(document: BillDocument): string {
+  const axis = billObjectAxis(document);
+  const targetId = entityIdForDocument(document, axis) || "all";
+  return [document.bill_type || "", businessDateKey(document), axis, targetId].join("|");
+}
+
+function latestBusinessDocuments(documents: BillDocument[]): BillDocument[] {
+  const byKey = new Map<string, BillDocument>();
+  for (const document of documents) {
+    const key = businessDocumentKey(document);
+    const existing = byKey.get(key);
+    if (!existing || documentUpdatedMs(document) >= documentUpdatedMs(existing)) {
+      byKey.set(key, document);
+    }
+  }
+  return [...byKey.values()];
+}
+
+type MutableBusinessRow = BillBusinessRow & { sourceTypeSet: Set<string> };
+
+function addBusinessRow(
+  rows: Map<string, MutableBusinessRow>,
+  params: {
+    axis: BillObjectAxis;
+    targetId: string;
+    targetLabel: string;
+    displayName: string;
+    period: string;
+    billType: string;
+    metrics: BillBusinessMetrics;
+  },
+) {
+  if (!hasBusinessMetric(params.metrics)) return;
+  const id = params.targetId || "all";
+  const key = `${params.axis}:${id}`;
+  const row =
+    rows.get(key) ||
+    ({
+      axis: params.axis,
+      targetId: id,
+      targetLabel: params.targetLabel,
+      displayName: params.displayName,
+      documentCount: 0,
+      latestPeriod: "",
+      sourceTypes: [],
+      sourceTypeSet: new Set<string>(),
+      listPriceUsd: null,
+      payableUsd: null,
+      revenueUsd: null,
+      costUsd: null,
+      profitUsd: null,
+    } satisfies MutableBusinessRow);
+
+  row.targetLabel = params.targetLabel || row.targetLabel;
+  row.displayName = params.displayName || row.displayName;
+  row.documentCount += 1;
+  row.latestPeriod = !row.latestPeriod || params.period.localeCompare(row.latestPeriod) > 0 ? params.period : row.latestPeriod;
+  row.sourceTypeSet.add(params.billType);
+  row.listPriceUsd = addNullable(row.listPriceUsd, params.metrics.listPriceUsd);
+  row.payableUsd = addNullable(row.payableUsd, params.metrics.payableUsd);
+  row.revenueUsd = addNullable(row.revenueUsd, params.metrics.revenueUsd);
+  row.costUsd = addNullable(row.costUsd, params.metrics.costUsd);
+  row.profitUsd = addNullable(row.profitUsd, params.metrics.profitUsd);
+  rows.set(key, row);
+}
+
+export function buildBillBusinessRows(documents: BillDocument[]): BillBusinessRow[] {
+  const businessDocuments = latestBusinessDocuments(documents);
+  const rows = new Map<string, MutableBusinessRow>();
+  const internalCustomerKeys = new Set<string>();
+  const monthlyChannelKeys = new Set<string>();
+  const splitKeys = new Set<string>();
+
+  for (const document of businessDocuments) {
+    const axis = billObjectAxis(document);
+    const targetId = entityIdForDocument(document, axis);
+    if (!targetId || !isSplitBillDocument(document)) continue;
+    if (document.bill_type === "internal_customer_bill" && axis === "customer") {
+      internalCustomerKeys.add(sourceKey(document, axis, targetId));
+    }
+    if (document.bill_type === "channel_cost_bill" && axis === "channel") {
+      monthlyChannelKeys.add(sourceKey(document, axis, targetId, true));
+    }
+  }
+
+  for (const document of businessDocuments) {
+    const axis = billObjectAxis(document);
+    const targetId = entityIdForDocument(document, axis);
+    if (!targetId || !isSplitBillDocument(document)) continue;
+    if (axis === "customer" && document.bill_type === "customer_invoice" && internalCustomerKeys.has(sourceKey(document, axis, targetId))) {
+      continue;
+    }
+    if (
+      axis === "channel" &&
+      document.bill_type === "daily_channel_cost_snapshot" &&
+      monthlyChannelKeys.has(sourceKey(document, axis, targetId, true))
+    ) {
+      continue;
+    }
+    splitKeys.add(sourceKey(document, axis, targetId));
+    const summary = asJsonObject(document.summary) || {};
+    addBusinessRow(rows, {
+      axis,
+      targetId,
+      targetLabel: axis === "customer" ? `客户 #${targetId}` : `渠道 #${targetId}`,
+      displayName: entityNameFromSummary(summary, axis),
+      period: businessDateKey(document),
+      billType: String(document.bill_type || ""),
+      metrics: billBusinessMetricsFromSummary(summary, document.bill_type),
+    });
+  }
+
+  for (const document of businessDocuments) {
+    if (!isAggregateBillDocument(document)) continue;
+    const axis = billObjectAxis(document);
+    const summary = asJsonObject(document.summary) || {};
+    const map = perEntitySummaryMap(summary, axis);
+    for (const [targetId, rawMetrics] of Object.entries(map)) {
+      if (!targetId || typeof rawMetrics !== "object" || rawMetrics === null || Array.isArray(rawMetrics)) continue;
+      const metricsSummary = rawMetrics as JsonObject;
+      if (splitKeys.has(sourceKey(document, axis, targetId))) continue;
+      if (axis === "customer" && document.bill_type === "customer_invoice" && internalCustomerKeys.has(sourceKey(document, axis, targetId))) continue;
+      if (
+        axis === "channel" &&
+        document.bill_type === "daily_channel_cost_snapshot" &&
+        monthlyChannelKeys.has(sourceKey(document, axis, targetId, true))
+      ) {
+        continue;
+      }
+      addBusinessRow(rows, {
+        axis,
+        targetId,
+        targetLabel: axis === "customer" ? `客户 #${targetId}` : `渠道 #${targetId}`,
+        displayName: entityNameFromSummary(metricsSummary, axis),
+        period: businessDateKey(document),
+        billType: String(document.bill_type || ""),
+        metrics: billBusinessMetricsFromSummary(metricsSummary, document.bill_type),
+      });
+    }
+
+    const targetId = entityIdForDocument(document, axis) || "all";
+    if (targetId === "all" && Object.keys(map).length) continue;
+    addBusinessRow(rows, {
+      axis,
+      targetId,
+      targetLabel: billTargetLabel(document),
+      displayName: entityNameFromSummary(summary, axis),
+      period: businessDateKey(document),
+      billType: String(document.bill_type || ""),
+      metrics: billBusinessMetricsFromSummary(summary, document.bill_type),
+    });
+  }
+
+  return [...rows.values()]
+    .map(({ sourceTypeSet, ...row }) => ({
+      ...row,
+      sourceTypes: [...sourceTypeSet].filter(Boolean).sort(),
+    }))
+    .sort((a, b) => {
+      if (a.axis !== b.axis) return a.axis === "channel" ? -1 : 1;
+      const aPrimary = a.axis === "channel" ? a.costUsd ?? a.payableUsd ?? a.listPriceUsd ?? 0 : a.payableUsd ?? a.revenueUsd ?? a.listPriceUsd ?? 0;
+      const bPrimary = b.axis === "channel" ? b.costUsd ?? b.payableUsd ?? b.listPriceUsd ?? 0 : b.payableUsd ?? b.revenueUsd ?? b.listPriceUsd ?? 0;
+      if (bPrimary !== aPrimary) return bPrimary - aPrimary;
+      return a.targetId.localeCompare(b.targetId, undefined, { numeric: true });
+    });
 }
 
 export function billScopeLabel(document: BillDocument): string {
