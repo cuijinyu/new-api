@@ -68,6 +68,7 @@ export async function apiRequest<T = unknown>(
 
 export type SessionQuery = {
   q?: string;
+  status?: string;
   vendor?: string;
   month?: string;
   tag?: string;
@@ -77,6 +78,7 @@ export type SessionQuery = {
 export function buildSessionQuery(query: SessionQuery): string {
   const params = new URLSearchParams();
   if (query.q?.trim()) params.set("q", query.q.trim());
+  if (query.status?.trim() && query.status.trim() !== "all") params.set("status", query.status.trim());
   if (query.vendor?.trim()) params.set("vendor", query.vendor.trim());
   if (query.month?.trim()) params.set("month", query.month.trim());
   if (query.tag?.trim()) params.set("tag", query.tag.trim());
@@ -138,7 +140,7 @@ export const endpoints = {
   saveChangeRequestExperience: (id: string) => `/api/change-requests/${id}/save-experience`,
   // [assumption] 一键重新生成账单：创建 billing_rerun_after_suggestion job。
   rerunBillForChangeRequest: (id: string) => `/api/change-requests/${id}/rerun-bill`,
-  // agent 会话：列表支持 q,vendor,month,tag,favorite 查询参数。
+  // agent 会话：列表支持 q,status,favorite 查询参数；vendor/month/tag 仅保留为旧入口兼容。
   sessions: (query: SessionQuery = {}) => `/api/agent/sessions${buildSessionQuery(query)}`,
   session: (id: string) => `/api/agent/sessions/${id}`,
   sessionHistory: (id: string) => `/api/agent/sessions/${id}/history`,

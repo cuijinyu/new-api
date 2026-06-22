@@ -285,14 +285,47 @@ def create_agent_session(req: AgentSessionRequest) -> dict[str, Any]:
     }
 
 
+SESSION_STATUS_GROUPS = {
+    "active": ["CREATED", "SANDBOX_READY", "RUNNING", "HUMAN_REPLIED"],
+    "paused": ["PAUSED"],
+    "done": ["COMPLETED"],
+    "failed": ["FAILED"],
+}
+
+
+def _session_status_filter(status: str | None) -> list[str]:
+    value = (status or "").strip()
+    if not value or value.lower() == "all":
+        return []
+    group = SESSION_STATUS_GROUPS.get(value.lower())
+    if group:
+        return group
+    return [item.strip().upper() for item in value.split(",") if item.strip()]
+
+
 @router.get("/api/agent/sessions")
-def list_agent_sessions(q: str | None = None, vendor: str | None = None, month: str | None = None, tag: str | None = None, favorite: bool | None = None, limit: int = 50) -> dict[str, Any]:
+def list_agent_sessions(
+    q: str | None = None,
+    status: str | None = None,
+    vendor: str | None = None,
+    month: str | None = None,
+    tag: str | None = None,
+    favorite: bool | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
     filters: list[str] = []
     args: list[Any] = []
     if q:
-        filters.append("(COALESCE(title, '') ILIKE %s OR prompt ILIKE %s)")
+        filters.append(
+            "(COALESCE(title, '') ILIKE %s OR COALESCE(prompt, '') ILIKE %s OR id ILIKE %s OR "
+            "COALESCE(vendor, '') ILIKE %s OR COALESCE(month, '') ILIKE %s OR COALESCE(tags::text, '') ILIKE %s)"
+        )
         like = f"%{q}%"
-        args.extend([like, like])
+        args.extend([like, like, like, like, like, like])
+    statuses = _session_status_filter(status)
+    if statuses:
+        filters.append("status = ANY(%s)")
+        args.append(statuses)
     if vendor:
         filters.append("vendor = %s")
         args.append(vendor)

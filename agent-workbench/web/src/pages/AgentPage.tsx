@@ -70,6 +70,14 @@ const resourceKindFilters: Array<{ id: ResourceKindFilter; label: string }> = [
   { id: "evidence", label: "凭证" },
 ];
 
+const sessionStatusFilters = [
+  { id: "all", label: "全部" },
+  { id: "active", label: "进行中" },
+  { id: "paused", label: "暂停" },
+  { id: "done", label: "完成" },
+  { id: "failed", label: "失败" },
+];
+
 function uniqueFiles(files: UploadedFile[]) {
   const seen = new Set<string>();
   return files.filter((file) => {
@@ -455,19 +463,21 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
           </Button>
         </div>
 
-        <div className="agent-filter-row">
-          <input
-            value={wb.sessionFilter.vendor}
-            onChange={(event) => wb.setSessionFilter((prev) => ({ ...prev, vendor: event.target.value }))}
-            onKeyDown={(event) => event.key === "Enter" && applyFilter()}
-            placeholder="供应商"
-          />
-          <input
-            value={wb.sessionFilter.month}
-            onChange={(event) => wb.setSessionFilter((prev) => ({ ...prev, month: event.target.value }))}
-            onKeyDown={(event) => event.key === "Enter" && applyFilter()}
-            placeholder="账期"
-          />
+        <div className="agent-status-filter-row" role="group" aria-label="任务状态筛选">
+          {sessionStatusFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={wb.sessionFilter.status === filter.id ? "active" : ""}
+              onClick={() => {
+                const nextFilter = { ...wb.sessionFilter, status: filter.id };
+                wb.setSessionFilter(nextFilter);
+                void wb.refreshSessions({ filter: nextFilter });
+              }}
+            >
+              {filter.label}
+            </button>
+          ))}
         </div>
 
         <label className="agent-favorite-filter">
@@ -476,8 +486,9 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
             checked={wb.sessionFilter.favorite}
             onChange={(event) => {
               const favorite = event.target.checked;
-              wb.setSessionFilter((prev) => ({ ...prev, favorite }));
-              void wb.refreshSessions({ filter: { ...wb.sessionFilter, favorite } });
+              const nextFilter = { ...wb.sessionFilter, favorite };
+              wb.setSessionFilter(nextFilter);
+              void wb.refreshSessions({ filter: nextFilter });
             }}
           />
           只看收藏任务

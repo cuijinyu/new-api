@@ -405,9 +405,7 @@ export type AgentForm = {
 
 export type SessionFilter = {
   q: string;
-  vendor: string;
-  month: string;
-  tag: string;
+  status: string;
   favorite: boolean;
 };
 

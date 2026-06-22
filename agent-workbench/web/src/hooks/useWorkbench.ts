@@ -235,7 +235,7 @@ export function useWorkbench() {
   const [rawLogSearchResult, setRawLogSearchResult] = useState<RawLogSearchResult | null>(null);
 
   const [sessions, setSessions] = useState<AgentSession[]>([]);
-  const [sessionFilter, setSessionFilter] = useState<SessionFilter>({ q: "", vendor: "", month: "", tag: "", favorite: false });
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>({ q: "", status: "all", favorite: false });
   const [agentSessionId, setAgentSessionId] = useState("");
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
   const [agentFiles, setAgentFiles] = useState<UploadedFile[]>([]);
@@ -782,7 +782,7 @@ export function useWorkbench() {
     async (options: { selectLatest?: boolean; filter?: SessionFilter } = {}) => {
       const filter = options.filter || sessionFilter;
       const result = await apiRequest<{ items: AgentSession[] }>(
-        endpoints.sessions({ q: filter.q, vendor: filter.vendor, month: filter.month, tag: filter.tag, favorite: filter.favorite }),
+        endpoints.sessions({ q: filter.q, status: filter.status, favorite: filter.favorite }),
       );
       if (!result.ok) return;
       const items = result.data.items || [];
