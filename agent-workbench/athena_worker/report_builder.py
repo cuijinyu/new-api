@@ -36,7 +36,7 @@ def _int_numeric_sum(df: pd.DataFrame, column: str) -> int:
 
 
 def _summary_amount_column(bill_type: str | None) -> str:
-    if bill_type == "channel_cost_bill":
+    if bill_type in {"channel_cost_bill", "daily_channel_cost_snapshot"}:
         return "cost_usd"
     return "revenue_usd"
 
@@ -134,6 +134,7 @@ def _write_bill_summary(
     xlsx_path: str | None = None,
     per_customer_paths: list[str] | None = None,
     per_channel_paths: list[str] | None = None,
+    extra: dict | None = None,
 ) -> str:
     import json
 
@@ -167,6 +168,8 @@ def _write_bill_summary(
             "per_customer_summary": {},
             "per_channel_summary": {},
         }
+    if extra:
+        payload.update(extra)
     path = os.path.join(output_dir, "bill_summary.json")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -1811,7 +1814,8 @@ def generate_daily_report(date: str, output_dir: str,
                           channel_id: int = None,
                           no_cache: bool = False,
                           detail: bool = False,
-                          split_channels: bool = True) -> str | list[str]:
+                          split_channels: bool = True,
+                          write_summary: bool = True) -> str | list[str]:
     """Generate daily report Excel with xlsxwriter formatting.
 
     When split_channels=True and channel_id is not set, also emits one workbook
@@ -1920,6 +1924,7 @@ def generate_daily_report(date: str, output_dir: str,
                     no_cache=no_cache,
                     detail=detail,
                     split_channels=False,
+                    write_summary=False,
                 )
                 if isinstance(ch_result, list):
                     per_channel_paths.extend(str(path) for path in ch_result)
@@ -1930,6 +1935,24 @@ def generate_daily_report(date: str, output_dir: str,
     if detail_path:
         output_paths.append(detail_path)
     output_paths.extend(per_channel_paths)
+    if write_summary:
+        df_full = run_query_cached(
+            queries.monthly_bill_full(year_month, start_day=date, end_day=date, channel_id=channel_id),
+            no_cache=no_cache,
+        )
+        if not df_full.empty:
+            df_full = pricing_engine.apply_pricing_summary(df_full)
+        summary_path = _write_bill_summary(
+            output_dir,
+            date,
+            df_full,
+            bill_type="daily_channel_cost_snapshot",
+            detail_path=detail_path,
+            xlsx_path=filepath,
+            per_channel_paths=per_channel_paths,
+            extra={"period": date, "snapshot_date": date},
+        )
+        output_paths.append(summary_path)
     return output_paths if len(output_paths) > 1 else filepath
 
 

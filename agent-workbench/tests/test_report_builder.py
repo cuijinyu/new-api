@@ -50,6 +50,83 @@ def test_bill_summary_uses_channel_cost_and_target_maps(tmp_path):
     assert payload["per_customer_summary"]["7"]["total_usd"] == 10.0
 
 
+def test_daily_report_writes_cost_summary_for_bill_library(tmp_path, monkeypatch):
+    monkeypatch.setattr(report_builder, "COST_MONITOR_AVAILABLE", False)
+    monkeypatch.setattr(report_builder.pricing_engine, "get_cost_discount", lambda channel_id, model: 0.5)
+    monkeypatch.setattr(report_builder.pricing_engine, "get_revenue_discount", lambda user_id, model: 0.8)
+
+    def fake_run_query_cached(sql: str, no_cache: bool = False):
+        if "GROUP BY user_id, username, channel_id, model_name" in sql:
+            return pd.DataFrame(
+                {
+                    "user_id": [7],
+                    "username": ["alpha"],
+                    "channel_id": [65],
+                    "model_name": ["unpriced-model"],
+                    "call_count": [3],
+                    "total_input_tokens": [1000],
+                    "total_output_tokens": [2000],
+                    "total_quota": [5_000_000],
+                    "total_usd": [10.0],
+                    "total_cache_hit_tokens": [0],
+                    "total_cache_write_tokens": [0],
+                    "total_cw_5m": [0],
+                    "total_cw_1h": [0],
+                    "total_cw_remaining": [0],
+                    "total_image_output_tokens": [0],
+                    "total_image_input_tokens": [0],
+                }
+            )
+        if "GROUP BY user_id, username" in sql:
+            return pd.DataFrame({"user_id": [7], "username": ["alpha"], "call_count": [3], "total_usd": [10.0]})
+        if "GROUP BY model_name" in sql:
+            return pd.DataFrame(
+                {
+                    "model_name": ["unpriced-model"],
+                    "call_count": [3],
+                    "total_tokens": [3000],
+                    "total_usd": [10.0],
+                    "avg_latency_sec": [1.2],
+                    "stream_pct": [100.0],
+                }
+            )
+        if "GROUP BY hour" in sql:
+            return pd.DataFrame({"hour": [1], "call_count": [3], "total_tokens": [3000], "total_usd": [10.0]})
+        return pd.DataFrame(
+            {
+                "total_calls": [3],
+                "unique_users": [1],
+                "unique_models": [1],
+                "total_input_tokens": [1000],
+                "total_output_tokens": [2000],
+                "total_quota": [5_000_000],
+                "total_usd": [10.0],
+            }
+        )
+
+    monkeypatch.setattr(report_builder, "run_query_cached", fake_run_query_cached)
+
+    result = report_builder.generate_daily_report(
+        "2026-06-20",
+        str(tmp_path),
+        detail=False,
+        split_channels=False,
+    )
+    paths = result if isinstance(result, list) else [result]
+    assert str(tmp_path / "bill_summary.json") in paths
+
+    payload = json.loads((tmp_path / "bill_summary.json").read_text(encoding="utf-8"))
+
+    assert payload["bill_type"] == "daily_channel_cost_snapshot"
+    assert payload["snapshot_date"] == "2026-06-20"
+    assert payload["amount_metric"] == "cost_usd"
+    assert payload["total_usd"] == 5.0
+    assert payload["cost_usd"] == 5.0
+    assert payload["revenue_usd"] == 8.0
+    assert payload["per_channel_summary"]["65"]["total_usd"] == 5.0
+    assert payload["per_customer_summary"]["7"]["total_usd"] == 5.0
+
+
 def test_detail_csv_zip_writes_readable_csv(tmp_path):
     df = pd.DataFrame(
         {
