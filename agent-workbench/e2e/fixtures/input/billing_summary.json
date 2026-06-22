@@ -1,0 +1,9 @@
+{
+  "run_id": "run-local-v0",
+  "month": "2026-06",
+  "channel_id": 65,
+  "config_version": "local-v0",
+  "total_amount_usd": 12.16,
+  "currency": "USD",
+  "rows": 3
+}

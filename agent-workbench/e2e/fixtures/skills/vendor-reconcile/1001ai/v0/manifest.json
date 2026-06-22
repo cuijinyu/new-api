@@ -1,0 +1,8 @@
+{
+  "name": "1001AI Vendor Reconcile Baseline",
+  "version": "v0",
+  "vendor": "1001AI",
+  "tags": ["billing", "reconcile", "fixture"],
+  "entrypoint": "SKILL.md",
+  "status": "active"
+}

@@ -1,0 +1,10 @@
+{
+  "month": "2026-06",
+  "channel_id": 65,
+  "vendor": "1001AI",
+  "config_version": "local-v0",
+  "total_amount_usd": 12.16,
+  "supplier_amount_usd": 10.75,
+  "expected_delta_usd": -1.41,
+  "expected_anomaly_count": 2
+}

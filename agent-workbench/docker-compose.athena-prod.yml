@@ -1,0 +1,66 @@
+# 覆盖 docker-compose.e2e.yml 中的 MinIO + fixture，改用仓库根目录 .env 的正式 AWS S3 / Athena。
+#
+# 用法（在 agent-workbench 目录）：
+#   docker compose --env-file ../.env \
+#     -f docker-compose.e2e.yml -f docker-compose.athena-prod.yml \
+#     up -d workbench-api billing-worker workbench-scheduler
+#
+# 或：make up-athena-prod
+
+x-athena-prod: &athena_prod
+  env_file:
+    - ../.env
+  environment: &athena_prod_env
+    WORKBENCH_ATHENA_EXECUTION: real
+    # 清空 e2e 的 fixture / MinIO，让 env_file 中的 RAW_LOG_S3_* / WORKBENCH_S3_* 生效
+    ATHENA_E2E_MODE: ""
+    ATHENA_FIXTURE_DIR: ""
+    WORKBENCH_S3_ENDPOINT: ""
+    WORKBENCH_S3_BUCKET: ${WORKBENCH_S3_BUCKET:-ezmodel-agent-workbench-prod}
+    WORKBENCH_S3_REGION: ${AWS_REGION:-ap-southeast-1}
+    WORKBENCH_S3_ACCESS_KEY_ID: ""
+    WORKBENCH_S3_SECRET_ACCESS_KEY: ""
+    AGENT_WORKBENCH_BUCKET: ${WORKBENCH_S3_BUCKET:-ezmodel-agent-workbench-prod}
+    AGENT_WORKBENCH_S3_ENDPOINT: ""
+    AGENT_WORKBENCH_S3_REGION: ${AWS_REGION:-ap-southeast-1}
+    AGENT_WORKBENCH_S3_ACCESS_KEY_ID: ""
+    AGENT_WORKBENCH_S3_SECRET_ACCESS_KEY: ""
+    AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+    ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-primary}
+    ATHENA_RESULT_BUCKET: ${ATHENA_RESULT_BUCKET:-ezmodel-log}
+    ATHENA_CACHE_BUCKET: ${ATHENA_CACHE_BUCKET:-ezmodel-log}
+
+services:
+  workbench-api:
+    <<: *athena_prod
+    environment:
+      <<: *athena_prod_env
+      TZ: Asia/Hong_Kong
+      GIN_MODE: release
+      SESSION_SECRET: agent-workbench-local-only
+      SQL_DSN: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      AGENT_WORKBENCH_ENABLED: "true"
+      AGENT_WORKBENCH_E2E: "false"
+
+  workbench-scheduler:
+    <<: *athena_prod
+    environment:
+      <<: *athena_prod_env
+      TZ: Asia/Hong_Kong
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      WORKBENCH_SCHEDULER_POLL_SECONDS: 60
+
+  billing-worker:
+    <<: *athena_prod
+    mem_limit: 4g
+    memswap_limit: 4g
+    environment:
+      <<: *athena_prod_env
+      TZ: Asia/Hong_Kong
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      WORKBENCH_WORKER_FAMILY: billing_run
+      WORKBENCH_WORKER_POLL_SECONDS: 10
+      WORKBENCH_JOB_CONCURRENCY_BILLING_RUN: 1
+      WORKBENCH_RECOVER_RUNNING_ON_STARTUP: "true"
+      WORKBENCH_RECOVER_RUNNING_GRACE_SECONDS: 30

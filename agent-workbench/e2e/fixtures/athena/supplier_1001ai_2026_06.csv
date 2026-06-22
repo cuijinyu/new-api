@@ -1,0 +1,4 @@
+request_id,vendor,month,channel_id,model,supplier_amount_usd,currency
+req-001,1001AI,2026-06,65,claude-3-5-sonnet-20241022,8.07,USD
+req-002,1001AI,2026-06,65,claude-3-5-haiku-20241022,1.18,USD
+req-003,1001AI,2026-06,65,gpt-4o-2024-08-06,1.50,USD

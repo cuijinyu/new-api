@@ -1,0 +1,4 @@
+request_id,day,channel_id,user_id,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens
+req-001,2026-06-03,65,10001,claude-3-5-sonnet-20241022,1000000,500000,200000,100000
+req-002,2026-06-03,65,10002,claude-3-5-haiku-20241022,500000,200000,0,0
+req-003,2026-06-04,65,10003,gpt-4o-2024-08-06,200000,100000,0,0

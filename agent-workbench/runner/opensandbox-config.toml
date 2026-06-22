@@ -1,0 +1,39 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+api_key = "local-dev-key"
+max_sandbox_timeout_seconds = 7200
+
+[runtime]
+# 本地 E2E 使用 Docker runtime，和单机 ECS/EC2 + Docker 的落地方式一致。
+type = "docker"
+execd_image = "opensandbox/execd:v1.0.19"
+
+[docker]
+# Docker socket 只给 OpenSandbox 控制面使用，业务 API 不直接操作宿主 Docker。
+network_mode = "agent-workbench-e2e_default"
+host_ip = "host.docker.internal"
+drop_capabilities = [
+  "AUDIT_WRITE",
+  "MKNOD",
+  "NET_ADMIN",
+  "NET_RAW",
+  "SYS_ADMIN",
+  "SYS_MODULE",
+  "SYS_PTRACE",
+  "SYS_TIME",
+  "SYS_TTY_CONFIG"
+]
+no_new_privileges = true
+pids_limit = 4096
+
+[storage]
+# 沙箱只能看到任务工作目录，报告和 Skill 草稿也从这里回收。
+allowed_host_paths = ["/srv/agent-workbench/jobs"]
+
+[ingress]
+mode = "direct"
+
+[egress]
+image = "opensandbox/egress:v1.1.1"
+mode = "dns"

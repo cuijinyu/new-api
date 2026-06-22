@@ -1,0 +1,139 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2025-04-25T00:00:00Z",
+  "models": [
+    {
+      "name": "claude-opus-4-6",
+      "type": "tiered",
+      "flat_tier": true,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 5, "op": 25, "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1, "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20}
+      ]
+    },
+    {
+      "name": "claude-opus-4-5-20251101",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 5, "op": 25, "chp": 0.5, "cwp": 6.25, "cwp_1h": 10},
+        {"min_k": 200, "max_k": -1, "ip": 10, "op": 37.5, "chp": 1.0, "cwp": 12.5, "cwp_1h": 20}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "type": "tiered",
+      "flat_tier": true,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-5-20250929",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-20250514",
+      "type": "tiered",
+      "flat_tier": false,
+      "tiers": [
+        {"min_k": 0, "max_k": 200, "ip": 3, "op": 15, "chp": 0.3, "cwp": 3.75, "cwp_1h": 6},
+        {"min_k": 200, "max_k": -1, "ip": 6, "op": 22.5, "chp": 0.6, "cwp": 7.5, "cwp_1h": 12}
+      ]
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 0.8,
+      "op": 4,
+      "chp": 0.08,
+      "cwp": 1.0,
+      "cwp_1h": 1.0
+    },
+    {
+      "name": "claude-3-7-sonnet-20250219",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 3,
+      "op": 15,
+      "chp": 0.3,
+      "cwp": 3.75,
+      "cwp_1h": 3.75
+    },
+    {
+      "name": "claude-opus-4-1-20250805",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 15,
+      "op": 75,
+      "chp": 1.5,
+      "cwp": 18.75,
+      "cwp_1h": 18.75
+    },
+    {
+      "name": "claude-opus-4-20250514",
+      "type": "flat",
+      "flat_tier": false,
+      "ip": 15,
+      "op": 75,
+      "chp": 1.5,
+      "cwp": 18.75,
+      "cwp_1h": 18.75
+    },
+    {
+      "name": "gemini-2.5-flash-image",
+      "type": "multimodal",
+      "ip": 0.30,
+      "op_text": 2.50,
+      "op_image": 30.0,
+      "note": "image output 1290 tokens per 1024x1024 image"
+    },
+    {
+      "name": "gemini-3.1-flash-image-preview",
+      "type": "multimodal",
+      "ip": 0.50,
+      "op_text": 3.0,
+      "op_image": 60.0,
+      "note": "image output 747t@512px, 1120t@1024px, 1680t@2048px, 2520t@4096px"
+    },
+    {
+      "name": "gemini-3-pro-image-preview",
+      "type": "multimodal",
+      "ip": 2.0,
+      "op_text": 12.0,
+      "op_image": 120.0,
+      "note": "image output 1120t@1K/2K, 2000t@4K"
+    },
+    {
+      "name": "gemini-2.0-flash-exp-image-generation",
+      "type": "multimodal",
+      "ip": 0.10,
+      "op_text": 0.40,
+      "op_image": 0.0,
+      "note": "experimental model, image output priced at 0 (free tier / preview)"
+    },
+    {
+      "name": "nano-banana",
+      "type": "multimodal",
+      "ip": 0.30,
+      "op_text": 2.50,
+      "op_image": 30.0,
+      "note": "alias for gemini-2.5-flash-image"
+    },
+    {
+      "name": "nano-banana-pro",
+      "type": "multimodal",
+      "ip": 2.0,
+      "op_text": 12.0,
+      "op_image": 120.0,
+      "note": "alias for gemini-3-pro-image-preview"
+    }
+  ]
+}

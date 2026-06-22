@@ -1,0 +1,22 @@
+ARG PYTHON_BASE_IMAGE=langgenius/dify-api:1.11.4
+FROM ${PYTHON_BASE_IMAGE}
+
+# fake-agent 是本地确定性替身；生产会替换为 Codex/OpenSandbox 真实 Agent 执行器。
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    WORKSPACE_DIR=/workspace
+ENTRYPOINT []
+
+WORKDIR /opt/agent-workbench/runner
+
+COPY agent-workbench/runner/fake_agent.py /opt/agent-workbench/runner/fake_agent.py
+
+USER root
+# 部分基础镜像可能已经带 runner 用户，因此这里保持幂等。
+RUN id -u runner >/dev/null 2>&1 || useradd --create-home --shell /usr/sbin/nologin runner \
+    && mkdir -p /workspace/input /workspace/skills /workspace/output \
+    && chown -R runner:runner /workspace /opt/agent-workbench
+
+USER runner
+
+ENTRYPOINT ["python", "/opt/agent-workbench/runner/fake_agent.py"]

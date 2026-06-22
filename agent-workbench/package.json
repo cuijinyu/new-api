@@ -1,0 +1,17 @@
+{
+  "name": "agent-workbench",
+  "version": "1.0.0",
+  "description": "这个目录用于承载 Agent 沙箱工作台的方案、接口契约和后续实现代码。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

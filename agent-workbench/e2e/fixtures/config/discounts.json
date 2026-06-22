@@ -1,0 +1,16 @@
+{
+  "rules": [
+    {
+      "id": "discount-1001ai-claude-ch65-v0",
+      "scope_type": "channel",
+      "vendor": "1001AI",
+      "channel_id": 65,
+      "model_pattern": "claude-*",
+      "discount_type": "multiplier",
+      "discount_value_json": {
+        "multiplier": 0.9
+      },
+      "priority": 10
+    }
+  ]
+}

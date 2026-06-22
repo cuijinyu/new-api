@@ -1,0 +1,32 @@
+[server]
+host = "0.0.0.0"
+port = 8090
+api_key = "local-dev-key"
+max_sandbox_timeout_seconds = 7200
+
+[log]
+level = "INFO"
+
+[runtime]
+# 本地单机方案使用 Docker runtime；未来迁移 EKS 时切换到 kubernetes runtime。
+type = "docker"
+execd_image = "opensandbox/execd:v1.0.19"
+
+[docker]
+# OpenSandbox 控制面负责调度容器；业务 API 和 Agent 沙箱都不应直接拿宿主 Docker socket。
+network_mode = "bridge"
+host_ip = "host.docker.internal"
+drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+no_new_privileges = true
+pids_limit = 4096
+
+[storage]
+# 只允许挂载 Workbench 任务目录，避免沙箱越权读取宿主文件。
+allowed_host_paths = ["/srv/agent-workbench/jobs"]
+
+[ingress]
+mode = "direct"
+
+[egress]
+image = "opensandbox/egress:v1.1.1"
+mode = "dns"

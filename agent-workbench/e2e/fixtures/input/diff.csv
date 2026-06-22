@@ -1,0 +1,4 @@
+request_id,model,our_amount_usd,supplier_amount_usd,delta_usd,status
+req-001,claude-3-5-sonnet-20241022,9.00,8.07,-0.93,discount_delta
+req-002,claude-3-5-haiku-20241022,1.66,1.18,-0.48,discount_delta
+req-003,gpt-4o-2024-08-06,1.50,1.50,0.00,matched

@@ -1,0 +1,288 @@
+name: agent-workbench-e2e
+
+services:
+  # Workbench 自己的独立 Postgres。生产建议迁移到 RDS，避免和 new-api 主库耦合。
+  postgres-workbench:
+    image: postgres:16-alpine
+    container_name: agent-workbench-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_PASSWORD: workbench
+      POSTGRES_DB: agent_workbench
+    ports:
+      - "15432:5432"
+    volumes:
+      - agent_workbench_pg:/var/lib/postgresql/data
+      - ./e2e/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workbench -d agent_workbench"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    container_name: agent-workbench-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - agent_workbench_minio:/data
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
+    container_name: agent-workbench-minio-init
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      until mc alias set local http://minio:9000 minio minio123; do sleep 2; done &&
+      mc mb --ignore-existing local/agent-workbench &&
+      echo 'bucket agent-workbench ready'
+      "
+
+  opensandbox-server:
+    image: ${OPENSANDBOX_SERVER_IMAGE:-sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server:v0.1.9}
+    container_name: agent-workbench-opensandbox
+    # OpenSandbox 当前依赖可用镜像源和 Docker socket，默认不阻塞账单闭环验证。
+    profiles: ["opensandbox"]
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+    ports:
+      - "18090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner/opensandbox-config.toml:/etc/opensandbox/config.toml:ro
+      - agent_workbench_jobs:/srv/agent-workbench/jobs
+
+  workbench-api:
+    build:
+      context: ..
+      dockerfile: agent-workbench/Dockerfile
+    image: agent-workbench-api:e2e
+    container_name: agent-workbench-api
+    restart: unless-stopped
+    # 用 venv python 启动：KPI 预览/出账经 sys.executable 拉起 bill_cli.py，需带 pandas。
+    command: ["/app/api/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8088"]
+    depends_on:
+      postgres-workbench:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    # 真实 Athena KPI/出账：注入根 .env 的 AWS/Athena 凭证；environment 覆盖冲突项。
+    env_file:
+      - ../.env
+    environment:
+      TZ: Asia/Hong_Kong
+      GIN_MODE: release
+      SESSION_SECRET: agent-workbench-local-only
+      SQL_DSN: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      AGENT_WORKBENCH_ENABLED: "true"
+      AGENT_WORKBENCH_E2E: "true"
+      AGENT_WORKBENCH_BUCKET: agent-workbench
+      AGENT_WORKBENCH_S3_ENDPOINT: http://minio:9000
+      AGENT_WORKBENCH_S3_REGION: us-east-1
+      AGENT_WORKBENCH_S3_ACCESS_KEY_ID: minio
+      AGENT_WORKBENCH_S3_SECRET_ACCESS_KEY: minio123
+      WORKBENCH_S3_BUCKET: agent-workbench
+      WORKBENCH_S3_ENDPOINT: http://minio:9000
+      WORKBENCH_S3_REGION: us-east-1
+      WORKBENCH_S3_ACCESS_KEY_ID: minio
+      WORKBENCH_S3_SECRET_ACCESS_KEY: minio123
+      WORKBENCH_ATHENA_EXECUTION: real
+      ATHENA_E2E_MODE: ${ATHENA_E2E_MODE:-real}
+      ATHENA_FIXTURE_DIR: /workspace/e2e/fixtures/athena
+      # 预留真实 OpenSandbox 接入点；默认 E2E 先用 fake-agent 跑通审批闭环。
+      OPEN_SANDBOX_URL: http://opensandbox-server:8080
+      OPEN_SANDBOX_API_KEY: local-dev-key
+      OPEN_SANDBOX_EXECD_HOST_OVERRIDE: 172.17.0.1
+      RUNNER_SANDBOX_ENABLED: "true"
+      RUNNER_SANDBOX_IMAGE: agent-workbench-api:e2e
+      ZHIPU_CODINGPLAN_ENDPOINT: https://open.bigmodel.cn/api/coding/paas/v4/chat/completions
+      ZHIPU_CODINGPLAN_ANTHROPIC_BASE_URL: https://open.bigmodel.cn/api/anthropic
+      ZHIPU_CODINGPLAN_API_KEY: ${ZHIPU_CODINGPLAN_API_KEY:-}
+      ZHIPU_CODINGPLAN_MODEL: ${ZHIPU_CODINGPLAN_MODEL:-glm-5.2}
+      # 本地 E2E 默认用确定性 fake-agent（无 LLM key 时仍可走通完整流程）。
+      # 接入真实 LLM 时把 AGENT_MODE 改回 claude_acp 并提供 ZHIPU_CODINGPLAN_API_KEY。
+      AGENT_MODE: ${AGENT_MODE:-fake}
+      API_TIMEOUT_MS: "3000000"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      ENABLE_TOOL_SEARCH: "0"
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
+      FAKE_AGENT_IMAGE: agent-workbench-fake-agent:e2e
+      RUNNER_WORKSPACE_ROOT: /tmp/agent-workbench-runner
+    ports:
+      - "18088:8088"
+    volumes:
+      - ./e2e/fixtures:/workspace/e2e/fixtures:ro
+      - agent_workbench_jobs:/srv/agent-workbench/jobs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8088/health', timeout=3).read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  workbench-scheduler:
+    image: agent-workbench-api:e2e
+    container_name: agent-workbench-scheduler
+    restart: unless-stopped
+    depends_on:
+      workbench-api:
+        condition: service_healthy
+    command: ["/app/api/.venv/bin/python", "-m", "app.scheduler"]
+    # 调度器只负责派发任务，资源占用很小，给一个小上限即可。
+    cpus: "0.5"
+    mem_limit: 256m
+    pids_limit: 64
+    env_file:
+      - ../.env
+    environment:
+      TZ: Asia/Hong_Kong
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      WORKBENCH_S3_BUCKET: agent-workbench
+      WORKBENCH_S3_ENDPOINT: http://minio:9000
+      WORKBENCH_S3_REGION: us-east-1
+      WORKBENCH_S3_ACCESS_KEY_ID: minio
+      WORKBENCH_S3_SECRET_ACCESS_KEY: minio123
+      WORKBENCH_ATHENA_EXECUTION: real
+      ATHENA_E2E_MODE: ${ATHENA_E2E_MODE:-real}
+      ATHENA_FIXTURE_DIR: /workspace/e2e/fixtures/athena
+      WORKBENCH_SCHEDULER_POLL_SECONDS: 60
+    volumes:
+      - ./e2e/fixtures:/workspace/e2e/fixtures:ro
+      - agent_workbench_jobs:/srv/agent-workbench/jobs
+
+  billing-worker:
+    image: agent-workbench-api:e2e
+    container_name: agent-workbench-billing-worker
+    restart: unless-stopped
+    depends_on:
+      workbench-api:
+        condition: service_healthy
+    # 用 venv python 启动：sys.executable 即带 pandas/openpyxl/boto3 的解释器，
+    # execute_real_athena_bill 以 sys.executable 拉起 bill_cli.py 才能跑真实 Athena 出账。
+    command: ["/app/api/.venv/bin/python", "-m", "app.worker"]
+    # 出账资源隔离：独立容器 + 显式 CPU/内存/进程数上限，避免单次大账单
+    # （pandas/xlsx 生成）拖垮宿主或其他服务。并发已由 WORKBENCH_JOB_CONCURRENCY_BILLING_RUN=1 限制。
+    cpus: "1.5"
+    mem_limit: 4g
+    mem_reservation: 512m
+    memswap_limit: 4g
+    pids_limit: 256
+    # 真实 Athena 出账：注入根 .env 里的 AWS/Athena 凭证（RAW_LOG_S3_*/AWS_REGION）。
+    # environment: 仍会覆盖其中冲突项（如 WORKBENCH_S3_* 指向本地 MinIO 做产物归档）。
+    env_file:
+      - ../.env
+    environment:
+      TZ: Asia/Hong_Kong
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      WORKBENCH_S3_BUCKET: agent-workbench
+      WORKBENCH_S3_ENDPOINT: http://minio:9000
+      WORKBENCH_S3_REGION: us-east-1
+      WORKBENCH_S3_ACCESS_KEY_ID: minio
+      WORKBENCH_S3_SECRET_ACCESS_KEY: minio123
+      WORKBENCH_ATHENA_EXECUTION: real
+      WORKBENCH_WORKER_FAMILY: billing_run
+      WORKBENCH_WORKER_POLL_SECONDS: 10
+      WORKBENCH_JOB_CONCURRENCY_BILLING_RUN: 1
+      WORKBENCH_RECOVER_RUNNING_ON_STARTUP: "true"
+      WORKBENCH_RECOVER_RUNNING_GRACE_SECONDS: 30
+      # real = 走真实 Athena（默认）；设为 fixture 回退到本地夹具数据。
+      ATHENA_E2E_MODE: ${ATHENA_E2E_MODE:-real}
+      ATHENA_FIXTURE_DIR: /workspace/e2e/fixtures/athena
+    volumes:
+      - ./e2e/fixtures:/workspace/e2e/fixtures:ro
+      - agent_workbench_jobs:/srv/agent-workbench/jobs
+
+  agent-worker:
+    image: agent-workbench-api:e2e
+    container_name: agent-workbench-agent-worker
+    restart: unless-stopped
+    depends_on:
+      workbench-api:
+        condition: service_healthy
+    command: ["python", "-m", "app.worker"]
+    environment:
+      TZ: Asia/Hong_Kong
+      DATABASE_URL: postgresql://workbench:workbench@postgres-workbench:5432/agent_workbench
+      WORKBENCH_S3_BUCKET: agent-workbench
+      WORKBENCH_S3_ENDPOINT: http://minio:9000
+      WORKBENCH_S3_REGION: us-east-1
+      WORKBENCH_S3_ACCESS_KEY_ID: minio
+      WORKBENCH_S3_SECRET_ACCESS_KEY: minio123
+      # Agent 任务 worker：消费 family=agent_work 队列，异步拉起 runner。
+      WORKBENCH_WORKER_FAMILY: agent_work
+      WORKBENCH_WORKER_POLL_SECONDS: 3
+      WORKBENCH_JOB_CONCURRENCY_AGENT_WORK: 1
+      # 本地无 OpenSandbox 时走 local 降级，在 worker 进程内执行确定性 fake-agent。
+      # 产物会归档到 S3/MinIO，工作目录可用临时目录（避免共享卷的属主权限问题）。
+      AGENT_MODE: ${AGENT_MODE:-fake}
+      RUNNER_MODE: sandbox
+      RUNNER_WORKSPACE_ROOT: /tmp/agent-workbench-runner
+      OPEN_SANDBOX_URL: http://opensandbox-server:8080
+      OPEN_SANDBOX_API_KEY: local-dev-key
+      OPEN_SANDBOX_EXECD_HOST_OVERRIDE: 172.17.0.1
+      RUNNER_SANDBOX_ENABLED: "true"
+      RUNNER_SANDBOX_IMAGE: agent-workbench-api:e2e
+      ZHIPU_CODINGPLAN_ENDPOINT: https://open.bigmodel.cn/api/coding/paas/v4/chat/completions
+      ZHIPU_CODINGPLAN_ANTHROPIC_BASE_URL: https://open.bigmodel.cn/api/anthropic
+      ZHIPU_CODINGPLAN_API_KEY: ${ZHIPU_CODINGPLAN_API_KEY:-}
+      ZHIPU_CODINGPLAN_MODEL: ${ZHIPU_CODINGPLAN_MODEL:-glm-5.2}
+      API_TIMEOUT_MS: "3000000"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      ENABLE_TOOL_SEARCH: "0"
+      CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
+    volumes:
+      - ./e2e/fixtures:/workspace/e2e/fixtures:ro
+      - agent_workbench_jobs:/srv/agent-workbench/jobs
+
+  workbench-web:
+    build:
+      context: ..
+      dockerfile: agent-workbench/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:18088
+    image: agent-workbench-web:e2e
+    container_name: agent-workbench-web
+    restart: unless-stopped
+    depends_on:
+      workbench-api:
+        condition: service_healthy
+    ports:
+      - "18089:80"
+
+  fake-agent:
+    build:
+      context: ..
+      dockerfile: agent-workbench/Dockerfile.runner
+    image: agent-workbench-fake-agent:e2e
+    container_name: agent-workbench-fake-agent
+    # 手动调试 fake-agent 产物时再启用，API 默认会在进程内生成同类产物。
+    profiles: ["manual"]
+    environment:
+      WORKSPACE_DIR: /workspace
+      INPUT_DIR: /workspace/input
+      SKILLS_DIR: /workspace/skills
+      OUTPUT_DIR: /workspace/output
+    volumes:
+      - ./e2e/fixtures/input:/workspace/input:ro
+      - ./e2e/fixtures/skills:/workspace/skills:ro
+      - ./e2e/.tmp/fake-agent-output:/workspace/output
+
+volumes:
+  agent_workbench_pg:
+  agent_workbench_minio:
+  agent_workbench_jobs:

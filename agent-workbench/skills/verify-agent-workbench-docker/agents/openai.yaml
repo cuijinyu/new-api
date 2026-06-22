@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify Agent Workbench Docker"
+  short_description: "Validate agent-workbench in local Docker."
+  default_prompt: "Use this skill to validate agent-workbench locally with Docker Compose, E2E tests, API checks, and browser verification."

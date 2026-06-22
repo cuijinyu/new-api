@@ -1,0 +1,11 @@
+{
+  "job_id": "job-fake-agent-e2e",
+  "job_type": "codex_investigation",
+  "reason": "supplier_diff_over_threshold",
+  "month": "2026-06",
+  "vendor": "1001AI",
+  "channel_id": 65,
+  "our_billing_run_id": "run-local-v0",
+  "supplier_reconcile_job_id": "job-reconcile-e2e",
+  "allowed_actions": ["read", "dry_run", "write_patch", "write_report", "draft_skill"]
+}

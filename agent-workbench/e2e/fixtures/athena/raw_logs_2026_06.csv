@@ -1,0 +1,4 @@
+request_id,created_at,channel_id,vendor,response_model,finish_reason,status
+req-001,2026-06-03T08:00:00Z,65,1001AI,claude-3-5-sonnet-20241022,end_turn,200
+req-002,2026-06-03T08:05:00Z,65,1001AI,claude-3-5-haiku-20241022,end_turn,200
+req-003,2026-06-04T09:15:00Z,65,1001AI,gpt-4o-2024-08-06,stop,200
