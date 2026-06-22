@@ -1,10 +1,12 @@
 import type { AgentEvent, AgentSession, UploadedFile } from "../types";
 import { categoryText, displayText, fileDirectory, formatDate, shortId } from "./format";
 
+export type AgentStepStatus = "running" | "retrying" | "completed" | "failed";
+
 export type AgentTimelineItem =
   | { id: string; kind: "message"; event: AgentEvent; title: string; body: string; time: string }
   | { id: string; kind: "assistant"; event: AgentEvent; title: string; body: string; time: string }
-  | { id: string; kind: "step"; call?: AgentEvent; result?: AgentEvent; title: string; status: "running" | "completed"; time: string }
+  | { id: string; kind: "step"; call?: AgentEvent; result?: AgentEvent; title: string; status: AgentStepStatus; time: string }
   | { id: string; kind: "state"; event: AgentEvent; title: string; body: string; tone: "default" | "green" | "amber" | "red" | "blue"; time: string };
 
 export type AgentContextItem = {
@@ -133,6 +135,30 @@ function hasEventValue(value: unknown) {
   return true;
 }
 
+function mergeRecordValue(previous: unknown, incoming: unknown) {
+  if (isRecord(previous) && isRecord(incoming)) return { ...previous, ...incoming };
+  return hasEventValue(incoming) ? incoming : previous;
+}
+
+function mergeToolCallEvent(previous: AgentEvent | undefined, incoming: AgentEvent) {
+  if (!previous?.payload) return incoming;
+  const previousPayload = previous.payload;
+  const incomingPayload = incoming.payload || {};
+  const payload: Record<string, unknown> = { ...previousPayload, ...incomingPayload };
+  const preserveKeys = ["arguments", "args", "input", "rawInput", "raw_input", "command", "argv", "cwd", "kind", "tool_name", "name", "title"];
+
+  for (const key of preserveKeys) {
+    payload[key] = mergeRecordValue(previousPayload[key], incomingPayload[key]);
+  }
+
+  return {
+    ...previous,
+    ...incoming,
+    content: hasEventValue(incoming.content) ? incoming.content : previous.content,
+    payload,
+  };
+}
+
 function mergeToolResultEvent(previous: AgentEvent | undefined, incoming: AgentEvent) {
   if (!previous?.payload) return incoming;
   const previousPayload = previous.payload;
@@ -159,10 +185,25 @@ function mergeToolResultEvent(previous: AgentEvent | undefined, incoming: AgentE
   return { ...previous, ...incoming, payload };
 }
 
+function statusFromToolEvent(event: AgentEvent | undefined, fallback: AgentStepStatus): AgentStepStatus {
+  const raw = String(event?.payload?.status || "").toLowerCase();
+  if (["failed", "failure", "error", "errored", "cancelled", "canceled", "timeout", "timed_out"].includes(raw)) return "failed";
+  if (["retrying", "retry", "backoff"].includes(raw)) return "retrying";
+  if (["completed", "complete", "succeeded", "success", "done"].includes(raw)) return "completed";
+  if (["running", "pending", "started", "in_progress", "working"].includes(raw)) return "running";
+  if (event?.event_type === "tool.result") return "completed";
+  return fallback;
+}
+
+function stepStatus(call: AgentEvent | undefined, result: AgentEvent | undefined, fallback: AgentStepStatus = "running") {
+  if (result) return statusFromToolEvent(result, fallback);
+  return statusFromToolEvent(call, fallback);
+}
+
 export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
   const items: AgentTimelineItem[] = [];
   const openTools = new Map<string, Array<{ index: number; call: AgentEvent }>>();
-  const completedTools = new Map<string, number>();
+  const pairedTools = new Map<string, number>();
 
   events.forEach((event, index) => {
     const key = eventKey(event, index);
@@ -172,14 +213,16 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
     const pair = toolPairKey(event, toolName);
 
     if (type === "tool.call") {
-      const completedIndex = pair.stable ? completedTools.get(pair.key) : undefined;
-      if (completedIndex !== undefined && items[completedIndex]?.kind === "step") {
-        const current = items[completedIndex] as Extract<AgentTimelineItem, { kind: "step" }>;
-        items[completedIndex] = {
+      const pairedIndex = pair.stable ? pairedTools.get(pair.key) : undefined;
+      if (pairedIndex !== undefined && items[pairedIndex]?.kind === "step") {
+        const current = items[pairedIndex] as Extract<AgentTimelineItem, { kind: "step" }>;
+        const call = mergeToolCallEvent(current.call, event);
+        items[pairedIndex] = {
           ...current,
-          call: event,
-          title: current.title || toolTitle(event),
-          time: current.time || eventTime(event),
+          call,
+          title: toolTitle(call) || current.title,
+          status: stepStatus(call, current.result, current.status),
+          time: current.time || eventTime(call),
         };
         return;
       }
@@ -187,11 +230,13 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
       const existingOpen = pair.stable ? latestOpenTool(openTools, pair.key) : null;
       if (existingOpen && items[existingOpen.index]?.kind === "step") {
         const current = items[existingOpen.index] as Extract<AgentTimelineItem, { kind: "step" }>;
+        const call = mergeToolCallEvent(current.call, event);
         items[existingOpen.index] = {
           ...current,
-          call: event,
-          title: toolTitle(event) || current.title,
-          time: eventTime(event) || current.time,
+          call,
+          title: toolTitle(call) || current.title,
+          status: stepStatus(call, current.result, current.status),
+          time: eventTime(call) || current.time,
         };
         return;
       }
@@ -201,7 +246,7 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
         kind: "step",
         call: event,
         title: toolTitle(event),
-        status: "running",
+        status: stepStatus(event, undefined),
         time: eventTime(event),
       };
       items.push(item);
@@ -210,15 +255,15 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
     }
 
     if (type === "tool.result") {
-      const completedIndex = pair.stable ? completedTools.get(pair.key) : undefined;
-      if (completedIndex !== undefined && items[completedIndex]?.kind === "step") {
-        const current = items[completedIndex] as Extract<AgentTimelineItem, { kind: "step" }>;
+      const pairedIndex = pair.stable ? pairedTools.get(pair.key) : undefined;
+      if (pairedIndex !== undefined && items[pairedIndex]?.kind === "step") {
+        const current = items[pairedIndex] as Extract<AgentTimelineItem, { kind: "step" }>;
         const result = mergeToolResultEvent(current.result, event);
-        items[completedIndex] = {
+        items[pairedIndex] = {
           ...current,
           result,
           title: toolTitle(result) || current.title,
-          status: "completed",
+          status: stepStatus(current.call, result, current.status),
           time: eventTime(result) || current.time,
         };
         return;
@@ -227,25 +272,27 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
       const open = dequeueOpenTool(openTools, pair.key);
       if (open && items[open.index]?.kind === "step") {
         const current = items[open.index] as Extract<AgentTimelineItem, { kind: "step" }>;
+        const result = mergeToolResultEvent(current.result, event);
         items[open.index] = {
           ...current,
-          result: event,
-          title: toolTitle(event) || current.title,
-          status: "completed",
-          time: eventTime(event) || current.time,
+          result,
+          title: toolTitle(result) || current.title,
+          status: stepStatus(current.call, result, current.status),
+          time: eventTime(result) || current.time,
         };
-        if (pair.stable) completedTools.set(pair.key, open.index);
+        if (pair.stable) pairedTools.set(pair.key, open.index);
         return;
       }
+      const status = stepStatus(undefined, event);
       items.push({
         id: key,
         kind: "step",
         result: event,
         title: toolTitle(event),
-        status: "completed",
+        status,
         time: eventTime(event),
       });
-      if (pair.stable) completedTools.set(pair.key, items.length - 1);
+      if (pair.stable) pairedTools.set(pair.key, items.length - 1);
       return;
     }
 

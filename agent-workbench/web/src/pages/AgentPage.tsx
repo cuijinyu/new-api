@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Badge, Button, EmptyState, JsonBlock } from "../components/ui";
-import { agentCommandSuggestions, groupAgentEvents, type AgentCommandSuggestion, type AgentTimelineItem } from "../lib/agentWindow";
+import { agentCommandSuggestions, groupAgentEvents, type AgentCommandSuggestion, type AgentStepStatus, type AgentTimelineItem } from "../lib/agentWindow";
 import {
   billDocumentAmount,
   billDocumentListHint,
@@ -175,6 +175,20 @@ function toolMetaChips(item: Extract<AgentTimelineItem, { kind: "step" }>) {
   ].filter(Boolean);
 }
 
+function stepStatusLabel(status: AgentStepStatus) {
+  if (status === "completed") return "已完成";
+  if (status === "failed") return "失败";
+  if (status === "retrying") return "重试中";
+  return "运行中";
+}
+
+function stepStatusDescription(status: AgentStepStatus) {
+  if (status === "completed") return "Agent 已完成这一步检查。";
+  if (status === "failed") return "Agent 执行这一步时失败，请展开查看错误和日志。";
+  if (status === "retrying") return "Agent 正在退避重试这一步。";
+  return "Agent 正在核对相关资料。";
+}
+
 function suggestedActionsFromResult(result: WorkbenchState["agentResult"], waitingForInfo: boolean) {
   if (result?.recommended_actions?.length) return result.recommended_actions;
   if (waitingForInfo) return ["补充 Agent 请求的口径、凭证或异常行号，再继续分析。"];
@@ -212,6 +226,19 @@ function billMentionLabel(document: BillDocument) {
   const type = billTypeShort(document.bill_type).replace(/\s+/g, "");
   const target = billTargetLabel(document).replace(/\s+/g, "");
   return `@账单:${period}:${type}:${target}`;
+}
+
+function agentRuntimeChips(session: AgentSession | undefined | null, fallback: WorkbenchState["agentForm"]) {
+  const metadata = session?.metadata || {};
+  const provider = session?.provider || fallback.provider;
+  const runtime = session?.runtime || fallback.runtime;
+  const model = typeof metadata["model"] === "string" ? metadata["model"] : fallback.model;
+  return [
+    provider ? `Provider ${provider}` : "",
+    runtime ? `Runtime ${runtime}` : "",
+    model ? `Model ${model}` : "",
+    fallback.live ? "Live stream" : "Polling",
+  ].filter(Boolean);
 }
 
 function replaceActiveBillMention(message: string, mention: string) {
@@ -315,6 +342,7 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
         ? "继续追问、补充新凭证或要求 Agent 复核上一轮结论。"
         : "描述你要 Agent 核对的差异、口径或凭证。可输入 @ 引用资料，或输入 / 选择操作。";
   const sendLabel = acceptsLiveInput ? "发送补充" : continuationMode ? "接力继续" : "发送";
+  const runtimeChips = agentRuntimeChips(wb.currentSession, wb.agentForm);
   const result = wb.agentResult;
   const outputFiles = useMemo<ResultFileRef[]>(() => {
     const merged: ResultFileRef[] = [];
@@ -650,6 +678,11 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
             <div>
               <span>当前任务</span>
               <strong>{wb.currentSession ? sessionTitle(wb.currentSession) : "新的对账任务"}</strong>
+              <div className="agent-runtime-strip" aria-label="Agent 运行时">
+                {runtimeChips.map((chip) => (
+                  <small key={chip}>{chip}</small>
+                ))}
+              </div>
             </div>
           </div>
           <div className="agent-run-actions">
@@ -664,6 +697,12 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
               <Button variant="outline" size="sm" onClick={() => wb.resumeSession(wb.agentSessionId)} disabled={wb.pending === "agentResume"}>
                 {wb.pending === "agentResume" ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
                 继续
+              </Button>
+            ) : null}
+            {continuationMode && sessionStatus !== "PAUSED" ? (
+              <Button variant="outline" size="sm" onClick={() => composerTextareaRef.current?.focus()}>
+                <MessageSquarePlus size={14} />
+                继续追问
               </Button>
             ) : null}
             <Button
@@ -990,19 +1029,20 @@ function TimelineItem({ item, showDebug }: { item: AgentTimelineItem; showDebug:
   if (item.kind === "step") {
     const description = displayText(
       item.result?.content || item.call?.content,
-      item.status === "completed" ? "Agent 已完成这一步检查。" : "Agent 正在核对相关资料。",
+      stepStatusDescription(item.status),
     );
+    const statusLabel = stepStatusLabel(item.status);
     return (
       <article className={`agent-timeline-item agent-step ${item.status}`}>
         <div className="agent-timeline-marker">
-          {item.status === "completed" ? <CheckCircle2 size={16} /> : <Loader2 size={16} className="spin" />}
+          {item.status === "completed" ? <CheckCircle2 size={16} /> : item.status === "failed" ? <X size={15} /> : <Loader2 size={16} className="spin" />}
         </div>
-        <div className="agent-timeline-content">
+        <div className="agent-timeline-content agent-tool-card">
           <div className="agent-timeline-head">
             <strong>{item.title}</strong>
-            <span>{item.status === "completed" ? "已完成" : "运行中"} {item.time ? `· ${item.time}` : ""}</span>
+            <span>{statusLabel} {item.time ? `· ${item.time}` : ""}</span>
           </div>
-          <p>{description}</p>
+          <p className="agent-tool-summary-line">{description}</p>
           <ToolCallDetails item={item} showRaw={showDebug} />
         </div>
       </article>

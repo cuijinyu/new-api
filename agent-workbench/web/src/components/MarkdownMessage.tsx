@@ -26,13 +26,34 @@ const components: Components = {
 };
 
 function normalizeMarkdownSource(value: string) {
-  return value
-    .replace(/\r\n/g, "\n")
-    .replace(/\|\|/g, "|\n|")
-    .replace(/([^\n])(\s*)(#{1,6})(?=\S)/g, "$1\n\n$3")
-    .replace(/(^|\n)(#{1,6})(?=\S)/g, "$1$2 ")
-    .replace(/(^|\n)(#{1,6} [^\n|]+)(\|)/g, "$1$2\n\n$3")
-    .replace(/([^\n])(\s*)(\d+\.\s+\*\*)/g, "$1\n$3");
+  const lines = value.replace(/\r\n/g, "\n").split("\n");
+  const normalized: string[] = [];
+  let inFence = false;
+
+  for (const rawLine of lines) {
+    let line = rawLine;
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      normalized.push(line);
+      continue;
+    }
+    if (!inFence) {
+      line = line.replace(/^(#{1,6})(?=\S)/, "$1 ");
+      const headingMatch = line.match(/^(.+?)(\s+)(#{1,6}\s+\S.*)$/);
+      if (headingMatch && !headingMatch[1].trim().startsWith("#")) {
+        normalized.push(headingMatch[1].trimEnd(), "", headingMatch[3]);
+        continue;
+      }
+      const listMatch = line.match(/^(.+?)(\s+)((?:[-*+]\s+|\d+\.\s+)\S.*)$/);
+      if (listMatch && listMatch[1].trim().length > 2) {
+        normalized.push(listMatch[1].trimEnd(), listMatch[3]);
+        continue;
+      }
+    }
+    normalized.push(line);
+  }
+
+  return normalized.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 export function MarkdownMessage({ className = "", content, fallback = "-" }: MarkdownMessageProps) {
