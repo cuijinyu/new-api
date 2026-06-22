@@ -271,6 +271,13 @@ def main() -> int:
         "config_change_request_path": "output/config_change_request.json",
         "report_path": "output/report.md",
         "skill_draft_path": "output/skill_draft/SKILL.md",
+        "result_files": [
+            {"label": "对账报告", "path": "output/report.md", "role": "report"},
+            {"label": "差异明细", "path": "output/diff.csv", "role": "evidence"},
+            {"label": "异常明细", "path": "output/anomalies.csv", "role": "evidence"},
+            {"label": "影响汇总", "path": "output/impact_summary.json", "role": "summary"},
+            {"label": "经验草稿", "path": "output/skill_draft/SKILL.md", "role": "skill_draft"},
+        ],
         "impact": change_request["impact_summary"],
         "recommended_next_job": "billing_rerun_after_suggestion",
         "generated_at": FIXED_GENERATED_AT,

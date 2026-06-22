@@ -4,6 +4,7 @@ import {
   Bot,
   Bug,
   CheckCircle2,
+  Download,
   FileText,
   Loader2,
   MessageSquarePlus,
@@ -50,6 +51,7 @@ import type { WorkbenchState } from "../hooks/useWorkbench";
 type PanelTab = "resources" | "skills" | "suggestions";
 type ResourceView = "attached" | "available" | "outputs";
 type ResourceKindFilter = "all" | "billing" | "supplier" | "evidence";
+type ResultFileRef = { label?: string; uri?: string; role?: string; path?: string; file_id?: string; filename?: string; byte_size?: number; content_type?: string };
 
 const panelTabs: Array<{ id: PanelTab; label: string }> = [
   { id: "resources", label: "资料" },
@@ -185,8 +187,10 @@ function resourceMeta(file: UploadedFile, attached: boolean) {
   return [categoryText(file.category), file.byte_size ? formatBytes(file.byte_size) : "", attached ? "已在当前任务" : "可加入当前任务"].filter(Boolean).join(" · ");
 }
 
-function resultFileName(file: { label?: string; uri?: string; role?: string }) {
+function resultFileName(file: ResultFileRef) {
   if (file.label) return file.label;
+  if (file.filename) return file.filename;
+  if (file.path) return file.path.split(/[\\/]/).filter(Boolean).pop() || file.path;
   if (file.role) return file.role;
   const name = (file.uri || "").split(/[\\/]/).filter(Boolean).pop();
   return name || "结果文件";
@@ -238,6 +242,31 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
         : "描述你要 Agent 核对的差异、口径或凭证。可输入 @ 引用资料，或输入 / 选择操作。";
   const sendLabel = acceptsLiveInput ? "发送补充" : continuationMode ? "接力继续" : "发送";
   const result = wb.agentResult;
+  const outputFiles = useMemo<ResultFileRef[]>(() => {
+    const merged: ResultFileRef[] = [];
+    const seen = new Set<string>();
+    const add = (file: ResultFileRef) => {
+      const key = file.file_id || file.uri || file.path || file.filename || file.label || "";
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(file);
+    };
+    (result?.result_files || []).forEach((file) => add(file));
+    wb.agentFiles
+      .filter((file) => file.category === "agent-output")
+      .forEach((file) =>
+        add({
+          label: file.filename,
+          filename: file.filename,
+          file_id: file.id,
+          uri: file.s3_uri,
+          role: typeof file.metadata?.["role"] === "string" ? file.metadata["role"] : file.category,
+          path: typeof file.metadata?.["path"] === "string" ? file.metadata["path"] : undefined,
+          byte_size: file.byte_size,
+        }),
+      );
+    return merged;
+  }, [result?.result_files, wb.agentFiles]);
 
   const referenceFiles = useMemo(
     () =>
@@ -247,7 +276,8 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
     [wb.uploadedFiles],
   );
   const commandSuggestions = useMemo(() => agentCommandSuggestions(wb.agentMessage, referenceFiles, wb.sessions), [wb.agentMessage, referenceFiles, wb.sessions]);
-  const attachedFileIds = useMemo(() => new Set(wb.agentFiles.map((file) => file.id)), [wb.agentFiles]);
+  const attachedContextFiles = useMemo(() => wb.agentFiles.filter((file) => file.category !== "agent-output"), [wb.agentFiles]);
+  const attachedFileIds = useMemo(() => new Set(attachedContextFiles.map((file) => file.id)), [attachedContextFiles]);
   const availableFiles = useMemo(() => {
     const query = resourceQuery.trim().toLowerCase();
     return uniqueFiles(referenceFiles)
@@ -719,16 +749,18 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
               session={wb.currentSession}
               activeView={resourceView}
               onViewChange={setResourceView}
-              attachedFiles={wb.agentFiles}
+              attachedFiles={attachedContextFiles}
               attachedFileIds={attachedFileIds}
               availableFiles={availableFiles}
               availableTotal={referenceFiles.length}
-              resultFiles={result?.result_files || []}
+              resultFiles={outputFiles}
               query={resourceQuery}
               onQueryChange={setResourceQuery}
               kindFilter={resourceKindFilter}
               onKindFilterChange={setResourceKindFilter}
               onReferenceFile={referenceFile}
+              onDownloadFile={wb.downloadFile}
+              onDownloadArtifact={wb.downloadArtifact}
             />
           ) : null}
           {panelTab === "skills" ? (
@@ -925,6 +957,8 @@ function ResourceTray({
   kindFilter,
   onKindFilterChange,
   onReferenceFile,
+  onDownloadFile,
+  onDownloadArtifact,
 }: {
   session?: AgentSession | null;
   activeView: ResourceView;
@@ -933,12 +967,14 @@ function ResourceTray({
   attachedFileIds: Set<string>;
   availableFiles: UploadedFile[];
   availableTotal: number;
-  resultFiles: Array<{ label?: string; uri?: string; role?: string }>;
+  resultFiles: ResultFileRef[];
   query: string;
   onQueryChange: (value: string) => void;
   kindFilter: ResourceKindFilter;
   onKindFilterChange: (value: ResourceKindFilter) => void;
   onReferenceFile: (fileId: string) => void;
+  onDownloadFile: (fileId: string, filename?: string) => void;
+  onDownloadArtifact: (params: { fileId?: string; uri?: string; filename?: string }) => void;
 }) {
   const billingCount = attachedFiles.filter((file) => resourceKind(file) === "billing").length;
   const supplierCount = attachedFiles.filter((file) => resourceKind(file) === "supplier").length;
@@ -1002,7 +1038,14 @@ function ResourceTray({
 
         {activeView === "outputs" ? (
           resultFiles.length ? (
-            resultFiles.map((file, index) => <ResultResourceRow file={file} key={`${file.uri || file.label || file.role}-${index}`} />)
+            resultFiles.map((file, index) => (
+              <ResultResourceRow
+                file={file}
+                key={`${file.file_id || file.uri || file.path || file.label || file.role}-${index}`}
+                onDownloadFile={onDownloadFile}
+                onDownloadArtifact={onDownloadArtifact}
+              />
+            ))
           ) : (
             <EmptyState title="暂无结果产物" hint="任务完成后会显示报告、结果 JSON 或建议文件。" />
           )
@@ -1038,15 +1081,35 @@ function AvailableResourceRow({ file, attached, onReferenceFile }: { file: Uploa
   );
 }
 
-function ResultResourceRow({ file }: { file: { label?: string; uri?: string; role?: string } }) {
+function ResultResourceRow({
+  file,
+  onDownloadFile,
+  onDownloadArtifact,
+}: {
+  file: ResultFileRef;
+  onDownloadFile: (fileId: string, filename?: string) => void;
+  onDownloadArtifact: (params: { fileId?: string; uri?: string; filename?: string }) => void;
+}) {
+  const filename = file.filename || resultFileName(file);
+  const canDownload = Boolean(file.file_id || file.uri);
+  const download = () => {
+    if (file.file_id) {
+      onDownloadFile(file.file_id, filename);
+      return;
+    }
+    if (file.uri) onDownloadArtifact({ uri: file.uri, filename });
+  };
   return (
     <div className="agent-resource-row output">
       <FileText size={16} />
       <span>
         <strong>{resultFileName(file)}</strong>
-        <small>{file.role || "任务产物"}</small>
+        <small>{[file.role || "任务产物", file.path, file.byte_size ? formatBytes(file.byte_size) : ""].filter(Boolean).join(" · ")}</small>
       </span>
       <Badge tone="blue">产物</Badge>
+      <button type="button" className="agent-output-download" onClick={download} disabled={!canDownload} aria-label={`下载 ${filename}`}>
+        <Download size={14} />
+      </button>
     </div>
   );
 }

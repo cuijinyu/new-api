@@ -187,7 +187,7 @@ export type AgentResult = {
   recommended_next_job?: JsonObject | string | null;
   recommended_actions?: string[];
   saveable_experience?: string;
-  result_files?: Array<{ label?: string; uri?: string; role?: string }>;
+  result_files?: Array<{ label?: string; uri?: string; role?: string; path?: string; file_id?: string; filename?: string; byte_size?: number; content_type?: string }>;
   change_request_id?: string;
   [key: string]: unknown;
 };

@@ -1127,7 +1127,7 @@
 
 .agent-resource-row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -1158,6 +1158,28 @@
 
 .agent-resource-row.output > svg {
   color: #475467;
+}
+
+.agent-output-download {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d0d7e2;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
+.agent-output-download:hover:not(:disabled) {
+  border-color: #93b4ff;
+  background: #eff6ff;
+}
+
+.agent-output-download:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
 }
 
 .agent-resource-row span {

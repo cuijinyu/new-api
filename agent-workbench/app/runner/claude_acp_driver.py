@@ -135,10 +135,12 @@ def build_prompt() -> str:
         1. 写入 `output/report.md`：中文对账分析报告，包含结论、关键证据、影响金额、建议动作。
         2. 写入 `output/result.json`：必须是 JSON object，字段如下：
            {{
+             "_output_contract": "Write all downloadable files under output/. result_files must use output/<relative-path>. Workbench uploads output/ files to S3 and exposes them in the UI.",
              "status": "completed|needs_info|error",
              "summary": "一句话结论",
              "reason": "差异原因或需要补充的信息",
              "impact": {{"amount_usd_delta": 0, "amount_cny_delta": 0}},
+             "result_files": [{{"label": "报告", "path": "output/report.md", "role": "report"}}],
              "recommended_actions": ["建议动作"],
              "saveable_experience": "可沉淀经验，可为空",
              "config_change": null
@@ -469,6 +471,7 @@ def normalize_result(result: dict[str, Any], assistant_text: str, event_count: i
         result["summary"] = first_line[:240] if first_line else "Claude Code 已完成本轮对账分析。"
     result.setdefault("reason", assistant_text)
     result.setdefault("impact", {})
+    result.setdefault("result_files", [{"label": "报告", "path": "output/report.md", "role": "report"}])
     result.setdefault("recommended_actions", ["查看 report.md 与工具执行记录"])
     result["_workbench"] = {
         "runtime": "acp",

@@ -138,9 +138,12 @@ def build_system_prompt() -> str:
         "  input/（其他文件）       — 供应商账单等上传资料",
         "",
         "完成分析后，请输出 JSON 格式的结论（我会从你的回复中提取）：",
+        "所有需要给用户查看或下载的文件都必须写入 `output/` 下；`result_files` 只能引用 `output/` 下的相对路径，Workbench 会自动上传到 S3 并在页面“产物”区提供下载。",
         '```json',
         '{',
+        '  "_output_contract": "Write downloadable files under output/. Use output/<relative-path> in result_files.",',
         '  "status": "completed|needs_info",',
+        '  "result_files": [{"label": "报告", "path": "output/report.md", "role": "report"}],',
         '  "summary": "一句话总结",',
         '  "reason": "差异原因详述",',
         '  "impact": {"amount_usd_delta": 数字, "amount_cny_delta": 数字},',
@@ -316,6 +319,7 @@ def run() -> int:
     # 写入结果
     result = extract_result_json(full_content)
     result.setdefault("status", "completed")
+    result.setdefault("result_files", [{"label": "报告", "path": "output/report.md", "role": "report"}])
     write_json(OUTPUT_DIR / "result.json", result)
 
     # 如果有 config_change 建议，写入独立文件

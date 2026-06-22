@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import threading
@@ -231,6 +232,9 @@ def build_agent_instructions(job: dict[str, Any], month: Any, vendor: Any, chann
             "- 其余文件：用户上传的供应商账单等资料",
             "",
             "## 产物契约（写入 output/）",
+            "- 所有希望用户查看或下载的文件都必须写入工作目录下的 output/，不要写到 /tmp、input/、skills/ 或其他绝对路径。",
+            "- result.json 里的 result_files 必须引用 output/ 下的相对路径，例如 {\"label\":\"差异明细\",\"path\":\"output/diff.csv\",\"role\":\"evidence\"}；不要填本地绝对路径。",
+            "- output/ 下的所有文件会在任务结束后自动上传到 S3，并在页面“产物”区提供下载。",
             "- report.md：调查报告",
             "- result.json：结构化结论（含 impact 影响金额、建议动作、结果文件）",
             "- config_change_request.json：配置变更建议（不要直接修改生产配置）",
@@ -538,6 +542,169 @@ def collecting_agent_event_sink(session_id: str, emitted: list[dict[str, Any]]):
     return sink
 
 
+def agent_output_role(rel: str) -> str:
+    path = Path(rel)
+    if rel == "report.md":
+        return "report"
+    if rel == "config_change_request.json":
+        return "config_change_request"
+    if rel == "result.json":
+        return "result"
+    if rel.startswith("skill_draft/"):
+        return "skill_draft"
+    return path.stem or "artifact"
+
+
+def _merge_result_file_entries(result_json: dict[str, Any], indexed_files: list[dict[str, Any]]) -> dict[str, Any]:
+    enriched = dict(result_json or {})
+    raw_entries = enriched.get("result_files")
+    existing = [item for item in raw_entries if isinstance(item, dict)] if isinstance(raw_entries, list) else []
+    matched_indexes: set[int] = set()
+
+    def entry_refs(item: dict[str, Any]) -> set[str]:
+        refs: set[str] = set()
+        for key in ("path", "rel", "uri", "filename", "label"):
+            value = str(item.get(key) or "").strip()
+            if value:
+                refs.add(value)
+                if value.startswith("output/"):
+                    refs.add(value.removeprefix("output/"))
+                else:
+                    refs.add(f"output/{value}")
+        return refs
+
+    merged: list[dict[str, Any]] = []
+    for indexed in indexed_files:
+        rel = str(indexed.get("rel") or "")
+        if not rel:
+            continue
+        refs = {rel, f"output/{rel}", str(indexed.get("uri") or ""), str(indexed.get("filename") or "")}
+        source: dict[str, Any] = {}
+        for index, item in enumerate(existing):
+            if index in matched_indexes:
+                continue
+            if refs & entry_refs(item):
+                source = dict(item)
+                matched_indexes.add(index)
+                break
+        merged.append(
+            {
+                **source,
+                "label": source.get("label") or indexed.get("filename") or Path(rel).name,
+                "role": source.get("role") or indexed.get("role") or agent_output_role(rel),
+                "path": f"output/{rel}",
+                "uri": indexed.get("uri"),
+                "file_id": indexed.get("file_id"),
+                "filename": indexed.get("filename") or Path(rel).name,
+                "byte_size": indexed.get("byte_size"),
+                "content_type": indexed.get("content_type"),
+            }
+        )
+
+    for index, item in enumerate(existing):
+        if index not in matched_indexes:
+            merged.append(dict(item))
+    enriched["result_files"] = merged
+    return enriched
+
+
+def archive_agent_session_outputs(
+    cur,
+    session_id: str,
+    result: Any,
+    result_json: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str], list[dict[str, Any]]]:
+    from .billing import insert_file_index
+
+    artifact_uris: dict[str, str] = {}
+    indexed_files: list[dict[str, Any]] = []
+    output_files = list(getattr(result, "output_files", []) or [])
+    run_prefix = f"agent-sessions/{utc_now().date().isoformat()}/{session_id}/{new_id('run')}/output"
+    result_rel: str | None = None
+
+    for rel, path in output_files:
+        rel = str(rel).strip().lstrip("/\\")
+        if not rel:
+            continue
+        source = Path(path)
+        if rel == "result.json":
+            result_rel = rel
+            continue
+        try:
+            raw = source.read_bytes()
+            content_type = content_type_for_filename(rel)
+            uri = artifacts.put_bytes(f"{run_prefix}/{rel}", raw, content_type)
+        except Exception:
+            continue
+        role = agent_output_role(rel)
+        file_row = insert_file_index(
+            cur,
+            filename=Path(rel).name,
+            s3_uri=uri,
+            category="agent-output",
+            session_id=session_id,
+            uploaded_by="agent",
+            metadata={
+                "source": "agent_session_output",
+                "session_id": session_id,
+                "rel": rel,
+                "path": f"output/{rel}",
+                "role": role,
+                "mode": getattr(result, "mode", None),
+                "sandbox_id": getattr(result, "sandbox_id", None),
+                "directory_path": f"Agent 产物/{session_id}",
+            },
+            content_type=content_type,
+            byte_size=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),
+        )
+        indexed = {
+            "rel": rel,
+            "path": f"output/{rel}",
+            "role": role,
+            "uri": uri,
+            "file_id": file_row.get("id"),
+            "filename": file_row.get("filename") or Path(rel).name,
+            "byte_size": file_row.get("byte_size") or len(raw),
+            "content_type": file_row.get("content_type") or content_type,
+        }
+        indexed_files.append(indexed)
+        artifact_uris[role] = uri
+        artifact_uris[rel] = uri
+
+    enriched_result = _merge_result_file_entries(result_json or {}, indexed_files)
+    if result_rel:
+        raw = json.dumps(json_safe(enriched_result), ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        try:
+            uri = artifacts.put_bytes(f"{run_prefix}/{result_rel}", raw, "application/json")
+            insert_file_index(
+                cur,
+                filename="result.json",
+                s3_uri=uri,
+                category="agent-output",
+                session_id=session_id,
+                uploaded_by="agent",
+                metadata={
+                    "source": "agent_session_output",
+                    "session_id": session_id,
+                    "rel": result_rel,
+                    "path": "output/result.json",
+                    "role": "result",
+                    "mode": getattr(result, "mode", None),
+                    "sandbox_id": getattr(result, "sandbox_id", None),
+                    "directory_path": f"Agent 产物/{session_id}",
+                },
+                content_type="application/json",
+                byte_size=len(raw),
+                sha256=hashlib.sha256(raw).hexdigest(),
+            )
+            artifact_uris["result"] = uri
+            artifact_uris[result_rel] = uri
+        except Exception:
+            pass
+    return enriched_result, artifact_uris, indexed_files
+
+
 def agent_sse_generator(session_id: str, live: bool = False):
     with db_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -632,6 +799,7 @@ def stream_sandbox_agent_session(
     assistant_event = None
     with db_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            result_json, artifact_uris, indexed_files = archive_agent_session_outputs(cur, session_id, result, result_json)
             if not workbench_meta.get("assistant_events_emitted"):
                 assistant_event = insert_agent_event(
                     cur,
@@ -652,6 +820,8 @@ def stream_sandbox_agent_session(
                         "mode": result.mode,
                         "sandbox_id": result.sandbox_id,
                         "output_files": [rel for rel, _ in result.output_files],
+                        "output_file_records": indexed_files,
+                        "artifacts": artifact_uris,
                         "result": result_json,
                     },
                 )
@@ -671,7 +841,15 @@ def stream_sandbox_agent_session(
                     "run.error",
                     "system",
                     (result.stderr or summary or "沙箱 Agent 返回非零退出码。")[:2000],
-                    {"mode": result.mode, "sandbox_id": result.sandbox_id, "returncode": result.returncode, "result": result_json},
+                    {
+                        "mode": result.mode,
+                        "sandbox_id": result.sandbox_id,
+                        "returncode": result.returncode,
+                        "output_files": [rel for rel, _ in result.output_files],
+                        "output_file_records": indexed_files,
+                        "artifacts": artifact_uris,
+                        "result": result_json,
+                    },
                 )
                 cur.execute("UPDATE agent_sessions SET status = 'FAILED', updated_at = NOW() WHERE id = %s", (session_id,))
     replay_events = [*emitted]
@@ -731,6 +909,7 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
     failed = agent_result_failed(result, result_json)
     with db_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            result_json, artifact_uris, indexed_files = archive_agent_session_outputs(cur, session_id, result, result_json)
             if not workbench_meta.get("assistant_events_emitted"):
                 insert_agent_event(
                     cur,
@@ -751,6 +930,8 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
                         "mode": result.mode,
                         "sandbox_id": result.sandbox_id,
                         "output_files": [rel for rel, _ in result.output_files],
+                        "output_file_records": indexed_files,
+                        "artifacts": artifact_uris,
                         "result": result_json,
                     },
                 )
@@ -773,6 +954,9 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
                         "sandbox_id": result.sandbox_id,
                         "returncode": result.returncode,
                         "result_status": result_json.get("status"),
+                        "output_files": [rel for rel, _ in result.output_files],
+                        "output_file_records": indexed_files,
+                        "artifacts": artifact_uris,
                         "result": result_json,
                     },
                 )
