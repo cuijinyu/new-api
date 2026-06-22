@@ -388,7 +388,18 @@ def execute_real_athena_bill(command: dict[str, Any], config: dict[str, Any], bi
         tmp.cleanup()
 
 
+def _is_xlsx_bill_artifact(name: str) -> bool:
+    basename = str(name).lower().replace("\\", "/").rsplit("/", 1)[-1]
+    return basename.endswith(".xlsx") and "_detail" not in basename and basename != "bill_summary.json"
+
+
 def primary_bill_uri(generated: dict[str, str]) -> str | None:
+    for name, uri in generated.items():
+        if _is_xlsx_bill_artifact(name) and parse_split_entity_from_filename(name) is None:
+            return uri
+    for name, uri in generated.items():
+        if _is_xlsx_bill_artifact(name):
+            return uri
     for name, uri in generated.items():
         if name.lower().endswith(".xlsx"):
             return uri
@@ -399,7 +410,7 @@ def primary_bill_uri(generated: dict[str, str]) -> str | None:
 
 
 def has_bill_workbook(generated: dict[str, str]) -> bool:
-    return any(str(name).lower().endswith(".xlsx") for name in generated)
+    return any(_is_xlsx_bill_artifact(name) for name in generated)
 
 
 def resolve_billing_run_status(failed_message: str, generated: dict[str, str]) -> tuple[str, str]:

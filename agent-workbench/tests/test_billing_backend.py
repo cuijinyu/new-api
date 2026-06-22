@@ -87,6 +87,30 @@ def test_split_generated_files_groups_target_detail_artifacts():
     }
 
 
+def test_primary_bill_uri_prefers_parent_workbook_over_detail_and_split_outputs():
+    from app.services.billing import primary_bill_uri
+
+    generated = {
+        "bill_2026-06_ch104_from20260620_to20260620_detail.xlsx": "s3://bucket/ch104-detail.xlsx",
+        "daily_report_2026-06-20_ch104.xlsx": "s3://bucket/ch104.xlsx",
+        "daily_report_2026-06-20.xlsx": "s3://bucket/parent.xlsx",
+        "bill_summary.json": "s3://bucket/bill_summary.json",
+    }
+
+    assert primary_bill_uri(generated) == "s3://bucket/parent.xlsx"
+
+
+def test_primary_bill_uri_uses_split_workbook_when_no_parent_workbook_exists():
+    from app.services.billing import primary_bill_uri
+
+    generated = {
+        "bill_2026-06_ch95_from20260620_to20260620_detail.xlsx": "s3://bucket/ch95-detail.xlsx",
+        "daily_report_2026-06-20_ch95.xlsx": "s3://bucket/ch95.xlsx",
+    }
+
+    assert primary_bill_uri(generated) == "s3://bucket/ch95.xlsx"
+
+
 def test_build_athena_bill_command_always_requests_detail():
     from app.services.billing import build_athena_bill_command
 
