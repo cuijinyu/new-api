@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Badge, Button, EmptyState, JsonBlock } from "../components/ui";
-import { agentCommandSuggestions, buildContextItems, groupAgentEvents, type AgentCommandSuggestion, type AgentTimelineItem } from "../lib/agentWindow";
+import { agentCommandSuggestions, groupAgentEvents, type AgentCommandSuggestion, type AgentTimelineItem } from "../lib/agentWindow";
 import {
   billDocumentAmount,
   billDocumentListHint,
@@ -36,7 +36,6 @@ import {
 import {
   categoryText,
   displayText,
-  fileDirectory,
   formatBytes,
   formatDate,
   formatImpact,
@@ -49,11 +48,26 @@ import type { AgentEvent, AgentSession, BillDocument, PageId, SkillPreviewItem, 
 import type { WorkbenchState } from "../hooks/useWorkbench";
 
 type PanelTab = "resources" | "skills" | "suggestions";
+type ResourceView = "attached" | "available" | "outputs";
+type ResourceKindFilter = "all" | "billing" | "supplier" | "evidence";
 
 const panelTabs: Array<{ id: PanelTab; label: string }> = [
   { id: "resources", label: "资料" },
-  { id: "skills", label: "经验注入" },
+  { id: "skills", label: "经验" },
   { id: "suggestions", label: "建议" },
+];
+
+const resourceViews: Array<{ id: ResourceView; label: string }> = [
+  { id: "attached", label: "已引用" },
+  { id: "available", label: "可引用" },
+  { id: "outputs", label: "产物" },
+];
+
+const resourceKindFilters: Array<{ id: ResourceKindFilter; label: string }> = [
+  { id: "all", label: "全部" },
+  { id: "billing", label: "账单" },
+  { id: "supplier", label: "供应商" },
+  { id: "evidence", label: "凭证" },
 ];
 
 function uniqueFiles(files: UploadedFile[]) {
@@ -145,12 +159,40 @@ function billSearchText(document: BillDocument) {
     .toLowerCase();
 }
 
+function resourceKind(file?: UploadedFile): ResourceKindFilter {
+  if (!file) return "evidence";
+  if (file.category === "billing-result") return "billing";
+  if (file.category === "supplier-bill") return "supplier";
+  return "evidence";
+}
+
+function resourceSearchText(file: UploadedFile) {
+  return [file.filename, file.category, file.job_id, file.session_id, file.s3_uri, file.metadata ? JSON.stringify(file.metadata) : ""]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function resourceMeta(file: UploadedFile, attached: boolean) {
+  return [categoryText(file.category), file.byte_size ? formatBytes(file.byte_size) : "", attached ? "已在当前任务" : "可加入当前任务"].filter(Boolean).join(" · ");
+}
+
+function resultFileName(file: { label?: string; uri?: string; role?: string }) {
+  if (file.label) return file.label;
+  if (file.role) return file.role;
+  const name = (file.uri || "").split(/[\\/]/).filter(Boolean).pop();
+  return name || "结果文件";
+}
+
 export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: (page: PageId) => void }) {
   const eventListRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerDragDepthRef = useRef(0);
   const [panelTab, setPanelTab] = useState<PanelTab>("resources");
+  const [resourceView, setResourceView] = useState<ResourceView>("attached");
+  const [resourceQuery, setResourceQuery] = useState("");
+  const [resourceKindFilter, setResourceKindFilter] = useState<ResourceKindFilter>("all");
   const [isMobileSessionsOpen, setIsMobileSessionsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -193,12 +235,17 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
     () =>
       wb.uploadedFiles
         .filter((file) => file.category === "billing-result" || file.category === "supplier-bill" || file.category === "reconcile-evidence")
-        .slice(0, 18),
+        .slice(0, 80),
     [wb.uploadedFiles],
   );
-  const contextFiles = useMemo(() => uniqueFiles([...wb.agentFiles, ...referenceFiles]), [wb.agentFiles, referenceFiles]);
-  const contextItems = useMemo(() => buildContextItems(contextFiles, wb.sessions, wb.currentSession), [contextFiles, wb.sessions, wb.currentSession]);
   const commandSuggestions = useMemo(() => agentCommandSuggestions(wb.agentMessage, referenceFiles, wb.sessions), [wb.agentMessage, referenceFiles, wb.sessions]);
+  const attachedFileIds = useMemo(() => new Set(wb.agentFiles.map((file) => file.id)), [wb.agentFiles]);
+  const availableFiles = useMemo(() => {
+    const query = resourceQuery.trim().toLowerCase();
+    return uniqueFiles(referenceFiles)
+      .filter((file) => resourceKindFilter === "all" || resourceKind(file) === resourceKindFilter)
+      .filter((file) => !query || resourceSearchText(file).includes(query));
+  }, [referenceFiles, resourceKindFilter, resourceQuery]);
   // 命令快捷条默认隐藏，只有用户主动输入 @（引用资料）或 /（操作）时才浮现，保持输入区清爽。
   const showCommandStrip = wb.agentMessage.includes("@") || wb.agentMessage.includes("/");
   const recommendedActions = suggestedActionsFromResult(result, waitingForInfo);
@@ -657,10 +704,21 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
         </div>
         <div className="agent-panel-body">
           {panelTab === "resources" ? (
-            <div className="agent-panel-stack">
-              <ContextPanel items={contextItems} referenceFiles={referenceFiles} onReferenceFile={referenceFile} />
-              <ArtifactsPanel files={wb.agentFiles} resultFiles={result?.result_files || []} />
-            </div>
+            <ResourceTray
+              session={wb.currentSession}
+              activeView={resourceView}
+              onViewChange={setResourceView}
+              attachedFiles={wb.agentFiles}
+              attachedFileIds={attachedFileIds}
+              availableFiles={availableFiles}
+              availableTotal={referenceFiles.length}
+              resultFiles={result?.result_files || []}
+              query={resourceQuery}
+              onQueryChange={setResourceQuery}
+              kindFilter={resourceKindFilter}
+              onKindFilterChange={setResourceKindFilter}
+              onReferenceFile={referenceFile}
+            />
           ) : null}
           {panelTab === "skills" ? (
             <SkillsPanel
@@ -842,44 +900,142 @@ function AgentEmptyState({ onPrompt }: { onPrompt: (text: string) => void }) {
   );
 }
 
-function ContextPanel({
-  items,
-  referenceFiles,
+function ResourceTray({
+  session,
+  activeView,
+  onViewChange,
+  attachedFiles,
+  attachedFileIds,
+  availableFiles,
+  availableTotal,
+  resultFiles,
+  query,
+  onQueryChange,
+  kindFilter,
+  onKindFilterChange,
   onReferenceFile,
 }: {
-  items: ReturnType<typeof buildContextItems>;
-  referenceFiles: UploadedFile[];
+  session?: AgentSession | null;
+  activeView: ResourceView;
+  onViewChange: (view: ResourceView) => void;
+  attachedFiles: UploadedFile[];
+  attachedFileIds: Set<string>;
+  availableFiles: UploadedFile[];
+  availableTotal: number;
+  resultFiles: Array<{ label?: string; uri?: string; role?: string }>;
+  query: string;
+  onQueryChange: (value: string) => void;
+  kindFilter: ResourceKindFilter;
+  onKindFilterChange: (value: ResourceKindFilter) => void;
   onReferenceFile: (fileId: string) => void;
 }) {
+  const billingCount = attachedFiles.filter((file) => resourceKind(file) === "billing").length;
+  const supplierCount = attachedFiles.filter((file) => resourceKind(file) === "supplier").length;
+  const evidenceCount = attachedFiles.filter((file) => resourceKind(file) === "evidence").length;
+
   return (
-    <div className="agent-panel-stack">
-      <div className="agent-panel-section">
-        <h3>当前上下文</h3>
-        {items.map((item) => (
-          <div className="agent-context-row" key={`${item.kind}-${item.id}`}>
-            <FileText size={15} />
-            <span>
-              <strong>{item.title}</strong>
-              <small>{item.meta || shortId(item.id)}</small>
-            </span>
-            {item.category ? <Badge tone={item.category === "billing-result" ? "green" : "blue"}>{categoryText(item.category)}</Badge> : null}
-          </div>
-        ))}
-        {!items.length ? <EmptyState title="暂无上下文" hint="引用账单结果或上传供应商资料后会出现在这里。" /> : null}
+    <div className="agent-resource-tray">
+      <div className="agent-context-summary">
+        <span>当前任务资料</span>
+        <strong>{attachedFiles.length ? `已引用 ${attachedFiles.length} 个资料` : "还没有引用资料"}</strong>
+        <div>
+          <Badge tone={billingCount ? "green" : "default"}>账单 {billingCount}</Badge>
+          <Badge tone={supplierCount ? "blue" : "default"}>供应商 {supplierCount}</Badge>
+          <Badge tone={evidenceCount ? "amber" : "default"}>凭证 {evidenceCount}</Badge>
+        </div>
+        {session ? <small>{session.vendor || "未指定供应商"} · {session.month || "未指定账期"} · {statusText(session.status)}</small> : null}
       </div>
-      <div className="agent-panel-section">
-        <h3>可引用资料</h3>
-        {referenceFiles.slice(0, 10).map((file) => (
-          <button className="agent-reference-row" type="button" key={file.id} onClick={() => onReferenceFile(file.id)}>
-            <span>
-              <strong>{file.filename}</strong>
-              <small>{fileDirectory(file)}</small>
-            </span>
-            <Badge tone={file.category === "billing-result" ? "green" : "blue"}>{categoryText(file.category)}</Badge>
+
+      <div className="agent-resource-tabs">
+        {resourceViews.map((view) => (
+          <button key={view.id} type="button" className={activeView === view.id ? "active" : ""} onClick={() => onViewChange(view.id)}>
+            {view.label}
           </button>
         ))}
-        {!referenceFiles.length ? <EmptyState title="暂无可引用资料" hint="可先在生成账单或资料库上传文件。" /> : null}
       </div>
+
+      {activeView === "available" ? (
+        <div className="agent-resource-filter">
+          <label>
+            <Search size={14} />
+            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索文件名、账期、供应商或渠道" />
+          </label>
+          <div>
+            {resourceKindFilters.map((filter) => (
+              <button key={filter.id} type="button" className={kindFilter === filter.id ? "active" : ""} onClick={() => onKindFilterChange(filter.id)}>
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="agent-resource-list">
+        {activeView === "attached" ? (
+          attachedFiles.length ? (
+            attachedFiles.map((file) => <AttachedResourceRow key={file.id} file={file} />)
+          ) : (
+            <EmptyState title="暂无已引用资料" hint="从“可引用”或账单库选择资料后，会显示在这里。" />
+          )
+        ) : null}
+
+        {activeView === "available" ? (
+          availableFiles.length ? (
+            availableFiles.map((file) => (
+              <AvailableResourceRow key={file.id} file={file} attached={attachedFileIds.has(file.id)} onReferenceFile={onReferenceFile} />
+            ))
+          ) : (
+            <EmptyState title={availableTotal ? "没有匹配资料" : "暂无可引用资料"} hint={availableTotal ? "换个关键词或类型再试。" : "先在账单库、生成账单或资料库上传文件。"} />
+          )
+        ) : null}
+
+        {activeView === "outputs" ? (
+          resultFiles.length ? (
+            resultFiles.map((file, index) => <ResultResourceRow file={file} key={`${file.uri || file.label || file.role}-${index}`} />)
+          ) : (
+            <EmptyState title="暂无结果产物" hint="任务完成后会显示报告、结果 JSON 或建议文件。" />
+          )
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AttachedResourceRow({ file }: { file: UploadedFile }) {
+  return (
+    <div className="agent-resource-row attached">
+      <FileText size={16} />
+      <span>
+        <strong>{file.filename}</strong>
+        <small>{resourceMeta(file, true)}</small>
+      </span>
+      <Badge tone={resourceKind(file) === "billing" ? "green" : "blue"}>{categoryText(file.category)}</Badge>
+    </div>
+  );
+}
+
+function AvailableResourceRow({ file, attached, onReferenceFile }: { file: UploadedFile; attached: boolean; onReferenceFile: (fileId: string) => void }) {
+  return (
+    <button className={`agent-resource-row available ${attached ? "attached" : ""}`} type="button" onClick={() => onReferenceFile(file.id)} disabled={attached}>
+      <FileText size={16} />
+      <span>
+        <strong>{file.filename}</strong>
+        <small>{resourceMeta(file, attached)}</small>
+      </span>
+      <Badge tone={attached ? "green" : resourceKind(file) === "billing" ? "green" : "blue"}>{attached ? "已引用" : "引用"}</Badge>
+    </button>
+  );
+}
+
+function ResultResourceRow({ file }: { file: { label?: string; uri?: string; role?: string } }) {
+  return (
+    <div className="agent-resource-row output">
+      <FileText size={16} />
+      <span>
+        <strong>{resultFileName(file)}</strong>
+        <small>{file.role || "任务产物"}</small>
+      </span>
+      <Badge tone="blue">产物</Badge>
     </div>
   );
 }
@@ -928,40 +1084,6 @@ function SkillsPanel({
           );
         })}
         {!preview.length ? <EmptyState icon={<BookMarked size={24} />} title="暂无可注入经验" hint="在经验库新建并启用经验后，会按相关性自动注入到这里。" /> : null}
-      </div>
-    </div>
-  );
-}
-
-function ArtifactsPanel({ files, resultFiles }: { files: UploadedFile[]; resultFiles: Array<{ label?: string; uri?: string; role?: string }> }) {
-  return (
-    <div className="agent-panel-stack">
-      <div className="agent-panel-section">
-        <h3>会话文件</h3>
-        {files.map((file) => (
-          <div className="agent-artifact-row" key={file.id}>
-            <FileText size={16} />
-            <span>
-              <strong>{file.filename}</strong>
-              <small>{categoryText(file.category)} · {formatBytes(file.byte_size)}</small>
-              <code>{file.s3_uri || "-"}</code>
-            </span>
-          </div>
-        ))}
-        {!files.length ? <EmptyState title="暂无会话文件" hint="Agent 任务引用或上传资料后会展示在这里。" /> : null}
-      </div>
-      <div className="agent-panel-section">
-        <h3>结果产物</h3>
-        {resultFiles.map((file, index) => (
-          <div className="agent-artifact-row" key={`${file.uri}-${index}`}>
-            <FileText size={16} />
-            <span>
-              <strong>{file.label || file.role || "结果文件"}</strong>
-              <code>{file.uri || "-"}</code>
-            </span>
-          </div>
-        ))}
-        {!resultFiles.length ? <EmptyState title="暂无结果产物" hint="任务完成后会展示报告、结果 JSON 或建议文件。" /> : null}
       </div>
     </div>
   );

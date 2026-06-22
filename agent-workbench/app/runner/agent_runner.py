@@ -353,22 +353,6 @@ def send_message(
     returncode = int(exec_result.get("returncode") or exec_result.get("exit_code") or 0)
     stdout = str(exec_result.get("stdout") or "")
     stderr = str(exec_result.get("stderr") or "")
-    _emit(
-        event_sink,
-        "tool.result",
-        "tool",
-        "沙箱 Agent 执行完成" if returncode == 0 else "沙箱 Agent 执行失败",
-        {
-            "tool_name": "sandbox.exec",
-            "result": {
-                "returncode": returncode,
-                "stdout_tail": stdout[-2000:],
-                "stderr_tail": stderr[-2000:],
-            },
-            "status": "completed" if returncode == 0 else "failed",
-        },
-    )
-
     try:
         remote_files = client.list_files(session.sandbox_id, f"{sandbox_root}/output")
     except SandboxError:
@@ -384,6 +368,24 @@ def send_message(
         _emit_output_events(session.dirs["output"], event_sink)
     output_files = workspace.collect_output(session.dirs["output"])
     result_json = _load_result_json(session.dirs["output"])
+    result_status = str(result_json.get("status") or "").strip().lower()
+    exec_failed = returncode != 0 or result_status in {"error", "failed", "failure", "cancelled", "canceled"}
+    _emit(
+        event_sink,
+        "tool.result",
+        "tool",
+        "沙箱 Agent 执行失败" if exec_failed else "沙箱 Agent 执行完成",
+        {
+            "tool_name": "sandbox.exec",
+            "result": {
+                "returncode": returncode,
+                "result_status": result_json.get("status"),
+                "stdout_tail": stdout[-2000:],
+                "stderr_tail": stderr[-2000:],
+            },
+            "status": "failed" if exec_failed else "completed",
+        },
+    )
 
     if result_json.get("summary"):
         session.add_message("assistant", result_json["summary"])

@@ -728,12 +728,15 @@
   bottom: calc(100% - 4px);
   left: 12px;
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
   max-height: min(420px, calc(100vh - 280px));
+  min-height: 0;
   border: 1px solid #c7d7ff;
   border-radius: 8px;
   padding: 10px;
   background: #fff;
+  overflow: hidden;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
 }
 
@@ -798,9 +801,12 @@
 
 .agent-bill-list {
   display: grid;
+  align-content: start;
   gap: 7px;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .agent-bill-row {
@@ -816,6 +822,11 @@
   color: #253044;
   background: #fff;
   text-align: left;
+}
+
+.agent-bill-row > span,
+.agent-bill-row-side {
+  min-width: 0;
 }
 
 .agent-bill-row:hover {
@@ -964,6 +975,8 @@
 
 .agent-panel-body {
   padding: 12px;
+  display: grid;
+  min-height: 0;
 }
 
 .agent-panel-stack,
@@ -978,6 +991,172 @@
 
 .agent-panel-section h3 {
   margin: 0;
+}
+
+.agent-resource-tray {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+}
+
+.agent-context-summary {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #dbe7ff;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.agent-context-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.agent-context-summary strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.agent-context-summary div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.agent-context-summary small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-resource-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.agent-resource-tabs button,
+.agent-resource-filter div button {
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: #475467;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-resource-tabs button.active,
+.agent-resource-filter div button.active {
+  border-color: #c7d7ff;
+  color: var(--primary);
+  background: #eef4ff;
+}
+
+.agent-resource-filter {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-resource-filter label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  border: 1px solid #cfd7e6;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #fff;
+}
+
+.agent-resource-filter label svg {
+  color: var(--muted);
+}
+
+.agent-resource-filter input {
+  height: 34px;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.agent-resource-filter div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.agent-resource-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.agent-resource-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 9px;
+  color: #253044;
+  background: #fff;
+  text-align: left;
+}
+
+.agent-resource-row.available:not(:disabled):hover {
+  border-color: #b2ccff;
+  background: #f8fbff;
+}
+
+.agent-resource-row:disabled {
+  cursor: default;
+}
+
+.agent-resource-row > svg {
+  color: var(--primary);
+}
+
+.agent-resource-row.attached > svg {
+  color: var(--green);
+}
+
+.agent-resource-row.output > svg {
+  color: #475467;
+}
+
+.agent-resource-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.agent-resource-row strong,
+.agent-resource-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-resource-row strong {
+  color: #172033;
+  font-size: 13px;
+}
+
+.agent-resource-row small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .agent-context-row,
@@ -1088,6 +1267,8 @@
     z-index: 20;
     top: 46px;
     bottom: 0;
+    height: auto;
+    max-height: none;
     width: min(86vw, 340px);
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
     transition: transform 0.18s ease;

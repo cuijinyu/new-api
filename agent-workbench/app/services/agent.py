@@ -710,6 +710,13 @@ def run_sandbox_agent_session_worker(
     persist_sandbox_agent_result(session_id, result)
 
 
+def agent_result_failed(result: Any, result_json: dict[str, Any]) -> bool:
+    status = str(result_json.get("status") or "").strip().lower()
+    if status in {"error", "failed", "failure", "cancelled", "canceled"}:
+        return True
+    return not bool(getattr(result, "succeeded", False))
+
+
 def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
     result_json = result.result_json or {}
     summary = str(result_json.get("summary") or "").strip()
@@ -719,6 +726,7 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
         summary = "沙箱执行完成，未生成摘要。"
 
     workbench_meta = result_json.get("_workbench") if isinstance(result_json.get("_workbench"), dict) else {}
+    failed = agent_result_failed(result, result_json)
     with db_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             if not workbench_meta.get("assistant_events_emitted"):
@@ -730,7 +738,7 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
                     summary,
                     {"mode": result.mode, "sandbox_id": result.sandbox_id, "result": result_json},
                 )
-            if result.succeeded:
+            if not failed:
                 done = insert_agent_event(
                     cur,
                     session_id,
@@ -758,7 +766,13 @@ def persist_sandbox_agent_result(session_id: str, result: Any) -> None:
                     "run.error",
                     "system",
                     (result.stderr or summary or "沙箱 Agent 返回非零退出码。")[:2000],
-                    {"mode": result.mode, "sandbox_id": result.sandbox_id, "returncode": result.returncode, "result": result_json},
+                    {
+                        "mode": result.mode,
+                        "sandbox_id": result.sandbox_id,
+                        "returncode": result.returncode,
+                        "result_status": result_json.get("status"),
+                        "result": result_json,
+                    },
                 )
                 cur.execute("UPDATE agent_sessions SET status = 'FAILED', updated_at = NOW() WHERE id = %s", (session_id,))
 

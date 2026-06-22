@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import textwrap
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,15 @@ API_KEY = env("ZHIPU_CODINGPLAN_API_KEY") or env("ANTHROPIC_AUTH_TOKEN") or env(
 ANTHROPIC_BASE_URL = env("ZHIPU_CODINGPLAN_ANTHROPIC_BASE_URL", "https://open.bigmodel.cn/api/anthropic")
 TIMEOUT_SECONDS = int(env("RUNNER_AGENT_TIMEOUT_SECONDS", "1200") or "1200")
 WORKBENCH_EVENT_PREFIX = "__WORKBENCH_EVENT__"
+ACP_MAX_ATTEMPTS = max(1, int(env("ZHIPU_CODINGPLAN_ACP_MAX_ATTEMPTS", "3") or "3"))
+ACP_RETRY_BASE_SECONDS = max(0.0, float(env("ZHIPU_CODINGPLAN_ACP_RETRY_BASE_SECONDS", "8") or "8"))
+TRANSIENT_ACP_PATTERNS = (
+    "API Error: 529",
+    "访问量过大",
+    "try again in a moment",
+    "temporarily overloaded",
+    "server-side issue",
+)
 
 
 def read_text(path: Path, default: str = "") -> str:
@@ -47,6 +57,11 @@ def write_text(path: Path, content: str) -> None:
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def is_transient_acp_failure(text: str) -> bool:
+    lowered = text.lower()
+    return any(pattern.lower() in lowered for pattern in TRANSIENT_ACP_PATTERNS)
 
 
 def stream_workbench_event(event: dict[str, Any]) -> None:
@@ -614,6 +629,108 @@ def run() -> int:
         return 1
 
     assistant_text = join_assistant_chunks(assistant_chunks).strip()
+    for retry_attempt in range(2, ACP_MAX_ATTEMPTS + 1):
+        transient_text = "\n".join([assistant_text, completed.stdout or "", completed.stderr or ""])
+        if not is_transient_acp_failure(transient_text):
+            break
+
+        wait_seconds = ACP_RETRY_BASE_SECONDS * (retry_attempt - 1)
+        events.append(
+            {
+                "event_type": "tool.result",
+                "role": "tool",
+                "content": f"ACP 网关临时拥塞，{wait_seconds:.0f} 秒后重试",
+                "payload": {
+                    "tool_name": "acp.connect",
+                    "status": "retrying",
+                    "runtime": "acp",
+                    "agent": "claude_code",
+                    "attempt": retry_attempt - 1,
+                    "max_attempts": ACP_MAX_ATTEMPTS,
+                    "wait_seconds": wait_seconds,
+                    "stderr_tail": (completed.stderr or "")[-2000:],
+                },
+            }
+        )
+        stream_workbench_event(events[-1])
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        events.append(
+            {
+                "event_type": "tool.call",
+                "role": "tool",
+                "content": f"ACP 临时拥塞后重试（第 {retry_attempt}/{ACP_MAX_ATTEMPTS} 次）",
+                "payload": {
+                    "tool_name": "acp.connect",
+                    "status": "running",
+                    "runtime": "acp",
+                    "agent": "claude_code",
+                    "attempt": retry_attempt,
+                    "max_attempts": ACP_MAX_ATTEMPTS,
+                },
+            }
+        )
+        stream_workbench_event(events[-1])
+
+        stdout_chunks = []
+        stderr_chunks = []
+        raw_messages = []
+        assistant_chunks = []
+        process = None
+        try:
+            process = subprocess.Popen(
+                argv,
+                cwd=WORKSPACE_DIR,
+                env=child_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+
+            def drain_retry_stderr() -> None:
+                if process.stderr is None:
+                    return
+                for chunk in process.stderr:
+                    stderr_chunks.append(chunk)
+
+            stderr_thread = threading.Thread(target=drain_retry_stderr, name="acpx-stderr-retry", daemon=True)
+            stderr_thread.start()
+
+            if process.stdout is not None:
+                for line in process.stdout:
+                    stdout_chunks.append(line)
+                    live_events, assistant_text_chunk, raw = parse_acpx_stdout(line)
+                    raw_messages.extend(raw)
+                    if assistant_text_chunk:
+                        assistant_chunks.append(assistant_text_chunk)
+                    for event in live_events:
+                        events.append(event)
+                        stream_workbench_event(event)
+
+            returncode = process.wait(timeout=max(60, TIMEOUT_SECONDS) + 90)
+            stderr_thread.join(timeout=5)
+            completed = subprocess.CompletedProcess(argv, returncode, "".join(stdout_chunks), "".join(stderr_chunks))
+            assistant_text = join_assistant_chunks(assistant_chunks).strip()
+        except Exception as exc:
+            if process is not None:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+            message = f"ACP 重试异常：{exc}\n{traceback.format_exc()}"
+            events.append(
+                {
+                    "event_type": "tool.result",
+                    "role": "tool",
+                    "content": "ACP 重试失败",
+                    "payload": {"tool_name": "acp.connect", "status": "failed", "runtime": "acp", "error": str(exc)},
+                }
+            )
+            stream_workbench_event(events[-1])
+            write_error_result(message, events=events)
+            print(f"[claude_acp_driver] retry error: {exc}", file=sys.stderr)
+            return 1
     events.append(
         {
             "event_type": "tool.result",
