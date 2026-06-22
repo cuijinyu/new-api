@@ -171,16 +171,22 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
   const waitingForInfo = latestWaitingSeq > latestReplySeq && latestWaitingSeq > latestRunEndSeq;
   const sessionStatus = wb.currentSession?.status?.toUpperCase() || "";
   const currentStatus = wb.currentSession?.status ? statusText(wb.currentSession.status) : wb.streamStatus;
-  const isStreaming = wb.pending === "agentStream" || wb.pending === "agentMessage" || wb.pending === "agent";
+  const isStreaming = wb.agentStreamActive || wb.pending === "agentStream";
+  const isSendingMessage = wb.pending === "agentMessage";
+  const isUploadingContext = wb.pending === "upload";
+  const isAgentContextBusy = wb.pending === "agent";
   const hasCompletedRun = latestRunEndSeq > 0 || sessionStatus === "COMPLETED" || sessionStatus === "FAILED";
-  const canPauseSession = Boolean(wb.agentSessionId && !isStreaming && ["RUNNING", "SANDBOX_READY", "HUMAN_REPLIED"].includes(sessionStatus));
-  const continuationMode = Boolean(wb.agentSessionId && !isStreaming && (waitingForInfo || hasCompletedRun || sessionStatus === "PAUSED"));
-  const composerPlaceholder = waitingForInfo
-    ? "补充 Agent 正在等待的口径、凭证或异常行号，发送后会接力继续执行。"
-    : continuationMode
-      ? "继续追问、补充新凭证或要求 Agent 复核上一轮结论。"
-      : "描述你要 Agent 核对的差异、口径或凭证。可输入 @ 引用资料，或输入 / 选择操作。";
-  const sendLabel = continuationMode ? "接力继续" : "发送";
+  const acceptsLiveInput = isStreaming || ["RUNNING", "SANDBOX_READY", "HUMAN_REPLIED"].includes(sessionStatus);
+  const canPauseSession = Boolean(wb.agentSessionId && !isAgentContextBusy && ["RUNNING", "SANDBOX_READY", "HUMAN_REPLIED"].includes(sessionStatus));
+  const continuationMode = Boolean(wb.agentSessionId && !acceptsLiveInput && (waitingForInfo || hasCompletedRun || sessionStatus === "PAUSED"));
+  const composerPlaceholder = acceptsLiveInput
+    ? "Agent 正在执行。可以像 Codex 一样随时补充口径、凭证、行号或追问。"
+    : waitingForInfo
+      ? "补充 Agent 正在等待的口径、凭证或异常行号，发送后会接力继续执行。"
+      : continuationMode
+        ? "继续追问、补充新凭证或要求 Agent 复核上一轮结论。"
+        : "描述你要 Agent 核对的差异、口径或凭证。可输入 @ 引用资料，或输入 / 选择操作。";
+  const sendLabel = acceptsLiveInput ? "发送补充" : continuationMode ? "接力继续" : "发送";
   const result = wb.agentResult;
 
   const referenceFiles = useMemo(
@@ -530,7 +536,12 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
           onDragLeave={handleComposerDragLeave}
           onDrop={handleComposerDrop}
         >
-          {continuationMode ? (
+          {acceptsLiveInput ? (
+            <div className="agent-handoff-banner">
+              <Sparkles size={15} />
+              <span>Agent 正在执行，可以继续发送补充信息；新消息会进入当前任务上下文。</span>
+            </div>
+          ) : continuationMode ? (
             <div className="agent-handoff-banner">
               <Sparkles size={15} />
               <span>{waitingForInfo ? "Agent 正在等待人工补充，发送后会接力继续。" : "本轮沙箱执行已结束，可以带着历史上下文继续追问。"}</span>
@@ -603,14 +614,14 @@ export function AgentPage({ wb, switchPage }: { wb: WorkbenchState; switchPage: 
                     setIsBillPickerOpen(true);
                     if (!wb.billDocuments.length) void wb.refreshAutomation();
                   }}
-                  disabled={isStreaming}
+                  disabled={isAgentContextBusy}
                 >
                   <Receipt size={15} />
                   账单库
                 </Button>
               )}
-              <Button onClick={submitComposerMessage} disabled={!wb.agentMessage.trim() || isStreaming}>
-                {isStreaming ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
+              <Button onClick={submitComposerMessage} disabled={!wb.agentMessage.trim() || isSendingMessage || isUploadingContext || isAgentContextBusy}>
+                {isSendingMessage || isUploadingContext || isAgentContextBusy ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
                 {sendLabel}
               </Button>
             </div>

@@ -418,9 +418,19 @@ def send_agent_message(session_id: str, req: AgentMessageRequest) -> dict[str, A
             continuation = session_status in {"COMPLETED", "FAILED", "PAUSED"}
             payload = {"source": "operator", **req.metadata, "continuation": continuation, "previous_status": session_status}
             event = insert_agent_event(cur, session_id, "message", req.role, req.content, payload)
+            ack = None
+            if session_status in {"RUNNING", "SANDBOX_READY", "HUMAN_REPLIED"}:
+                ack = insert_agent_event(
+                    cur,
+                    session_id,
+                    "operator.message.received",
+                    "system",
+                    f"已收到运行中消息：{req.content}",
+                    {"source_seq": event["seq"], "live_input": True, "previous_status": session_status},
+                )
             next_status = "HUMAN_REPLIED" if continuation else (session_status or "CREATED")
             cur.execute("UPDATE agent_sessions SET status = %s, updated_at = NOW() WHERE id = %s", (next_status, session_id))
-    return {"status": "accepted", "session_id": session_id, "event": event, "continuation": continuation}
+    return {"status": "accepted", "session_id": session_id, "event": event, "ack_event": ack, "continuation": continuation}
 
 
 @router.post("/api/agent/sessions/{session_id}/experience-references")

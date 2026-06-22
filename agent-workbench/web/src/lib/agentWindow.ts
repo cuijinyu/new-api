@@ -156,6 +156,19 @@ export function groupAgentEvents(events: AgentEvent[]): AgentTimelineItem[] {
       return;
     }
 
+    if (type === "operator.message.received") {
+      items.push({
+        id: key,
+        kind: "state",
+        event,
+        title: "已收到补充",
+        body: displayText(event.content, "补充消息已进入当前任务上下文。"),
+        tone: "blue",
+        time: eventTime(event),
+      });
+      return;
+    }
+
     if (type === "assistant.delta" || event.role === "assistant") {
       const last = items[items.length - 1];
       const content = String(event.content || "");
