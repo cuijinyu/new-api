@@ -780,7 +780,8 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 			if common.DebugEnabled {
 				common.SysLog("claude response usage is not complete, maybe upstream error")
 			}
-			claudeInfo.Usage = service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, claudeInfo.Usage.PromptTokens)
+			fallbackUsage := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, claudeInfo.Usage.PromptTokens)
+			mergeClaudeFallbackUsage(claudeInfo.Usage, fallbackUsage)
 		}
 	}
 
@@ -796,6 +797,19 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 		}
 		helper.Done(c)
 	}
+}
+
+func mergeClaudeFallbackUsage(usage *dto.Usage, fallbackUsage *dto.Usage) {
+	if usage == nil || fallbackUsage == nil {
+		return
+	}
+	if usage.PromptTokens == 0 {
+		usage.PromptTokens = fallbackUsage.PromptTokens
+	}
+	if fallbackUsage.CompletionTokens > usage.CompletionTokens {
+		usage.CompletionTokens = fallbackUsage.CompletionTokens
+	}
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 }
 
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, requestMode int) (*dto.Usage, *types.NewAPIError) {
