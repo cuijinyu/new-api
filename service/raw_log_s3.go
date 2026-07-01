@@ -37,6 +37,7 @@ type rawLogUploader struct {
 	region         string
 	endpoint       string
 	maxBytes       int
+	tailBytes      int
 	retries        int
 	batchSize      int
 	batchBytes     int
@@ -59,22 +60,26 @@ type rawLogUploader struct {
 }
 
 type rawLogPayload struct {
-	RequestID      string      `json:"request_id"`
-	CreatedAt      string      `json:"created_at"`
-	Method         string      `json:"method"`
-	Path           string      `json:"path"`
-	URL            string      `json:"url"`
-	RelayMode      string      `json:"relay_mode,omitempty"`
-	Model          string      `json:"model,omitempty"`
-	ChannelID      int         `json:"channel_id,omitempty"`
-	ChannelName    string      `json:"channel_name,omitempty"`
-	ChannelType    int         `json:"channel_type,omitempty"`
-	UserID         int         `json:"user_id,omitempty"`
-	RequestHeaders http.Header `json:"request_headers,omitempty"`
-	RequestBody    string      `json:"request_body,omitempty"`
-	StatusCode     int         `json:"status_code"`
-	ResponseBody   string      `json:"response_body,omitempty"`
-	ResponseError  string      `json:"response_error,omitempty"`
+	RequestID             string      `json:"request_id"`
+	CreatedAt             string      `json:"created_at"`
+	Method                string      `json:"method"`
+	Path                  string      `json:"path"`
+	URL                   string      `json:"url"`
+	RelayMode             string      `json:"relay_mode,omitempty"`
+	Model                 string      `json:"model,omitempty"`
+	ChannelID             int         `json:"channel_id,omitempty"`
+	ChannelName           string      `json:"channel_name,omitempty"`
+	ChannelType           int         `json:"channel_type,omitempty"`
+	UserID                int         `json:"user_id,omitempty"`
+	RequestHeaders        http.Header `json:"request_headers,omitempty"`
+	RequestBody           string      `json:"request_body,omitempty"`
+	StatusCode            int         `json:"status_code"`
+	ResponseBody          string      `json:"response_body,omitempty"`
+	ResponseBodyTail      string      `json:"response_body_tail,omitempty"`
+	ResponseBodyBytes     int64       `json:"response_body_bytes"`
+	ResponseBodyTruncated bool        `json:"response_body_truncated"`
+	ResponseUsageMetadata string      `json:"response_usage_metadata,omitempty"`
+	ResponseError         string      `json:"response_error,omitempty"`
 }
 
 var (
@@ -137,6 +142,10 @@ func initRawLogUploader() *rawLogUploader {
 	if maxBytes <= 0 {
 		maxBytes = 1024 * 1024
 	}
+	tailBytes := common.GetEnvOrDefault("RAW_LOG_S3_TAIL_BYTES", 256*1024)
+	if tailBytes < 0 {
+		tailBytes = 0
+	}
 	retries := common.GetEnvOrDefault("RAW_LOG_S3_RETRIES", 2)
 	if retries < 0 {
 		retries = 0
@@ -170,6 +179,7 @@ func initRawLogUploader() *rawLogUploader {
 		region:         cfg.region,
 		endpoint:       cfg.endpoint,
 		maxBytes:       maxBytes,
+		tailBytes:      tailBytes,
 		retries:        retries,
 		batchSize:      batchSize,
 		batchBytes:     batchBytes,
@@ -187,8 +197,8 @@ func initRawLogUploader() *rawLogUploader {
 	u.wg.Add(1)
 	go u.batchWorker()
 	go u.reportDropStats()
-	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, minFlushBytes=%d, queue=%d, enqueue_timeout=%ds, gzip=on",
-		cfg.region, cfg.bucket, batchSize, flushSec, minFlushBytes, queueSize, enqueueTimeoutSec))
+	common.SysLog(fmt.Sprintf("raw log s3 uploader enabled, region=%s, bucket=%s, batch=%d, flush=%ds, minFlushBytes=%d, queue=%d, enqueue_timeout=%ds, maxBytes=%d, tailBytes=%d, gzip=on",
+		cfg.region, cfg.bucket, batchSize, flushSec, minFlushBytes, queueSize, enqueueTimeoutSec, maxBytes, tailBytes))
 	return u
 }
 
@@ -204,6 +214,10 @@ func initErrorLogUploader() *rawLogUploader {
 	maxBytes := common.GetEnvOrDefault("RAW_LOG_S3_MAX_BYTES", 1024*1024)
 	if maxBytes <= 0 {
 		maxBytes = 1024 * 1024
+	}
+	tailBytes := common.GetEnvOrDefault("RAW_LOG_S3_TAIL_BYTES", 256*1024)
+	if tailBytes < 0 {
+		tailBytes = 0
 	}
 	retries := common.GetEnvOrDefault("ERROR_LOG_S3_RETRIES", 2)
 	if retries < 0 {
@@ -238,6 +252,7 @@ func initErrorLogUploader() *rawLogUploader {
 		region:         cfg.region,
 		endpoint:       cfg.endpoint,
 		maxBytes:       maxBytes,
+		tailBytes:      tailBytes,
 		retries:        retries,
 		batchSize:      batchSize,
 		batchBytes:     batchBytes,
@@ -468,8 +483,10 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 		return
 	}
 	maxBytes := u.maxBytes
+	tailBytes := u.tailBytes
 	if !u.enabled && eu.enabled {
 		maxBytes = eu.maxBytes
+		tailBytes = eu.tailBytes
 	}
 	reqBody := readRequestBody(req)
 	payload := rawLogPayload{
@@ -493,8 +510,8 @@ func AttachRawLogCapture(c *gin.Context, info *relaycommon.RelayInfo, req *http.
 
 	isError := resp.StatusCode < 200 || resp.StatusCode >= 300
 
-	resp.Body = newCaptureReadCloser(resp.Body, maxBytes, func(captured []byte, closeErr error) {
-		payload.ResponseBody = truncateUTF8(string(captured), maxBytes)
+	resp.Body = newCaptureReadCloser(resp.Body, maxBytes, tailBytes, func(captured capturedBody, closeErr error) {
+		applyCapturedResponseToPayload(&payload, captured)
 		if closeErr != nil {
 			payload.ResponseError = closeErr.Error()
 		}
@@ -643,27 +660,45 @@ func truncateUTF8(v string, maxLen int) string {
 }
 
 type captureReadCloser struct {
-	src     io.ReadCloser
-	buf     bytes.Buffer
-	maxSize int
-	onClose func([]byte, error)
+	src      io.ReadCloser
+	head     bytes.Buffer
+	headSize int
+	tail     []byte
+	tailSize int
+	total    int64
+	onClose  func(capturedBody, error)
 }
 
-func newCaptureReadCloser(src io.ReadCloser, maxSize int, onClose func([]byte, error)) io.ReadCloser {
-	if maxSize <= 0 {
-		maxSize = 1
+type capturedBody struct {
+	Head      []byte
+	Tail      []byte
+	Bytes     int64
+	Truncated bool
+}
+
+func newCaptureReadCloser(src io.ReadCloser, headSize int, tailSize int, onClose func(capturedBody, error)) io.ReadCloser {
+	if headSize <= 0 {
+		headSize = 1
 	}
-	return &captureReadCloser{src: src, maxSize: maxSize, onClose: onClose}
+	if tailSize < 0 {
+		tailSize = 0
+	}
+	return &captureReadCloser{src: src, headSize: headSize, tailSize: tailSize, onClose: onClose}
 }
 
 func (c *captureReadCloser) Read(p []byte) (int, error) {
 	n, err := c.src.Read(p)
-	if n > 0 && c.buf.Len() < c.maxSize {
-		left := c.maxSize - c.buf.Len()
-		if n < left {
-			left = n
+	if n > 0 {
+		chunk := p[:n]
+		c.total += int64(n)
+		if c.head.Len() < c.headSize {
+			left := c.headSize - c.head.Len()
+			if n < left {
+				left = n
+			}
+			_, _ = c.head.Write(chunk[:left])
 		}
-		_, _ = c.buf.Write(p[:left])
+		c.appendTail(chunk)
 	}
 	return n, err
 }
@@ -671,7 +706,119 @@ func (c *captureReadCloser) Read(p []byte) (int, error) {
 func (c *captureReadCloser) Close() error {
 	err := c.src.Close()
 	if c.onClose != nil {
-		c.onClose(c.buf.Bytes(), err)
+		head := append([]byte(nil), c.head.Bytes()...)
+		tail := append([]byte(nil), c.tail...)
+		c.onClose(capturedBody{
+			Head:      head,
+			Tail:      tail,
+			Bytes:     c.total,
+			Truncated: c.total > int64(len(head)),
+		}, err)
 	}
 	return err
+}
+
+func (c *captureReadCloser) appendTail(chunk []byte) {
+	if c.tailSize <= 0 || len(chunk) == 0 {
+		return
+	}
+	if len(chunk) >= c.tailSize {
+		c.tail = append(c.tail[:0], chunk[len(chunk)-c.tailSize:]...)
+		return
+	}
+	overflow := len(c.tail) + len(chunk) - c.tailSize
+	if overflow > 0 {
+		copy(c.tail, c.tail[overflow:])
+		c.tail = c.tail[:len(c.tail)-overflow]
+	}
+	c.tail = append(c.tail, chunk...)
+}
+
+func applyCapturedResponseToPayload(payload *rawLogPayload, captured capturedBody) {
+	if payload == nil {
+		return
+	}
+	payload.ResponseBody = validUTF8Fragment(captured.Head)
+	payload.ResponseBodyBytes = captured.Bytes
+	payload.ResponseBodyTruncated = captured.Truncated
+	if captured.Truncated && len(captured.Tail) > 0 {
+		payload.ResponseBodyTail = validUTF8Fragment(captured.Tail)
+	}
+
+	if usage := extractJSONFieldObject(captured.Tail, "usageMetadata"); usage != "" {
+		payload.ResponseUsageMetadata = usage
+		return
+	}
+	if usage := extractJSONFieldObject(captured.Head, "usageMetadata"); usage != "" {
+		payload.ResponseUsageMetadata = usage
+	}
+}
+
+func validUTF8Fragment(v []byte) string {
+	if len(v) == 0 {
+		return ""
+	}
+	return strings.ToValidUTF8(string(v), "")
+}
+
+func extractJSONFieldObject(payload []byte, field string) string {
+	if len(payload) == 0 || field == "" {
+		return ""
+	}
+	needle := []byte(`"` + field + `"`)
+	start := bytes.Index(payload, needle)
+	if start < 0 {
+		return ""
+	}
+	i := start + len(needle)
+	for i < len(payload) && isJSONWhitespace(payload[i]) {
+		i++
+	}
+	if i >= len(payload) || payload[i] != ':' {
+		return ""
+	}
+	i++
+	for i < len(payload) && isJSONWhitespace(payload[i]) {
+		i++
+	}
+	if i >= len(payload) || payload[i] != '{' {
+		return ""
+	}
+
+	objStart := i
+	depth := 0
+	inString := false
+	escaped := false
+	for ; i < len(payload); i++ {
+		ch := payload[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch ch {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return validUTF8Fragment(payload[objStart : i+1])
+			}
+		}
+	}
+	return ""
+}
+
+func isJSONWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t'
 }

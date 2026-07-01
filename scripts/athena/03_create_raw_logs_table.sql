@@ -19,6 +19,10 @@ CREATE EXTERNAL TABLE IF NOT EXISTS ezmodel_logs.raw_logs (
   request_body     string    COMMENT '请求体',
   status_code      int       COMMENT 'HTTP 状态码',
   response_body    string    COMMENT '响应体（可能截断）',
+  response_body_tail string   COMMENT 'response body tail fragment for truncated large responses',
+  response_body_bytes bigint  COMMENT 'original response body byte count',
+  response_body_truncated boolean COMMENT 'whether response_body was truncated',
+  response_usage_metadata string COMMENT 'Gemini usageMetadata JSON captured separately',
   response_error   string    COMMENT '错误信息'
 )
 PARTITIONED BY (
