@@ -72,4 +72,15 @@ func SetVideoRouter(router *gin.Engine) {
 		// Maps to: /?Action=CVSync2AsyncSubmitTask&Version=2022-08-31 and /?Action=CVSync2AsyncGetResult&Version=2022-08-31
 		jimengOfficialGroup.POST("/", controller.RelayTask)
 	}
+
+	// BytePlus / Volcengine Ark native-style entry for Seedance 2.0 video tasks.
+	// Upstream is unchanged (still resolves to the configured video channel, e.g.
+	// Service Inference); this group only reshapes request/response to the Ark
+	// content-generations-tasks format so BytePlus SDK clients integrate as-is.
+	arkRouter := router.Group("/ark/api/v3")
+	arkRouter.Use(middleware.ArkRequestConvert(), middleware.TokenAuth(), middleware.Distribute())
+	{
+		arkRouter.POST("/contents/generations/tasks", controller.RelayTask)
+		arkRouter.GET("/contents/generations/tasks/:task_id", controller.RelayTask)
+	}
 }
