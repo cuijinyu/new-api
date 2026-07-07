@@ -204,10 +204,6 @@ func isKnownTaskField(field string) bool {
 	return knownFields[field]
 }
 
-// maxVideoDurationSeconds 限制单次视频生成时长（秒）。真实模型多在 5-10s，
-// 600s 足够宽松；阻止用超大 duration 把计费乘到 int 溢出。详见 common/quota_math.go。
-const maxVideoDurationSeconds = 600
-
 func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *dto.TaskError {
 	return ValidateBasicTaskRequestWithOptions(c, info, action, true)
 }
@@ -225,19 +221,6 @@ func ValidateBasicTaskRequestWithOptions(c *gin.Context, info *RelayInfo, action
 		}
 	} else if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
-	}
-
-	// 时长上界：阻止用超大 duration/seconds 把计费乘到溢出（详见 common/quota_math.go）
-	if req.Duration < 0 {
-		return createTaskError(errors.New("duration must be >= 0"), "invalid_request", http.StatusBadRequest, true)
-	}
-	if req.Duration > maxVideoDurationSeconds {
-		return createTaskError(fmt.Errorf("duration must be <= %d seconds", maxVideoDurationSeconds), "invalid_request", http.StatusBadRequest, true)
-	}
-	if s := strings.TrimSpace(req.Seconds); s != "" {
-		if seconds, err := strconv.Atoi(s); err == nil && (seconds < 0 || seconds > maxVideoDurationSeconds) {
-			return createTaskError(fmt.Errorf("seconds must be between 0 and %d", maxVideoDurationSeconds), "invalid_request", http.StatusBadRequest, true)
-		}
 	}
 
 	// 仅在 requirePrompt 为 true 时验证 prompt
