@@ -368,7 +368,13 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		calculateQuota = 1
 	}
 
-	quota := int(calculateQuota)
+	quota := common.QuotaFromFloat(calculateQuota)
+	if quota < 0 {
+		// 负的实际计费不合法（用量不可能为负）；饱和钳位已拦截溢出到负，此处兜底
+		// 拒绝任何残余负值，确保 post-consume 退款分支不会凭空增加余额。
+		logger.LogError(ctx, fmt.Sprintf("post-consume computed negative quota %d (calculateQuota=%g) userId=%d model=%s; coercing to 0", quota, calculateQuota, relayInfo.UserId, modelName))
+		quota = 0
+	}
 
 	totalTokens := promptTokens + completionTokens
 
