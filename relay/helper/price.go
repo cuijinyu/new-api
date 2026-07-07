@@ -103,7 +103,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				preConsumedTokens += meta.MaxTokens
 			}
 			// 预扣费使用最高价格区间
-			preConsumedQuota := int((float64(preConsumedTokens)*maxTier.InputPrice/1000000 +
+			preConsumedQuota := common.QuotaFromFloat((float64(preConsumedTokens)*maxTier.InputPrice/1000000 +
 				float64(meta.MaxTokens)*maxTier.OutputPrice/1000000) * common.QuotaPerUnit * groupRatioInfo.GroupRatio * condMult)
 
 			priceData := types.PriceData{
@@ -178,12 +178,12 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		// Claude 200K 预扣费：使用高倍率预扣以避免预扣不足
 		claudeInputMult, _ := ratio_setting.GetClaude200KMultipliers(info.OriginModelName, promptTokens)
-		preConsumedQuota = int(float64(preConsumedTokens) * ratio * claudeInputMult * condMult)
+		preConsumedQuota = common.QuotaFromFloat(float64(preConsumedTokens) * ratio * claudeInputMult * condMult)
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * condMult)
+		preConsumedQuota = common.QuotaFromFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * condMult)
 	}
 
 	// check if free model pre-consume is disabled
@@ -242,7 +242,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) types.
 			modelPrice = defaultPrice
 		}
 	}
-	quota := int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	quota := common.QuotaFromFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 	priceData := types.PerCallPriceData{
 		ModelPrice:     modelPrice,
 		Quota:          quota,
