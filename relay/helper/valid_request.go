@@ -325,6 +325,13 @@ func convertChatContentPartToResponsesPart(part map[string]any) map[string]any {
 	}
 }
 
+// 上界常量：阻止客户端用超大的 n / max_tokens 制造 quota 溢出（详见 common/quota_math.go）。
+// 饱和钳位已兜底，这里是入口处的早拦截，避免脏请求进入计费与上游。
+const (
+	maxImageN           = 100       // 单次图片生成张数上限（dall-e 规范为 1-10，此处放宽以兼容批量）
+	maxRequestMaxTokens = 2_000_000 // max_tokens 上限，远高于任何真实模型（Claude 200K、Gemini 长输出等），仅拦截滥用
+)
+
 func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageRequest, error) {
 	imageRequest := &dto.ImageRequest{}
 
@@ -411,6 +418,10 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		}
 	}
 
+	if imageRequest.N > maxImageN {
+		return nil, fmt.Errorf("n must be between 1 and %d", maxImageN)
+	}
+
 	return imageRequest, nil
 }
 
@@ -436,6 +447,10 @@ func GetAndValidateClaudeRequest(c *gin.Context) (textRequest *dto.ClaudeRequest
 	//if textRequest.Stream {
 	//	relayInfo.IsStream = true
 	//}
+
+	if textRequest.MaxTokens > maxRequestMaxTokens {
+		return nil, fmt.Errorf("max_tokens must be <= %d", maxRequestMaxTokens)
+	}
 
 	return textRequest, nil
 }
