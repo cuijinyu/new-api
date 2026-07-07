@@ -272,6 +272,11 @@ func convertToRequestPayload(req *relaycommon.TaskSubmitReq, info *relaycommon.R
 		}
 		r.Content = filterTextContent(r.Content)
 	}
+	if r.Duration != nil {
+		if err := relaycommon.ValidateVideoDurationValue(float64(*r.Duration), "metadata.duration"); err != nil {
+			return nil, err
+		}
+	}
 
 	r.Model = upstreamModelName(req, info)
 
@@ -479,19 +484,29 @@ func requestDurationSeconds(req *relaycommon.TaskSubmitReq) float64 {
 		return 4
 	}
 	if req.Duration > 0 {
-		return float64(req.Duration)
+		return boundedRequestDurationSeconds(float64(req.Duration))
 	}
 	if req.Seconds != "" {
 		if seconds, err := strconv.Atoi(req.Seconds); err == nil && seconds > 0 {
-			return float64(seconds)
+			return boundedRequestDurationSeconds(float64(seconds))
 		}
 	}
 	if req.Metadata != nil {
 		if duration, ok := numericMetadata(req.Metadata["duration"]); ok && duration > 0 {
-			return duration
+			return boundedRequestDurationSeconds(duration)
 		}
 	}
 	return 4
+}
+
+func boundedRequestDurationSeconds(duration float64) float64 {
+	if duration <= 0 {
+		return 4
+	}
+	if duration > relaycommon.MaxVideoDurationSeconds {
+		return relaycommon.MaxVideoDurationSeconds
+	}
+	return duration
 }
 
 func numericMetadata(v interface{}) (float64, bool) {

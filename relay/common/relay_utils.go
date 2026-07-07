@@ -2,9 +2,11 @@ package common
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,10 +99,20 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 		Metadata: make(map[string]interface{}),
 	}
 
-	if durationStr := formData.Get("seconds"); durationStr != "" {
-		if duration, err := strconv.Atoi(durationStr); err == nil {
-			req.Duration = duration
+	if durationStr := formData.Get("duration"); durationStr != "" {
+		duration, err := strconv.Atoi(durationStr)
+		if err != nil {
+			return req, fmt.Errorf("duration must be an integer")
 		}
+		req.Duration = duration
+	}
+	if durationStr := formData.Get("seconds"); durationStr != "" {
+		duration, err := strconv.Atoi(durationStr)
+		if err != nil {
+			return req, fmt.Errorf("seconds must be an integer")
+		}
+		req.Seconds = durationStr
+		req.Duration = duration
 	}
 
 	if images := formData["images"]; len(images) > 0 {
@@ -132,12 +144,17 @@ func ValidateMultipartDirect(c *gin.Context, info *RelayInfo) *dto.TaskError {
 	if err := common.UnmarshalBodyReusable(c, &req); err != nil {
 		return createTaskError(err, "invalid_json", http.StatusBadRequest, true)
 	}
+	if err := ValidateTaskDuration(req); err != nil {
+		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
+	}
 
 	prompt = req.Prompt
 	model = req.Model
 	size = req.Size
-	seconds, _ = strconv.Atoi(req.Seconds)
-	if seconds == 0 {
+	if s := strings.TrimSpace(req.Seconds); s != "" {
+		seconds, _ = strconv.Atoi(s)
+	}
+	if seconds <= 0 {
 		seconds = req.Duration
 	}
 	if req.InputReference != "" {
@@ -206,7 +223,80 @@ func isKnownTaskField(field string) bool {
 
 // maxVideoDurationSeconds 限制单次视频生成时长（秒）。真实模型多在 5-10s，
 // 600s 足够宽松；阻止用超大 duration 把计费乘到 int 溢出。详见 common/quota_math.go。
-const maxVideoDurationSeconds = 600
+const MaxVideoDurationSeconds = 600
+
+func ValidateVideoDurationValue(value float64, field string) error {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fmt.Errorf("%s must be finite", field)
+	}
+	if value < 0 {
+		return fmt.Errorf("%s must be >= 0", field)
+	}
+	if value > MaxVideoDurationSeconds {
+		return fmt.Errorf("%s must be <= %d seconds", field, MaxVideoDurationSeconds)
+	}
+	return nil
+}
+
+func ValidateTaskDuration(req TaskSubmitReq) error {
+	if err := ValidateVideoDurationValue(float64(req.Duration), "duration"); err != nil {
+		return err
+	}
+	if s := strings.TrimSpace(req.Seconds); s != "" {
+		seconds, err := strconv.Atoi(s)
+		if err != nil {
+			return errors.New("seconds must be an integer")
+		}
+		if err := ValidateVideoDurationValue(float64(seconds), "seconds"); err != nil {
+			return err
+		}
+	}
+	for _, field := range []string{"duration", "seconds"} {
+		value, ok, err := taskMetadataNumber(req.Metadata[field])
+		if err != nil {
+			return fmt.Errorf("metadata.%s must be numeric", field)
+		}
+		if ok {
+			if err := ValidateVideoDurationValue(value, "metadata."+field); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func taskMetadataNumber(v interface{}) (float64, bool, error) {
+	switch value := v.(type) {
+	case nil:
+		return 0, false, nil
+	case json.Number:
+		f, err := value.Float64()
+		return f, err == nil, err
+	case float64:
+		return value, true, nil
+	case float32:
+		return float64(value), true, nil
+	case int:
+		return float64(value), true, nil
+	case int64:
+		return float64(value), true, nil
+	case int32:
+		return float64(value), true, nil
+	case uint:
+		return float64(value), true, nil
+	case uint64:
+		return float64(value), true, nil
+	case string:
+		s := strings.TrimSpace(value)
+		if s == "" {
+			return 0, false, nil
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		return f, err == nil, err
+	default:
+		return 0, false, nil
+	}
+}
 
 func ValidateBasicTaskRequest(c *gin.Context, info *RelayInfo, action string) *dto.TaskError {
 	return ValidateBasicTaskRequestWithOptions(c, info, action, true)
@@ -227,17 +317,8 @@ func ValidateBasicTaskRequestWithOptions(c *gin.Context, info *RelayInfo, action
 		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
-	// 时长上界：阻止用超大 duration/seconds 把计费乘到溢出（详见 common/quota_math.go）
-	if req.Duration < 0 {
-		return createTaskError(errors.New("duration must be >= 0"), "invalid_request", http.StatusBadRequest, true)
-	}
-	if req.Duration > maxVideoDurationSeconds {
-		return createTaskError(fmt.Errorf("duration must be <= %d seconds", maxVideoDurationSeconds), "invalid_request", http.StatusBadRequest, true)
-	}
-	if s := strings.TrimSpace(req.Seconds); s != "" {
-		if seconds, err := strconv.Atoi(s); err == nil && (seconds < 0 || seconds > maxVideoDurationSeconds) {
-			return createTaskError(fmt.Errorf("seconds must be between 0 and %d", maxVideoDurationSeconds), "invalid_request", http.StatusBadRequest, true)
-		}
+	if err := ValidateTaskDuration(req); err != nil {
+		return createTaskError(err, "invalid_request", http.StatusBadRequest, true)
 	}
 
 	// 仅在 requirePrompt 为 true 时验证 prompt

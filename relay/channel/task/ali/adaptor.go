@@ -332,6 +332,12 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 	if aliReq.Model != req.Model {
 		return nil, errors.New("can't change model with metadata")
 	}
+	if aliReq.Parameters == nil {
+		return nil, errors.New("parameters cannot be null")
+	}
+	if err := relaycommon.ValidateVideoDurationValue(float64(aliReq.Parameters.Duration), "duration"); err != nil {
+		return nil, err
+	}
 
 	info.PriceData.OtherRatios = map[string]float64{
 		"seconds": float64(aliReq.Parameters.Duration),

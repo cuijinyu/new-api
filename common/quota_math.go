@@ -3,6 +3,8 @@ package common
 import (
 	"fmt"
 	"math"
+
+	"github.com/shopspring/decimal"
 )
 
 // This file centralizes every quota -> int conversion on the billing path.
@@ -85,6 +87,32 @@ func QuotaFromFloat(value float64) int {
 // when the value was clamped, so the caller can record the event on a log.
 func QuotaFromFloatChecked(value float64, op string) (int, *QuotaClamp) {
 	return saturateQuota(value, op)
+}
+
+// QuotaFromDecimal converts a decimal quota to int with the same int32
+// saturation policy as QuotaFromFloat. Callers may pass value.Round(0) first
+// when they need the historical rounded behavior.
+func QuotaFromDecimal(value decimal.Decimal) int {
+	quota, _ := QuotaFromDecimalChecked(value, "QuotaFromDecimal")
+	return quota
+}
+
+// QuotaFromDecimalChecked is QuotaFromDecimal but also returns clamp metadata.
+// It compares as decimal before calling IntPart so very large coefficients never
+// reach big.Int.Int64(), whose overflow behavior is undefined for this purpose.
+func QuotaFromDecimalChecked(value decimal.Decimal, op string) (int, *QuotaClamp) {
+	maxQuota := decimal.NewFromInt(int64(MaxQuota))
+	minQuota := decimal.NewFromInt(int64(MinQuota))
+	switch {
+	case value.GreaterThan(maxQuota):
+		SysError(fmt.Sprintf("quota conversion (%s) overflow: %s exceeds max quota, clamped to %d", op, value.String(), MaxQuota))
+		return MaxQuota, &QuotaClamp{Op: op, Kind: "overflow", Original: value.InexactFloat64(), Clamped: MaxQuota}
+	case value.LessThan(minQuota):
+		SysError(fmt.Sprintf("quota conversion (%s) underflow: %s below min quota, clamped to %d", op, value.String(), MinQuota))
+		return MinQuota, &QuotaClamp{Op: op, Kind: "underflow", Original: value.InexactFloat64(), Clamped: MinQuota}
+	default:
+		return int(value.IntPart()), nil
+	}
 }
 
 // QuotaFromUint converts an unsigned user-controlled multiplier (e.g. image n,

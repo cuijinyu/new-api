@@ -508,7 +508,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	// 添加 image generation call 计费
 	quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
 
-	quota := int(quotaCalculateDecimal.Round(0).IntPart())
+	quota := common.QuotaFromDecimal(quotaCalculateDecimal.Round(0))
 	totalTokens := promptTokens + completionTokens
 
 	var logContent string
