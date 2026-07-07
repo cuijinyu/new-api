@@ -120,10 +120,12 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 
 	if usage.(*dto.Usage).TotalTokens == 0 {
-		usage.(*dto.Usage).TotalTokens = int(request.N)
+		// request.N 是 uint；直接 int() 在 N>=2^63 时会符号位反转成负数，
+		// 经 postConsume 的退款分支变成充值。饱和钳位到 int32 上界，恒非负。
+		usage.(*dto.Usage).TotalTokens = common.QuotaFromFloat(float64(request.N))
 	}
 	if usage.(*dto.Usage).PromptTokens == 0 {
-		usage.(*dto.Usage).PromptTokens = int(request.N)
+		usage.(*dto.Usage).PromptTokens = common.QuotaFromFloat(float64(request.N))
 	}
 
 	quality := "standard"

@@ -309,7 +309,7 @@ func postBytePlusResponsesConsume(c *gin.Context, info *relaycommon.RelayInfo, b
 			totalCostUSD := inputCost + outputCost + cacheCost
 
 			// 转换为配额 (1 USD = 500000 quota)
-			quota = int(totalCostUSD * common.QuotaPerUnit)
+			quota = common.QuotaFromFloat(totalCostUSD * common.QuotaPerUnit)
 
 			// 记录分段计费信息
 			otherInfo["tiered_pricing"] = true
@@ -334,7 +334,7 @@ func postBytePlusResponsesConsume(c *gin.Context, info *relaycommon.RelayInfo, b
 		promptTokensFloat := float64(usage.PromptTokens)
 		completionTokensFloat := float64(usage.CompletionTokens)
 
-		quota = int((promptTokensFloat + completionTokensFloat*completionRatio) * modelRatio * groupRatio)
+		quota = common.QuotaFromFloat((promptTokensFloat + completionTokensFloat*completionRatio) * modelRatio * groupRatio)
 	}
 
 	// 记录其他信息

@@ -263,11 +263,15 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 						// ModelPrice 模式：与预扣费公式一致
 						// 预扣: quota = modelPrice × (duration × unitScale) × groupRatio × QuotaPerUnit
 						// 核销: quota = modelPrice × (actualDuration × unitScale) × groupRatio × QuotaPerUnit
-						actualQuota = int(value * (actualUsage * dynamicScale) * finalGroupRatio * common.QuotaPerUnit)
+						actualQuota = common.QuotaFromFloat(value * (actualUsage * dynamicScale) * finalGroupRatio * common.QuotaPerUnit)
 					} else {
 						// ModelRatio 模式：原有逻辑
 						actualModelRatio := dynamicScale * value
-						actualQuota = int(actualUsage * actualModelRatio * finalGroupRatio)
+						actualQuota = common.QuotaFromFloat(actualUsage * actualModelRatio * finalGroupRatio)
+					}
+					if actualQuota < 0 {
+						// 负的实际额度 = 溢出/攻击；置零，避免下方 quotaDelta<0 退款分支给用户充值
+						actualQuota = 0
 					}
 					preConsumedQuota := task.Quota
 					quotaDelta := actualQuota - preConsumedQuota
