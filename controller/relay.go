@@ -336,6 +336,9 @@ var channelSideBadRequestPatterns = []string{
 	"the provided model identifier is invalid",
 	"invalid character '<' looking for beginning of value",
 	"invalid `signature` in `thinking` block",
+	"api key not valid",
+	"invalid api key",
+	"incorrect api key",
 }
 
 func isChannelSideBadRequest(err *types.NewAPIError) bool {

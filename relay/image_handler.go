@@ -44,6 +44,18 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 	adaptor.Init(info)
 
+	// Record the requested image count into PriceData.OtherRatios["n"] so that:
+	//  1. the stream handler's disconnect guard knows the requested N (it must
+	//     not lower the charge when a client aborts mid-stream), and
+	//  2. ImageHelper can rescale ModelPrice after DoResponse to the actual
+	//     delivered count.
+	if info.PriceData.UsePrice && request.N > 0 {
+		if info.PriceData.OtherRatios == nil {
+			info.PriceData.OtherRatios = make(map[string]float64)
+		}
+		info.PriceData.OtherRatios["n"] = float64(request.N)
+	}
+
 	var requestBody io.Reader
 
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
@@ -119,6 +131,22 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		return newAPIError
 	}
 
+	// Rescale the fixed price to the actual delivered image count. ModelPrice
+	// was baked during ModelPriceHelper as basePrice × sizeRatio × qualityRatio
+	// × requestedN; the image handlers update OtherRatios["n"] to the real
+	// completed count, so we divide out requestedN and multiply by actualN.
+	if info.PriceData.UsePrice && request.N > 0 {
+		actualN := float64(request.N)
+		if info.PriceData.OtherRatios != nil {
+			if n, ok := info.PriceData.OtherRatios["n"]; ok && n > 0 {
+				actualN = n
+			}
+		}
+		if actualN != float64(request.N) {
+			info.PriceData.ModelPrice = info.PriceData.ModelPrice / float64(request.N) * actualN
+		}
+	}
+	
 	if usage.(*dto.Usage).TotalTokens == 0 {
 		usage.(*dto.Usage).TotalTokens = int(request.N)
 	}
